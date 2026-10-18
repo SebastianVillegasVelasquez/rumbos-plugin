@@ -24,7 +24,10 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['containerlabel'] = 'Rumbos course map';
 $string['newsection'] = 'New section';
 $string['pluginname'] = 'Rumbos';
 $string['privacy:metadata'] = 'The Rumbos course format plugin does not store any personal data.';
+$string['rumbos:editmap'] = 'Edit the Rumbos map';
 $string['section0name'] = 'General';
+$string['showactivitylist'] = 'View the activity list';

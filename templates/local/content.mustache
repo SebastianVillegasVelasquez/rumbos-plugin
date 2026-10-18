@@ -1,0 +1,52 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template format_rumbos/local/content
+
+    Course page of the Rumbos format: the Rumbos container above the standard
+    course content. Students get the standard content behind a native
+    disclosure control (works without JavaScript and is keyboard accessible);
+    teachers in editing mode get the core course editor expanded below the map.
+
+    Example context (json):
+    {
+        "showrumbos": true,
+        "collapselist": true,
+        "courseid": 2,
+        "title": "Course title example",
+        "format": "rumbos",
+        "sections": [],
+        "sectionreturn": "null",
+        "pagesectionid": "null"
+    }
+}}
+{{#showrumbos}}
+<div class="format-rumbos-container mb-3"
+     data-region="rumbos-container"
+     data-courseid="{{courseid}}"
+     role="region"
+     aria-label="{{#str}} containerlabel, format_rumbos {{/str}}"></div>
+{{/showrumbos}}
+{{#collapselist}}
+<details class="format-rumbos-list mb-3" data-region="rumbos-activity-list">
+    <summary class="btn btn-secondary">{{#str}} showactivitylist, format_rumbos {{/str}}</summary>
+    {{> core_courseformat/local/content }}
+</details>
+{{/collapselist}}
+{{^collapselist}}
+    {{> core_courseformat/local/content }}
+{{/collapselist}}

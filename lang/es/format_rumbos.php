@@ -24,7 +24,10 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['containerlabel'] = 'Mapa del curso Rumbos';
 $string['newsection'] = 'Nueva sección';
 $string['pluginname'] = 'Rumbos';
 $string['privacy:metadata'] = 'El plugin de formato de curso Rumbos no almacena datos personales.';
+$string['rumbos:editmap'] = 'Editar el mapa de Rumbos';
 $string['section0name'] = 'General';
+$string['showactivitylist'] = 'Ver la lista de actividades';
