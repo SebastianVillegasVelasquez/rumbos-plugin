@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build artefacts (the installable ZIP is generated, never committed)
+/dist/
+
+# Local environment
+.env
+*.local
+.moodle-docker/
+moodle/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
