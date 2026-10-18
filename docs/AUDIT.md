@@ -91,7 +91,9 @@ language in the dependency chain (code comment: "legacy location - used by
 contrib only"), and then the language-pack copy, which overrides it. So
 bundling `lang/es/format_rumbos.php` works for a private plugin as long as the
 `es` language pack is installed on the site. Only strings present in `en` are
-kept. Decision: ship `es`.
+kept. Decision: ship `es`. **Verified on the dev site:** `newsection` renders as
+"New section" before the `es` language pack is installed and as "Nueva sección"
+after installing it, so the pack is required on the site.
 
 ## 8. Development environment
 
