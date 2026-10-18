@@ -1,0 +1,7 @@
+# Picked up by moodle-docker-compose as moodle-docker/local.yml (dev/setup.sh
+# copies it there). Mounts this repository as the format_rumbos plugin.
+# Moodle >= 5.1 keeps plugins under public/.
+services:
+  webserver:
+    volumes:
+      - "${RUMBOS_PLUGIN_DIR}:/var/www/html/public/course/format/rumbos"
