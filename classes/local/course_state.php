@@ -19,6 +19,7 @@ namespace format_rumbos\local;
 use cm_info;
 use completion_info;
 use core\context\course as context_course;
+use course_modinfo;
 
 /**
  * Computes the CourseState (shared contract v5) for one user.
@@ -47,59 +48,84 @@ class course_state {
         $completioninfo = new completion_info($course);
         $context = context_course::instance($courseid);
 
-        $sections = [];
-        foreach ($modinfo->get_section_info_all() as $section) {
-            if (!$section->uservisible) {
-                continue;
-            }
-            $sections[] = [
-                'id' => (int) $section->id,
-                'number' => (int) $section->section,
-                'name' => self::plain_text(get_section_name($course, $section)),
-            ];
-        }
-
         $activities = [];
         $unavailable = [];
         foreach ($modinfo->cms as $cm) {
             if (!self::is_relevant($cm)) {
                 continue;
             }
-
-            if (!$cm->uservisible) {
-                $info = self::plain_text((string) $cm->availableinfo);
-                if ($info === '') {
-                    // The user cannot see this activity at all: expose the id only.
-                    $unavailable[] = (int) $cm->id;
-                    continue;
-                }
-                $availability = 'restricted';
-                $url = null;
+            $activity = self::activity($cm, $completioninfo, $context, $userid);
+            if ($activity === null) {
+                // The user cannot see this activity at all: expose the id only.
+                $unavailable[] = (int) $cm->id;
             } else {
-                $info = '';
-                $availability = $cm->visible ? 'available' : 'hidden';
-                $url = $cm->url ? $cm->url->out(false) : null;
+                $activities[] = $activity;
             }
-
-            $activities[] = [
-                'cmid' => (int) $cm->id,
-                'name' => self::plain_text($cm->get_formatted_name(['context' => $context, 'escape' => false])),
-                'modname' => $cm->modname,
-                'sectionId' => (int) $cm->get_section_info()->id,
-                'url' => $url,
-                'availability' => $availability,
-                'availabilityInfo' => $availability === 'restricted' ? $info : null,
-                'completion' => self::completion_state($completioninfo, $cm, $userid),
-            ];
         }
 
         return [
             'schemaVersion' => self::SCHEMA_VERSION,
             'courseId' => (int) $courseid,
             'generatedAt' => time(),
-            'sections' => $sections,
+            'sections' => self::sections($course, $modinfo),
             'activities' => $activities,
             'unavailableCmids' => $unavailable,
+        ];
+    }
+
+    /**
+     * The sections the user can see.
+     *
+     * @param \stdClass $course
+     * @param course_modinfo $modinfo Modinfo of the user the state is for.
+     * @return array
+     */
+    private static function sections(\stdClass $course, course_modinfo $modinfo): array {
+        $sections = [];
+        foreach ($modinfo->get_section_info_all() as $section) {
+            if ($section->uservisible) {
+                $sections[] = [
+                    'id' => (int) $section->id,
+                    'number' => (int) $section->section,
+                    'name' => self::plain_text(get_section_name($course, $section)),
+                ];
+            }
+        }
+        return $sections;
+    }
+
+    /**
+     * The state of one activity for the user.
+     *
+     * @param cm_info $cm
+     * @param completion_info $completioninfo
+     * @param context_course $context
+     * @param int $userid
+     * @return array|null The activity entry, or null when the user cannot see it at all.
+     */
+    private static function activity(cm_info $cm, completion_info $completioninfo, context_course $context, int $userid): ?array {
+        $info = null;
+        $url = null;
+        if ($cm->uservisible) {
+            $availability = $cm->visible ? 'available' : 'hidden';
+            $url = $cm->url ? $cm->url->out(false) : null;
+        } else {
+            $info = self::plain_text((string) $cm->availableinfo);
+            if ($info === '') {
+                return null;
+            }
+            $availability = 'restricted';
+        }
+
+        return [
+            'cmid' => (int) $cm->id,
+            'name' => self::plain_text($cm->get_formatted_name(['context' => $context, 'escape' => false])),
+            'modname' => $cm->modname,
+            'sectionId' => (int) $cm->get_section_info()->id,
+            'url' => $url,
+            'availability' => $availability,
+            'availabilityInfo' => $info,
+            'completion' => self::completion_state($completioninfo, $cm, $userid),
         ];
     }
 
