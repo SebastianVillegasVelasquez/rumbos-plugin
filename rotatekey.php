@@ -29,19 +29,30 @@ admin_externalpage_setup('format_rumbos_rotatekey');
 
 $settingsurl = new moodle_url('/admin/settings.php', ['section' => 'formatsettingrumbos']);
 
+// "reset" replaces the HMAC secret too: only for when the stored secrets cannot be decrypted.
+$reset = optional_param('reset', 0, PARAM_BOOL);
+
 if (optional_param('confirm', 0, PARAM_BOOL)) {
     require_sesskey();
-    \format_rumbos\local\key_manager::rotate();
-    redirect($settingsurl, get_string('keyrotated', 'format_rumbos'), null, \core\output\notification::NOTIFY_SUCCESS);
+    if ($reset) {
+        \format_rumbos\local\key_manager::reset_all();
+        $message = get_string('keyreset', 'format_rumbos');
+    } else {
+        \format_rumbos\local\key_manager::rotate();
+        $message = get_string('keyrotated', 'format_rumbos');
+    }
+    redirect($settingsurl, $message, null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
+$action = $reset ? 'resetkeys' : 'rotatekey';
+
 echo $OUTPUT->header();
-echo $OUTPUT->heading(get_string('rotatekey', 'format_rumbos'));
+echo $OUTPUT->heading(get_string($action, 'format_rumbos'));
 echo $OUTPUT->confirm(
-    get_string('rotatekey_confirm', 'format_rumbos'),
+    get_string($action . '_confirm', 'format_rumbos'),
     new single_button(
-        new moodle_url($PAGE->url, ['confirm' => 1]),
-        get_string('rotatekey', 'format_rumbos'),
+        new moodle_url($PAGE->url, ['confirm' => 1, 'reset' => (int) $reset]),
+        get_string($action, 'format_rumbos'),
         'post',
         single_button::BUTTON_DANGER
     ),

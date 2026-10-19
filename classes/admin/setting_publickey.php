@@ -77,7 +77,18 @@ class setting_publickey extends \admin_setting {
         $kid = key_manager::get_kid();
         $inputid = 'format_rumbos_publickey';
 
-        $html = \html_writer::tag('p', get_string('kid', 'format_rumbos') . ': ' . \html_writer::tag('code', s($kid)));
+        $html = '';
+        if (!key_manager::is_healthy()) {
+            $html .= \html_writer::div(
+                get_string('keyunhealthy', 'format_rumbos') . ' ' . \html_writer::link(
+                    new \moodle_url('/course/format/rumbos/rotatekey.php', ['reset' => 1]),
+                    get_string('resetkeys', 'format_rumbos')
+                ),
+                'alert alert-danger',
+                ['role' => 'alert']
+            );
+        }
+        $html .= \html_writer::tag('p', get_string('kid', 'format_rumbos') . ': ' . \html_writer::tag('code', s($kid)));
         $html .= \html_writer::tag('textarea', s($publickey), [
             'id' => $inputid,
             'readonly' => 'readonly',
