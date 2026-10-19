@@ -35,33 +35,60 @@ class app_url {
      * @return string|null The normalised URL, or null when the input is not acceptable.
      */
     public static function normalize(string $url): ?string {
+        $parts = self::parse_https($url);
+        if ($parts === null) {
+            return null;
+        }
+        $host = strtolower($parts['host']);
+        $port = $parts['port'] ?? 443;
+        $path = rtrim($parts['path'] ?? '', '/');
+        if (!self::is_valid_host($host) || $port < 1 || $port > 65535 || !self::is_valid_path($path)) {
+            return null;
+        }
+        return 'https://' . $host . ($port === 443 ? '' : ':' . $port) . $path;
+    }
+
+    /**
+     * Parses a URL and keeps it only if it is a plain https URL with a host.
+     *
+     * @param string $url Raw input.
+     * @return array|null The parse_url() parts, or null when the URL is not acceptable.
+     */
+    private static function parse_https(string $url): ?array {
         $url = trim($url);
         if ($url === '' || preg_match('/[\x00-\x20\x7f\\\\]/', $url)) {
             return null;
         }
         $parts = parse_url($url);
-        if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
+        if ($parts === false || !isset($parts['scheme'], $parts['host']) || strtolower($parts['scheme']) !== 'https') {
             return null;
         }
-        if (strtolower($parts['scheme']) !== 'https') {
-            return null;
+        foreach (['user', 'pass', 'query', 'fragment'] as $forbidden) {
+            if (isset($parts[$forbidden])) {
+                return null;
+            }
         }
-        if (isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])) {
-            return null;
-        }
-        $host = strtolower($parts['host']);
-        if (!preg_match('/^(\[[0-9a-f:.]+\]|[a-z0-9]([a-z0-9.-]*[a-z0-9])?)$/', $host)) {
-            return null;
-        }
-        $port = $parts['port'] ?? 443;
-        if ($port < 1 || $port > 65535) {
-            return null;
-        }
-        $path = rtrim($parts['path'] ?? '', '/');
-        if ($path !== '' && !preg_match('#^(/[A-Za-z0-9._~%!$&\'()*+,;=:@-]+)+$#', $path)) {
-            return null;
-        }
-        return 'https://' . $host . ($port === 443 ? '' : ':' . $port) . $path;
+        return $parts;
+    }
+
+    /**
+     * Whether a lowercase host is a DNS name or a bracketed IPv6 literal.
+     *
+     * @param string $host
+     * @return bool
+     */
+    private static function is_valid_host(string $host): bool {
+        return (bool) preg_match('/^(\[[0-9a-f:.]+\]|[a-z0-9]([a-z0-9.-]*[a-z0-9])?)$/', $host);
+    }
+
+    /**
+     * Whether a path (without trailing slash) is empty or made of safe segments.
+     *
+     * @param string $path
+     * @return bool
+     */
+    private static function is_valid_path(string $path): bool {
+        return $path === '' || preg_match('#^(/[A-Za-z0-9._~%!$&\'()*+,;=:@-]+)+$#', $path) === 1;
     }
 
     /**
