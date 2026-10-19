@@ -27,6 +27,7 @@
  */
 
 import Ajax from 'core/ajax';
+import Log from 'core/log';
 import {getString} from 'core/str';
 import {
     MESSAGE,
@@ -95,9 +96,16 @@ class RumbosHost {
         this.exitButton = this.container.querySelector(SELECTORS.EXIT_FULLSCREEN);
         this.activityList = document.querySelector(SELECTORS.ACTIVITY_LIST);
 
+        this.setState('waiting');
         window.addEventListener('message', this.onMessage);
         this.exitButton?.addEventListener('click', () => this.setFullscreen(false));
         this.timer = window.setTimeout(() => this.degrade('timeout'), this.timeoutMs);
+
+        // The iframe is in the page HTML, so it can finish loading and send embed-ready
+        // before this module is ready to listen, and that message would be lost for good.
+        // Restarting the navigation now guarantees the app announces itself to a host that
+        // is already listening. It is the original src again: nothing is read or changed.
+        this.frame.src = this.frame.getAttribute('src');
     }
 
     /**
@@ -117,11 +125,11 @@ class RumbosHost {
                 this.init();
                 break;
             case MESSAGE.REQUEST_STATE:
-                this.refreshState().then((state) => this.send(hostState(state))).catch(() => this.degrade('error'));
+                this.refreshState().then((state) => this.send(hostState(state))).catch((error) => this.fail(error));
                 break;
             case MESSAGE.REQUEST_LAUNCH:
                 this.fetchAssertion().then((assertion) => this.send(hostLaunch(assertion)))
-                    .catch(() => this.degrade('error'));
+                    .catch((error) => this.fail(error));
                 break;
             case MESSAGE.OPEN_ACTIVITY:
                 this.openActivity(message.cmid);
@@ -144,14 +152,17 @@ class RumbosHost {
      */
     init() {
         return Promise.all([this.refreshState(), this.fetchAssertion()])
-            .then(([state, assertion]) => this.send(hostInit({
-                mode: this.mode,
-                locale: this.locale,
-                courseId: this.courseId,
-                assertion,
-                state,
-            })))
-            .catch(() => this.degrade('error'));
+            .then(([state, assertion]) => {
+                this.send(hostInit({
+                    mode: this.mode,
+                    locale: this.locale,
+                    courseId: this.courseId,
+                    assertion,
+                    state,
+                }));
+                this.setState('ready');
+            })
+            .catch((error) => this.fail(error));
     }
 
     /**
@@ -258,6 +269,30 @@ class RumbosHost {
         }
     }
 
+    /**
+     * A host-side failure (an external function or the reply): log it and fall back.
+     *
+     * @param {Error} error
+     */
+    fail(error) {
+        Log.debug(`format_rumbos/host: ${error?.message ?? error}`);
+        this.degrade('error');
+    }
+
+    /**
+     * Publishes the host state on the container: waiting, ready or degraded (with the reason).
+     * It is for debugging and for tests; nothing else reads it.
+     *
+     * @param {string} state
+     * @param {string} reason
+     */
+    setState(state, reason = '') {
+        this.container.dataset.state = state;
+        if (reason) {
+            this.container.dataset.reason = reason;
+        }
+    }
+
     clearTimer() {
         if (this.timer !== null) {
             window.clearTimeout(this.timer);
@@ -280,6 +315,7 @@ class RumbosHost {
             return;
         }
         this.degraded = true;
+        this.setState('degraded', reason === 'apperror' ? code : reason);
         this.clearTimer();
         this.setFullscreen(false);
         window.removeEventListener('message', this.onMessage);
