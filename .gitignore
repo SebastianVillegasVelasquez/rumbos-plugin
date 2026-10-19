@@ -17,3 +17,6 @@ moodle/
 *.swp
 .DS_Store
 Thumbs.db
+
+# pnpm lockfile: the repo has no dependencies, only scripts
+pnpm-lock.yaml
