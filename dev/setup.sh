@@ -3,23 +3,33 @@
 #   dev/setup.sh            # pgsql (default)
 #   MOODLE_DOCKER_DB=mariadb dev/setup.sh
 set -euo pipefail
+# Git Bash on Windows rewrites paths such as /dst in `docker run` arguments, but
+# moodle-docker-compose needs that conversion, so it is switched off per command.
+docker_run() { MSYS_NO_PATHCONV=1 docker run "$@"; }
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 
-mkdir -p "$RUMBOS_DEV_ROOT"
-if [ ! -d "$RUMBOS_DEV_ROOT/moodle/.git" ]; then
-  git clone --depth 1 --branch "$RUMBOS_MOODLE_BRANCH" https://github.com/moodle/moodle.git "$RUMBOS_DEV_ROOT/moodle"
-fi
+mkdir -p "$RUMBOS_DEV_ROOT" "$MOODLE_DOCKER_WWWROOT"
 if [ ! -d "$RUMBOS_DEV_ROOT/moodle-docker/.git" ]; then
   git clone --depth 1 https://github.com/moodlehq/moodle-docker.git "$RUMBOS_DEV_ROOT/moodle-docker"
 fi
 
-cp "$RUMBOS_REPO/dev/docker/local.yml" "$RUMBOS_DEV_ROOT/moodle-docker/local.yml"
-cp "$RUMBOS_DEV_ROOT/moodle-docker/config.docker-template.php" "$MOODLE_DOCKER_WWWROOT/config.php"
+# Moodle's code and its Composer dependencies live in a named volume.
+docker volume create "$RUMBOS_MOODLE_VOLUME" >/dev/null
+if ! docker_run --rm -v "$RUMBOS_MOODLE_VOLUME:/app" alpine test -d /app/.git; then
+  docker_run --rm -v "$RUMBOS_MOODLE_VOLUME:/dst" alpine/git clone --quiet --depth 1 \
+    --branch "$RUMBOS_MOODLE_BRANCH" https://github.com/moodle/moodle.git /dst
+  docker_run --rm -v "$RUMBOS_MOODLE_VOLUME:/app" -w /app composer:2 install \
+    --no-interaction --prefer-dist --ignore-platform-reqs
+fi
+
 # Developer debugging is set in the database instead of config.php. A debug value
 # in config.php makes Moodle skip its component cache and rescan every plugin
-# directory on every request, which costs ~20 s per request on a Windows bind
-# mount. The database setting gives the same messages with the cache enabled.
-sed -i '/^$CFG->debug = /d; /^$CFG->debugdisplay = /d' "$MOODLE_DOCKER_WWWROOT/config.php"
+# directory on every request.
+cat "$RUMBOS_DEV_ROOT/moodle-docker/config.docker-template.php" \
+  | docker_run -i --rm -v "$RUMBOS_MOODLE_VOLUME:/dst" alpine \
+    sh -c "sed '/^\\\$CFG->debug = /d; /^\\\$CFG->debugdisplay = /d' > /dst/config.php"
+
+cp "$RUMBOS_REPO/dev/docker/local.yml" "$RUMBOS_DEV_ROOT/moodle-docker/local.yml"
 
 mdc up -d
 "$RUMBOS_DEV_ROOT/moodle-docker/bin/moodle-docker-wait-for-db"

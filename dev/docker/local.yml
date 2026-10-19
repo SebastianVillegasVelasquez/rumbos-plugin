@@ -1,8 +1,19 @@
 # Picked up by moodle-docker-compose as moodle-docker/local.yml (dev/setup.sh
-# copies it there). Mounts this repository as the format_rumbos plugin.
-# Moodle >= 5.1 keeps plugins under public/.
+# copies it there).
+#
+# - Moodle's code comes from the named volume rumbos_moodle (see dev/env.sh for why).
+# - This repository is mounted as the format_rumbos plugin. Moodle >= 5.1 keeps
+#   plugins under public/.
+# - Mounts for the same target replace the ones in moodle-docker's base.yml.
 services:
   webserver:
     volumes:
+      - "rumbos_moodle:/var/www/html"
       - "${RUMBOS_PLUGIN_DIR}:/var/www/html/public/course/format/rumbos"
-      - "${RUMBOS_PLUGIN_DIR}/dev/docker/opcache.ini:/usr/local/etc/php/conf.d/zz-rumbos-opcache.ini:ro"
+  # Browsers hang or crash with the 64 MB /dev/shm Docker gives by default.
+  selenium:
+    shm_size: 2gb
+
+volumes:
+  rumbos_moodle:
+    external: true
