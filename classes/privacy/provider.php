@@ -16,25 +16,93 @@
 
 namespace format_rumbos\privacy;
 
-use core_privacy\local\metadata\null_provider;
+use core_privacy\local\metadata\collection;
+use core_privacy\local\request\approved_contextlist;
+use core_privacy\local\request\approved_userlist;
+use core_privacy\local\request\contextlist;
+use core_privacy\local\request\userlist;
 
 /**
- * Placeholder privacy provider: nothing is stored or sent yet.
+ * Privacy provider for the Rumbos course format.
  *
- * It is replaced by an external-location declaration once the launch
- * assertion is implemented.
+ * The plugin stores no personal data in Moodle's database. It does send a
+ * pseudonymous id, the course id and the role to the external Rumbos service
+ * (in the launch assertion), and the user's browser connects to that service
+ * directly to load the embedded app. Only that disclosure is declared here:
+ * there is nothing to export or delete locally.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class provider implements null_provider {
+class provider implements
+    \core_privacy\local\metadata\provider,
+    \core_privacy\local\request\core_userlist_provider,
+    \core_privacy\local\request\plugin\provider {
     /**
-     * Explains why this plugin stores no personal data.
+     * Declares what is sent to the external Rumbos service.
      *
-     * @return string
+     * @param collection $collection
+     * @return collection
      */
-    public static function get_reason(): string {
-        return 'privacy:metadata';
+    public static function get_metadata(collection $collection): collection {
+        $collection->add_external_location_link('rumbos', [
+            'userid' => 'privacy:metadata:rumbos:userid',
+            'courseid' => 'privacy:metadata:rumbos:courseid',
+            'role' => 'privacy:metadata:rumbos:role',
+            'ipaddress' => 'privacy:metadata:rumbos:ipaddress',
+        ], 'privacy:metadata:rumbos');
+
+        return $collection;
+    }
+
+    /**
+     * Nothing is stored in Moodle for a user, so there are no contexts.
+     *
+     * @param int $userid
+     * @return contextlist
+     */
+    public static function get_contexts_for_userid(int $userid): contextlist {
+        return new contextlist();
+    }
+
+    /**
+     * Nothing is stored in Moodle for any user.
+     *
+     * @param userlist $userlist
+     */
+    public static function get_users_in_context(userlist $userlist) {
+    }
+
+    /**
+     * Nothing is stored in Moodle, so nothing is exported.
+     *
+     * @param approved_contextlist $contextlist
+     */
+    public static function export_user_data(approved_contextlist $contextlist) {
+    }
+
+    /**
+     * Nothing is stored in Moodle, so nothing is deleted.
+     *
+     * @param \context $context
+     */
+    public static function delete_data_for_all_users_in_context(\context $context) {
+    }
+
+    /**
+     * Nothing is stored in Moodle, so nothing is deleted.
+     *
+     * @param approved_userlist $userlist
+     */
+    public static function delete_data_for_users(approved_userlist $userlist) {
+    }
+
+    /**
+     * Nothing is stored in Moodle, so nothing is deleted.
+     *
+     * @param approved_contextlist $contextlist
+     */
+    public static function delete_data_for_user(approved_contextlist $contextlist) {
     }
 }
