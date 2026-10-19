@@ -93,12 +93,12 @@ class setting_publickey extends \admin_setting {
             'id' => $inputid,
             'readonly' => 'readonly',
             'rows' => 9,
-            'class' => 'form-control text-monospace',
+            'class' => 'form-control font-monospace',
             'aria-label' => get_string('publickey', 'format_rumbos'),
         ]);
         $html .= \html_writer::tag('button', get_string('copykey', 'format_rumbos'), [
             'type' => 'button',
-            'class' => 'btn btn-secondary mt-2 mr-2',
+            'class' => 'btn btn-secondary mt-2 me-2',
             'data-action' => 'copytoclipboard',
             'data-clipboard-target' => '#' . $inputid,
             'data-clipboard-success-message' => get_string('keycopied', 'format_rumbos'),
