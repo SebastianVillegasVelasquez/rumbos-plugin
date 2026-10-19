@@ -27,6 +27,7 @@
         "showrumbos": true,
         "collapselist": true,
         "courseid": 2,
+        "embedurl": "https://rumbos.example.com/embed?host=https%3A%2F%2Flms.example.com",
         "title": "Course title example",
         "format": "rumbos",
         "sections": [],
@@ -35,18 +36,17 @@
     }
 }}
 {{#showrumbos}}
-<div class="format-rumbos-container mb-3"
-     data-region="rumbos-container"
-     data-courseid="{{courseid}}"
-     role="region"
-     aria-label="{{#str}} containerlabel, format_rumbos {{/str}}"></div>
+    {{> format_rumbos/embed }}
 {{/showrumbos}}
 {{#collapselist}}
-<details class="format-rumbos-list mb-3" data-region="rumbos-activity-list">
+<details class="format-rumbos-list mb-3" id="format-rumbos-list" data-region="rumbos-activity-list">
     <summary class="btn btn-secondary">{{#str}} showactivitylist, format_rumbos {{/str}}</summary>
     {{> core_courseformat/local/content }}
 </details>
 {{/collapselist}}
 {{^collapselist}}
+    {{#showrumbos}}
+    <div id="format-rumbos-list" tabindex="-1" data-region="rumbos-activity-list"></div>
+    {{/showrumbos}}
     {{> core_courseformat/local/content }}
 {{/collapselist}}

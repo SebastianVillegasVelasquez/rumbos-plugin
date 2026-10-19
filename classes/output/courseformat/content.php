@@ -19,6 +19,7 @@ namespace format_rumbos\output\courseformat;
 use core\context\course as context_course;
 use core_courseformat\output\local\content as content_base;
 use format_rumbos\local\access;
+use format_rumbos\local\app_url;
 use format_rumbos\local\config;
 use renderer_base;
 
@@ -43,7 +44,8 @@ class content extends content_base {
     /**
      * Adds the Rumbos flags to the standard course content data.
      *
-     * - showrumbos: the container is shown to enrolled users and editors.
+     * - showrumbos: the container is shown to enrolled users and editors, and
+     *   only while Rumbos is enabled and configured.
      * - collapselist: students get the standard list behind a disclosure
      *   control; teachers in editing mode keep the core editor expanded.
      *
@@ -51,14 +53,29 @@ class content extends content_base {
      * @return \stdClass
      */
     public function export_for_template(renderer_base $output) {
+        global $PAGE;
+
         $data = parent::export_for_template($output);
 
-        $context = context_course::instance($this->format->get_courseid());
-        $showrumbos = config::is_enabled() && access::can_use($context);
+        $courseid = $this->format->get_courseid();
+        $context = context_course::instance($courseid);
+        $showrumbos = config::is_usable() && access::can_use($context);
 
         $data->showrumbos = $showrumbos;
-        $data->courseid = $this->format->get_courseid();
+        $data->courseid = $courseid;
         $data->collapselist = $showrumbos && !$this->format->show_editor();
+
+        if ($showrumbos) {
+            $appurl = config::get_app_url();
+            $data->embedurl = app_url::embed_url($appurl, config::get_host_origin());
+            $PAGE->requires->js_call_amd('format_rumbos/host', 'init', [[
+                'courseId' => (int) $courseid,
+                'appOrigin' => app_url::origin($appurl),
+                'mode' => has_capability('format/rumbos:editmap', $context) ? 'editor' : 'student',
+                'locale' => str_replace('_', '-', current_language()),
+                'timeoutMs' => 8000,
+            ]]);
+        }
 
         return $data;
     }

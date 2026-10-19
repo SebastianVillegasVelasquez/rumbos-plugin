@@ -1,0 +1,61 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template format_rumbos/embed
+
+    The Rumbos iframe and the elements the host JavaScript module drives.
+
+    The sandbox allows only what the app needs:
+      - allow-scripts: the app is a JavaScript application.
+      - allow-same-origin: without it the document has an opaque origin, so
+        every postMessage would arrive with origin "null" and the host could
+        not verify who is talking. This is safe only because the app is
+        required to be on a different origin than Moodle (see
+        format_rumbos\local\config::is_usable()).
+    Everything else stays blocked: no forms, popups, modals, downloads,
+    top navigation or pointer lock. Navigation to an activity is done by the
+    host, from its own state.
+
+    Example context (json):
+    {
+        "courseid": 2,
+        "embedurl": "https://rumbos.example.com/embed?host=https%3A%2F%2Flms.example.com"
+    }
+}}
+<a class="sr-only sr-only-focusable btn btn-link" href="#format-rumbos-list">
+    {{#str}} skipmap, format_rumbos {{/str}}
+</a>
+<div class="format-rumbos-container mb-3"
+     data-region="rumbos-container"
+     data-courseid="{{courseid}}"
+     role="region"
+     aria-label="{{#str}} containerlabel, format_rumbos {{/str}}">
+    <div class="alert alert-warning d-none mb-2" role="alert" data-region="rumbos-notice"></div>
+    <div class="format-rumbos-frame-wrap" data-region="rumbos-frame-wrap">
+        <button type="button" class="btn btn-secondary format-rumbos-exit" data-action="rumbos-exit-fullscreen" hidden>
+            {{#str}} exitfullscreen, format_rumbos {{/str}}
+        </button>
+        <iframe class="format-rumbos-frame"
+                data-region="rumbos-frame"
+                src="{{embedurl}}"
+                title="{{#str}} frametitle, format_rumbos {{/str}}"
+                referrerpolicy="no-referrer"
+                allow="fullscreen"
+                sandbox="allow-scripts allow-same-origin"
+                loading="eager"></iframe>
+    </div>
+</div>
