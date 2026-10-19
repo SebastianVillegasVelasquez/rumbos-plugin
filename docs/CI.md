@@ -99,12 +99,16 @@ source dev/env.sh
 mdc exec -T webserver php public/admin/tool/phpunit/cli/init.php        # once
 mdc exec -T webserver vendor/bin/phpunit --testsuite format_rumbos_testsuite
 mdc exec -T webserver php public/admin/tool/behat/cli/init.php          # once
+# The CI runs Behat in a stricter mode that fails on deprecated Bootstrap 4 classes.
+# Without this step the scenarios can pass locally and still fail in the CI.
+mdc exec -T webserver php public/admin/tool/behat/cli/util_single_run.php \
+  --enable --add-core-features-to-theme --scss-deprecations
 mdc exec -T webserver vendor/bin/behat \
   --config /var/www/behatdata/behatrun/behat/behat.yml --tags @format_rumbos
 ```
 
-On this setup the 75 PHPUnit tests take about 30 seconds and the five Behat
-scenarios about 70 seconds. PHPUnit needs its `init.php` again whenever the plugin
+On this setup the 75 PHPUnit tests take about 30 seconds and the Behat scenarios
+between 70 seconds and 2.5 minutes (the strict mode adds the core theme features). PHPUnit needs its `init.php` again whenever the plugin
 version or the container changes.
 
 The CI also reruns failed Behat scenarios twice, so the summary at the end of the
