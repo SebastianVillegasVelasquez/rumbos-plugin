@@ -32,4 +32,23 @@ class config {
     public static function is_enabled(): bool {
         return (bool) get_config('format_rumbos', 'enabled');
     }
+
+    /**
+     * The configured app URL (normalised), or null when unset or invalid.
+     *
+     * @return string|null
+     */
+    public static function get_app_url(): ?string {
+        return app_url::normalize((string) get_config('format_rumbos', 'appurl'));
+    }
+
+    /**
+     * Audience claim for launch assertions.
+     *
+     * @return string
+     */
+    public static function get_audience(): string {
+        $audience = (string) get_config('format_rumbos', 'audience');
+        return $audience === '' ? 'rumbos' : $audience;
+    }
 }
