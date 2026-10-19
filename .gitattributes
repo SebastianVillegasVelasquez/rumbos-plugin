@@ -5,3 +5,15 @@
 *.jpg binary
 *.gif binary
 *.zip binary
+
+# Files that are not part of the installable plugin. `git archive` (and so
+# scripts/build-zip.sh) leaves them out.
+/.editorconfig export-ignore
+/.gitattributes export-ignore
+/.github export-ignore
+/.gitignore export-ignore
+/dev export-ignore
+/docs export-ignore
+/package.json export-ignore
+/scripts export-ignore
+/tests/js export-ignore
