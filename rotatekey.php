@@ -29,7 +29,7 @@ admin_externalpage_setup('format_rumbos_rotatekey');
 
 $settingsurl = new moodle_url('/admin/settings.php', ['section' => 'formatsettingrumbos']);
 
-// "reset" replaces the HMAC secret too: only for when the stored secrets cannot be decrypted.
+// A reset also replaces the HMAC secret: only for when the stored secrets cannot be decrypted.
 $reset = optional_param('reset', 0, PARAM_BOOL);
 
 if (optional_param('confirm', 0, PARAM_BOOL)) {
