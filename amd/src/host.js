@@ -161,6 +161,7 @@ class RumbosHost {
                     state,
                 }));
                 this.setState('ready');
+                return true;
             })
             .catch((error) => this.fail(error));
     }
