@@ -72,7 +72,23 @@ class app_url {
      */
     public static function origin(string $url): string {
         $parts = parse_url($url);
-        return $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');
+        $scheme = strtolower($parts['scheme']);
+        $port = $parts['port'] ?? null;
+        if (($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80)) {
+            $port = null;
+        }
+        return $scheme . '://' . strtolower($parts['host']) . ($port !== null ? ':' . $port : '');
+    }
+
+    /**
+     * Whether two URLs share the same origin.
+     *
+     * @param string $url
+     * @param string $other
+     * @return bool
+     */
+    public static function is_same_origin(string $url, string $other): bool {
+        return self::origin($url) === self::origin($other);
     }
 
     /**

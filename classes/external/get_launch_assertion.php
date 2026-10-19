@@ -60,7 +60,7 @@ class get_launch_assertion extends external_api {
         $context = context_course::instance($params['courseid']);
         self::validate_context($context);
 
-        if (!config::is_enabled() || config::get_app_url() === null) {
+        if (!config::is_usable()) {
             throw new \moodle_exception('errornotenabled', 'format_rumbos');
         }
         if (course_get_format($params['courseid'])->get_format() !== 'rumbos') {

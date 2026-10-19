@@ -48,11 +48,17 @@ class setting_appurl extends \admin_setting_configtext {
      * @return true|string True when valid, an error message otherwise.
      */
     public function validate($data) {
+        global $CFG;
+
         if (trim($data) === '') {
             return true;
         }
-        if (app_url::normalize($data) === null) {
+        $normalised = app_url::normalize($data);
+        if ($normalised === null) {
             return get_string('errorappurl', 'format_rumbos');
+        }
+        if (app_url::is_same_origin($normalised, $CFG->wwwroot)) {
+            return get_string('errorappurlsameorigin', 'format_rumbos');
         }
         return true;
     }
@@ -66,11 +72,11 @@ class setting_appurl extends \admin_setting_configtext {
     public function write_setting($data) {
         $data = trim($data);
         if ($data !== '') {
-            $normalised = app_url::normalize($data);
-            if ($normalised === null) {
-                return get_string('errorappurl', 'format_rumbos');
+            $valid = $this->validate($data);
+            if ($valid !== true) {
+                return $valid;
             }
-            $data = $normalised;
+            $data = app_url::normalize($data);
         }
         return parent::write_setting($data);
     }

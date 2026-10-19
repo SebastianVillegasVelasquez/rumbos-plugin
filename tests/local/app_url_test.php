@@ -94,6 +94,17 @@ final class app_url_test extends \advanced_testcase {
     }
 
     /**
+     * Origins ignore default ports and case, and compare scheme, host and port.
+     */
+    public function test_same_origin(): void {
+        $this->assertTrue(app_url::is_same_origin('https://LMS.example.com:443/a', 'https://lms.example.com/b'));
+        $this->assertTrue(app_url::is_same_origin('http://lms.example.com:80', 'http://lms.example.com'));
+        $this->assertFalse(app_url::is_same_origin('https://lms.example.com', 'https://rumbos.example.com'));
+        $this->assertFalse(app_url::is_same_origin('https://lms.example.com', 'http://lms.example.com'));
+        $this->assertFalse(app_url::is_same_origin('https://lms.example.com:8443', 'https://lms.example.com'));
+    }
+
+    /**
      * The embed URL follows the contract exactly and encodes the host.
      */
     public function test_embed_url(): void {

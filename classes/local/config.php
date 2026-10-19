@@ -43,6 +43,35 @@ class config {
     }
 
     /**
+     * Whether Rumbos can be shown: enabled, with a valid app URL on another origin.
+     *
+     * The app must not share the origin of Moodle: the iframe sandbox needs
+     * allow-same-origin together with allow-scripts, which would let a
+     * same-origin page lift its own sandbox.
+     *
+     * @return bool
+     */
+    public static function is_usable(): bool {
+        global $CFG;
+
+        $appurl = self::get_app_url();
+        return self::is_enabled()
+            && $appurl !== null
+            && !app_url::is_same_origin($appurl, $CFG->wwwroot);
+    }
+
+    /**
+     * Origin of this Moodle site, as the app sees it in the host parameter.
+     *
+     * @return string
+     */
+    public static function get_host_origin(): string {
+        global $CFG;
+
+        return app_url::origin($CFG->wwwroot);
+    }
+
+    /**
      * Audience claim for launch assertions.
      *
      * @return string
