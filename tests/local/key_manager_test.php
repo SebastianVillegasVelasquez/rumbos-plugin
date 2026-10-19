@@ -109,6 +109,51 @@ final class key_manager_test extends \advanced_testcase {
     }
 
     /**
+     * Freshly generated secrets are healthy.
+     */
+    public function test_keys_are_healthy_when_decryptable(): void {
+        $this->assertTrue(key_manager::is_healthy());
+    }
+
+    /**
+     * Secrets that cannot be decrypted (the encryption key file was lost) raise a clear error.
+     */
+    public function test_undecryptable_secrets_raise_an_actionable_error(): void {
+        key_manager::ensure_initialised();
+        // Simulate secrets encrypted with a key file that no longer exists.
+        set_config('privatekey', base64_encode(random_bytes(80)), 'format_rumbos');
+        set_config('hmacsecret', base64_encode(random_bytes(80)), 'format_rumbos');
+
+        $this->assertFalse(key_manager::is_healthy());
+        try {
+            key_manager::get_hmac_secret();
+            $this->fail('Expected an exception');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('errorkeydecrypt', $e->errorcode);
+        }
+        $this->expectException(\moodle_exception::class);
+        key_manager::get_private_key();
+    }
+
+    /**
+     * Plain rotation does not heal undecryptable secrets, but a full reset does.
+     */
+    public function test_reset_all_heals_undecryptable_secrets_and_changes_pseudonyms(): void {
+        $user = $this->getDataGenerator()->create_user();
+        $before = pseudonym::for_user($user->id);
+        set_config('hmacsecret', base64_encode(random_bytes(80)), 'format_rumbos');
+        $this->assertFalse(key_manager::is_healthy());
+
+        key_manager::rotate();
+        $this->assertFalse(key_manager::is_healthy(), 'rotation alone cannot fix the HMAC secret');
+
+        key_manager::reset_all();
+
+        $this->assertTrue(key_manager::is_healthy());
+        $this->assertNotSame($before, pseudonym::for_user($user->id));
+    }
+
+    /**
      * The pseudonym matches the contract: 32 lowercase hex of HMAC-SHA256.
      */
     public function test_pseudonym_follows_the_contract(): void {

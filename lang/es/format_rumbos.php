@@ -34,6 +34,7 @@ $string['enabled'] = 'Habilitar Rumbos';
 $string['enabled_desc'] = 'Interruptor general. Si está desactivado, las páginas de curso Rumbos muestran solo el contenido estándar de Moodle.';
 $string['errorappurl'] = 'Introduzca una dirección https:// válida, sin credenciales, parámetros de consulta ni fragmento.';
 $string['errorappurlsameorigin'] = 'La aplicación Rumbos debe servirse desde un origen distinto al de Moodle.';
+$string['errorkeydecrypt'] = 'Las claves de firma de Rumbos no se pueden descifrar con la clave de cifrado de este sitio. Probablemente se perdió o se reemplazó el archivo de clave de cifrado (dataroot/secret). Un administrador debe restablecer las claves de Rumbos.';
 $string['errorkeygeneration'] = 'No se pudo generar el par de claves de firma. Compruebe que la extensión OpenSSL de PHP está disponible.';
 $string['errornotenabled'] = 'Esta acción de Rumbos no está disponible: Rumbos está desactivado o no se ha configurado la URL de la aplicación.';
 $string['errornotrumbos'] = 'Este curso no usa el formato Rumbos.';

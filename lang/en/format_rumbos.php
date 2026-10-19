@@ -34,6 +34,7 @@ $string['enabled'] = 'Enable Rumbos';
 $string['enabled_desc'] = 'Master switch. When off, Rumbos course pages show only the standard Moodle content.';
 $string['errorappurl'] = 'Enter a valid https:// address without credentials, query string or fragment.';
 $string['errorappurlsameorigin'] = 'The Rumbos app must be served from a different origin than Moodle.';
+$string['errorkeydecrypt'] = 'The Rumbos signing keys cannot be decrypted with this site\'s encryption key. The encryption key file (dataroot/secret) was probably lost or replaced. An administrator must reset the Rumbos keys.';
 $string['errorkeygeneration'] = 'The signing key pair could not be generated. Check that the PHP OpenSSL extension is available.';
 $string['errornotenabled'] = 'This Rumbos action is not available: Rumbos is disabled or the app URL is not configured.';
 $string['errornotrumbos'] = 'This course does not use the Rumbos format.';

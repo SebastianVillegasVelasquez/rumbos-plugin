@@ -59,6 +59,37 @@ class key_manager {
     }
 
     /**
+     * Whether the stored secrets can be decrypted with this site's encryption key.
+     *
+     * They cannot when Moodle's encryption key file (in dataroot/secret) was lost or
+     * replaced, for example by restoring the database without it. Rotation does not
+     * help in that case, because the HMAC secret is unreadable too: see reset_all().
+     *
+     * @return bool
+     */
+    public static function is_healthy(): bool {
+        try {
+            self::get_private_key();
+            self::get_hmac_secret();
+            return true;
+        } catch (\moodle_exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Replaces the key pair AND the HMAC secret.
+     *
+     * Last resort when the stored secrets cannot be decrypted. Every pseudonymous
+     * id changes, so the Rumbos service sees all users as new. Normal key rotation
+     * keeps the HMAC secret and does not have this effect.
+     */
+    public static function reset_all(): void {
+        self::generate_key_pair();
+        set_config('hmacsecret', encryption::encrypt(bin2hex(random_bytes(32))), self::COMPONENT);
+    }
+
+    /**
      * PEM encoded public key.
      *
      * @return string
@@ -85,7 +116,7 @@ class key_manager {
      */
     public static function get_private_key(): string {
         self::ensure_initialised();
-        return encryption::decrypt(self::stored('privatekey'));
+        return self::decrypt_stored('privatekey');
     }
 
     /**
@@ -95,7 +126,22 @@ class key_manager {
      */
     public static function get_hmac_secret(): string {
         self::ensure_initialised();
-        return encryption::decrypt(self::stored('hmacsecret'));
+        return self::decrypt_stored('hmacsecret');
+    }
+
+    /**
+     * Decrypts a stored secret, turning a decryption failure into an actionable error.
+     *
+     * @param string $name Config name of the encrypted value.
+     * @return string
+     * @throws \moodle_exception With errorkeydecrypt when it cannot be decrypted.
+     */
+    private static function decrypt_stored(string $name): string {
+        try {
+            return encryption::decrypt(self::stored($name));
+        } catch (\moodle_exception $e) {
+            throw new \moodle_exception('errorkeydecrypt', 'format_rumbos');
+        }
     }
 
     /**
