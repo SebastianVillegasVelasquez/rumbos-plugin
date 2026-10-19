@@ -60,16 +60,22 @@ below).
 
 ## Running the checks locally
 
-Moodle core and `moodle-docker` live outside this repository (`dev/setup.sh`).
-`moodle-plugin-ci` also bundles the Moodle code standard:
+`dev/setup.sh` builds a moodle-docker site whose Moodle code lives in the Docker
+volume `rumbos_moodle` (see `dev/env.sh` for why a volume and not a bind mount).
+Run the commands below from the repository root in Git Bash; `MSYS_NO_PATHCONV=1`
+stops Git Bash from rewriting container paths.
+
+Everything the CI checks can be run locally with the same flags. Run the
+**strict** forms: an earlier version of this page ran grunt without
+`--max-lint-warnings 0` and missed a lint warning that then failed the CI.
 
 ```sh
-# Once: install moodle-plugin-ci next to Moodle.
+export MSYS_NO_PATHCONV=1
+
+# Code standard and PHPDoc. moodle-plugin-ci bundles them; no output means clean.
 docker run --rm -v "$PWD/..:/work" -w /work composer:2 \
   create-project -n --no-dev --prefer-dist --ignore-platform-reqs \
-  moodlehq/moodle-plugin-ci ci ^4
-
-# Code standard and PHPDoc (run from the plugin root; no output means clean).
+  moodlehq/moodle-plugin-ci ci ^4                       # once
 docker run --rm -v "$PWD/../ci:/ci" -v "$PWD:/plugin" -w /plugin composer:2 \
   /ci/vendor/bin/phpcs --standard=moodle --extensions=php --ignore=amd/build,node_modules .
 docker run --rm -v "$PWD/../ci:/ci" -v "$PWD:/plugin" -w /plugin composer:2 \
@@ -78,12 +84,28 @@ docker run --rm -v "$PWD/../ci:/ci" -v "$PWD:/plugin" -w /plugin composer:2 \
 # JavaScript protocol tests (plain Node, no dependencies).
 pnpm test
 
-# Rebuild amd/build. Moodle needs Node 22, so use a container.
-docker run --rm -v "<moodle>:/app" -v "$PWD:/app/public/course/format/rumbos" \
-  -w /app/public/course/format/rumbos/amd node:22 npx grunt amd
+# Grunt: ESLint and the AMD build, stylelint and gherkin-lint. Moodle needs
+# Node 22, so use a container. Install the dependencies once:
+docker run --rm -v rumbos_moodle:/app -w /app node:22 npm ci
+GRUNT="docker run --rm -v rumbos_moodle:/app -v $PWD:/app/public/course/format/rumbos"
+$GRUNT -w /app/public/course/format/rumbos/amd node:22 npx grunt amd --max-lint-warnings=0
+$GRUNT -w /app/public/course/format/rumbos node:22 npx grunt stylelint:css gherkinlint --max-lint-warnings=0
+git status --short amd/build                           # must be empty: the build is committed
 
-# PHPUnit and Behat run inside the moodle-docker web container (dev/env.sh).
+# PHPUnit and Behat run in the web container. moodle-docker-compose needs Git
+# Bash to convert paths, so switch the variable off again for these commands.
+unset MSYS_NO_PATHCONV
+source dev/env.sh
+mdc exec -T webserver php public/admin/tool/phpunit/cli/init.php        # once
+mdc exec -T webserver vendor/bin/phpunit --testsuite format_rumbos_testsuite
+mdc exec -T webserver php public/admin/tool/behat/cli/init.php          # once
+mdc exec -T webserver vendor/bin/behat \
+  --config /var/www/behatdata/behatrun/behat/behat.yml --tags @format_rumbos
 ```
 
-PHPUnit needs `php public/admin/tool/phpunit/cli/init.php` once, and again whenever
-the plugin version or the container changes.
+On this setup the 75 PHPUnit tests take about 30 seconds and the five Behat
+scenarios about 70 seconds. PHPUnit needs its `init.php` again whenever the plugin
+version or the container changes.
+
+The CI also reruns failed Behat scenarios twice, so the summary at the end of the
+log can describe only the rerun, not the first pass.
