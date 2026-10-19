@@ -18,6 +18,7 @@ namespace format_rumbos\output\courseformat;
 
 use core\context\course as context_course;
 use core_courseformat\output\local\content as content_base;
+use format_rumbos\local\access;
 use format_rumbos\local\config;
 use renderer_base;
 
@@ -53,8 +54,7 @@ class content extends content_base {
         $data = parent::export_for_template($output);
 
         $context = context_course::instance($this->format->get_courseid());
-        $showrumbos = config::is_enabled()
-            && (is_enrolled($context, null, '', true) || has_capability('format/rumbos:editmap', $context));
+        $showrumbos = config::is_enabled() && access::can_use($context);
 
         $data->showrumbos = $showrumbos;
         $data->courseid = $this->format->get_courseid();
