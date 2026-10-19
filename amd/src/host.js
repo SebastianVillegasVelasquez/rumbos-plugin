@@ -31,6 +31,7 @@ import {getString} from 'core/str';
 import {
     MESSAGE,
     findActivityUrl,
+    hostFullscreen,
     hostInit,
     hostLaunch,
     hostState,
@@ -126,7 +127,12 @@ class RumbosHost {
                 this.openActivity(message.cmid);
                 break;
             case MESSAGE.REQUEST_FULLSCREEN:
-                this.setFullscreen(message.on);
+                // The app follows the host's state: reply with what actually happened (false when denied).
+                this.setFullscreen(message.on, false);
+                this.send(hostFullscreen(this.fullscreen));
+                break;
+            case MESSAGE.ERROR:
+                this.degrade('apperror', message.code, message.detail);
                 break;
         }
     }
@@ -198,8 +204,9 @@ class RumbosHost {
      * Toggles the full screen overlay (CSS based: iOS Safari has no Fullscreen API for arbitrary elements).
      *
      * @param {boolean} on
+     * @param {boolean} notify Tell the app the new state (every change is reported, whoever caused it).
      */
-    setFullscreen(on) {
+    setFullscreen(on, notify = true) {
         if (on === this.fullscreen || !this.frameWrap) {
             return;
         }
@@ -234,6 +241,10 @@ class RumbosHost {
             }
             this.returnFocus = null;
         }
+
+        if (notify) {
+            this.send(hostFullscreen(on));
+        }
     }
 
     /**
@@ -260,9 +271,11 @@ class RumbosHost {
      * Students are never left on a blank page; teachers also get a notice
      * explaining what happened.
      *
-     * @param {string} reason "timeout" or "error"
+     * @param {string} reason "timeout", "error" (a host call failed) or "apperror" (the app reported an error)
+     * @param {string} code Error code reported by the app, for "apperror".
+     * @param {string} detail Untrusted text reported by the app; only ever rendered with textContent.
      */
-    degrade(reason) {
+    degrade(reason, code = '', detail = '') {
         if (this.degraded) {
             return;
         }
@@ -279,9 +292,12 @@ class RumbosHost {
         }
 
         if (this.mode === 'editor' && this.notice) {
-            getString(reason === 'timeout' ? 'fallback_timeout' : 'fallback_error', 'format_rumbos')
+            const request = reason === 'apperror' ?
+                getString('fallback_apperror', 'format_rumbos', code) :
+                getString(reason === 'timeout' ? 'fallback_timeout' : 'fallback_error', 'format_rumbos');
+            request
                 .then((text) => {
-                    this.notice.textContent = text;
+                    this.notice.textContent = detail ? `${text} ${detail}` : text;
                     this.notice.classList.remove(CLASSES.HIDDEN);
                     return text;
                 })

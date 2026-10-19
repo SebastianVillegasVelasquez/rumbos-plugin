@@ -38,6 +38,7 @@ $string['errorkeygeneration'] = 'The signing key pair could not be generated. Ch
 $string['errornotenabled'] = 'This Rumbos action is not available: Rumbos is disabled or the app URL is not configured.';
 $string['errornotrumbos'] = 'This course does not use the Rumbos format.';
 $string['exitfullscreen'] = 'Exit full screen';
+$string['fallback_apperror'] = 'Rumbos reported an error (code: {$a}). Students are seeing the standard course content.';
 $string['fallback_error'] = 'Rumbos could not be loaded for this course because the service returned an error. Students are seeing the standard course content.';
 $string['fallback_timeout'] = 'Rumbos did not respond in time. Students are seeing the standard course content. Check the app URL and the proxy or CSP settings of this site.';
 $string['frametitle'] = 'Rumbos: interactive course map';

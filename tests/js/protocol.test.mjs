@@ -22,8 +22,11 @@
 import assert from 'node:assert/strict';
 import {describe, it} from 'node:test';
 import {
+    ERROR_CODES,
+    MAX_DETAIL_LENGTH,
     MESSAGE,
     findActivityUrl,
+    hostFullscreen,
     hostInit,
     hostLaunch,
     hostState,
@@ -113,6 +116,52 @@ describe('parseAppMessage', () => {
     });
 });
 
+describe('rumbos:error (contract v5.1)', () => {
+    const error = (extra) => fromApp({type: MESSAGE.ERROR, v: 1, ...extra});
+
+    it('accepts every documented code', () => {
+        for (const code of ERROR_CODES) {
+            assert.deepEqual(parseAppMessage(error({code}), expected), {type: MESSAGE.ERROR, code, detail: ''});
+        }
+        assert.deepEqual(ERROR_CODES, ['launch_failed', 'token_refresh_failed', 'app_crashed', 'protocol_unsupported']);
+    });
+
+    it('keeps the detail as plain text', () => {
+        const parsed = parseAppMessage(error({code: 'app_crashed', detail: '<img src=x onerror=alert(1)>'}), expected);
+        // Kept verbatim as text: the host renders it with textContent only, never as HTML.
+        assert.equal(parsed.detail, '<img src=x onerror=alert(1)>');
+    });
+
+    it('truncates a detail longer than 200 characters', () => {
+        const parsed = parseAppMessage(error({code: 'app_crashed', detail: 'x'.repeat(500)}), expected);
+        assert.equal(parsed.detail.length, MAX_DETAIL_LENGTH);
+        assert.equal(MAX_DETAIL_LENGTH, 200);
+    });
+
+    it('flattens control characters and newlines in the detail', () => {
+        const detail = 'a\nb\u0000c\u001b[31m';
+        const parsed = parseAppMessage(error({code: 'app_crashed', detail}), expected);
+        assert.equal(parsed.detail, 'a b c [31m');
+    });
+
+    it('ignores a detail that is not a string', () => {
+        for (const detail of [42, {}, [], null, true]) {
+            assert.equal(parseAppMessage(error({code: 'app_crashed', detail}), expected).detail, '');
+        }
+    });
+
+    it('rejects unknown, missing or non-string codes', () => {
+        for (const code of ['boom', '', undefined, null, 7, ['app_crashed'], 'APP_CRASHED']) {
+            assert.equal(parseAppMessage(error({code}), expected), null, String(code));
+        }
+    });
+
+    it('rejects an error from the wrong sender', () => {
+        const forged = fromApp({type: MESSAGE.ERROR, v: 1, code: 'app_crashed'}, {origin: 'https://evil.example.com'});
+        assert.equal(parseAppMessage(forged, expected), null);
+    });
+});
+
 describe('message builders', () => {
     it('always include the protocol version', () => {
         assert.equal(hostInit({}).v, 1);
@@ -126,6 +175,11 @@ describe('message builders', () => {
             hostInit({mode: 'editor', locale: 'es', courseId: 2, assertion: 'jws', state}),
             {type: 'rumbos:host-init', v: 1, mode: 'editor', locale: 'es', courseId: 2, assertion: 'jws', state},
         );
+    });
+
+    it('build host-fullscreen with the exact boolean', () => {
+        assert.deepEqual(hostFullscreen(true), {type: 'rumbos:host-fullscreen', v: 1, on: true});
+        assert.deepEqual(hostFullscreen(false), {type: 'rumbos:host-fullscreen', v: 1, on: false});
     });
 
     it('build host-state and host-launch', () => {

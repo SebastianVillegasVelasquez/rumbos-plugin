@@ -32,10 +32,18 @@ export const MESSAGE = {
     REQUEST_LAUNCH: 'rumbos:request-launch',
     OPEN_ACTIVITY: 'rumbos:open-activity',
     REQUEST_FULLSCREEN: 'rumbos:request-fullscreen',
+    ERROR: 'rumbos:error',
     HOST_INIT: 'rumbos:host-init',
     HOST_STATE: 'rumbos:host-state',
     HOST_LAUNCH: 'rumbos:host-launch',
+    HOST_FULLSCREEN: 'rumbos:host-fullscreen',
 };
+
+/** Error codes the app may report (contract v5.1). */
+export const ERROR_CODES = ['launch_failed', 'token_refresh_failed', 'app_crashed', 'protocol_unsupported'];
+
+/** Maximum length of the untrusted error detail. */
+export const MAX_DETAIL_LENGTH = 200;
 
 /**
  * Whether a value is a plain JSON-like object (not null, array or class instance).
@@ -44,6 +52,22 @@ export const MESSAGE = {
  * @returns {boolean}
  */
 const isPlainObject = (value) => Object.prototype.toString.call(value) === '[object Object]';
+
+/**
+ * Reduces the untrusted error detail to a short single line of text.
+ *
+ * It is still untrusted: callers must only ever render it with textContent.
+ *
+ * @param {*} detail
+ * @returns {string} Empty when there is no usable detail.
+ */
+const cleanDetail = (detail) => {
+    if (typeof detail !== 'string') {
+        return '';
+    }
+    // eslint-disable-next-line no-control-regex
+    return detail.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim().slice(0, MAX_DETAIL_LENGTH);
+};
 
 /**
  * Validates a message event coming from the app.
@@ -74,6 +98,10 @@ export const parseAppMessage = (event, {appOrigin, frameWindow}) => {
             return Number.isSafeInteger(data.cmid) && data.cmid > 0 ? {type: data.type, cmid: data.cmid} : null;
         case MESSAGE.REQUEST_FULLSCREEN:
             return typeof data.on === 'boolean' ? {type: data.type, on: data.on} : null;
+        case MESSAGE.ERROR:
+            return ERROR_CODES.includes(data.code)
+                ? {type: data.type, code: data.code, detail: cleanDetail(data.detail)}
+                : null;
         default:
             return null;
     }
@@ -110,6 +138,14 @@ export const hostState = (state) => ({type: MESSAGE.HOST_STATE, v: PROTOCOL_VERS
  * @returns {Object}
  */
 export const hostLaunch = (assertion) => ({type: MESSAGE.HOST_LAUNCH, v: PROTOCOL_VERSION, assertion});
+
+/**
+ * The host-fullscreen message: the host's actual fullscreen state.
+ *
+ * @param {boolean} on
+ * @returns {Object}
+ */
+export const hostFullscreen = (on) => ({type: MESSAGE.HOST_FULLSCREEN, v: PROTOCOL_VERSION, on});
 
 /**
  * Finds the URL to open for an activity, using ONLY the host's own last state.

@@ -38,6 +38,7 @@ $string['errorkeygeneration'] = 'No se pudo generar el par de claves de firma. C
 $string['errornotenabled'] = 'Esta acción de Rumbos no está disponible: Rumbos está desactivado o no se ha configurado la URL de la aplicación.';
 $string['errornotrumbos'] = 'Este curso no usa el formato Rumbos.';
 $string['exitfullscreen'] = 'Salir de pantalla completa';
+$string['fallback_apperror'] = 'Rumbos informó de un error (código: {$a}). Los estudiantes ven el contenido estándar del curso.';
 $string['fallback_error'] = 'No se pudo cargar Rumbos en este curso porque el servicio devolvió un error. Los estudiantes ven el contenido estándar del curso.';
 $string['fallback_timeout'] = 'Rumbos no respondió a tiempo. Los estudiantes ven el contenido estándar del curso. Revise la URL de la aplicación y la configuración del proxy o de la CSP de este sitio.';
 $string['frametitle'] = 'Rumbos: mapa interactivo del curso';
