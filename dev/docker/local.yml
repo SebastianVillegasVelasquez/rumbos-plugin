@@ -5,3 +5,4 @@ services:
   webserver:
     volumes:
       - "${RUMBOS_PLUGIN_DIR}:/var/www/html/public/course/format/rumbos"
+      - "${RUMBOS_PLUGIN_DIR}/dev/docker/opcache.ini:/usr/local/etc/php/conf.d/zz-rumbos-opcache.ini:ro"
