@@ -3,7 +3,8 @@ name: CI
 # The repository is private, so Actions minutes are limited (2,000 a month on a free
 # plan). To keep the bill small this workflow:
 #   - runs on pushes to main and on pull requests only (not on every branch push);
-#   - skips changes that only touch documentation or the dev environment;
+#   - skips changes that only touch documentation, the dev environment or the
+#     ZIP build script;
 #   - cancels a run that a newer push has made obsolete;
 #   - uses four hand-picked Moodle/PHP/database combinations instead of the full
 #     cross product, and runs the slow Behat suite in two of them.
@@ -15,11 +16,15 @@ on:
       - '**.md'
       - 'docs/**'
       - 'dev/**'
+      - 'scripts/**'
+      - '.gitattributes'
   pull_request:
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'dev/**'
+      - 'scripts/**'
+      - '.gitattributes'
   workflow_dispatch:
 
 concurrency:
