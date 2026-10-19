@@ -24,10 +24,28 @@
 
 defined('MOODLE_INTERNAL') || die();
 
+$string['appurl'] = 'URL de la aplicación Rumbos';
+$string['appurl_desc'] = 'Dirección HTTPS de la aplicación Rumbos, por ejemplo https://rumbos.example.com. La página del curso incrusta su página /embed en un iframe. No se aceptan parámetros de consulta ni credenciales.';
+$string['audience'] = 'Audiencia';
+$string['audience_desc'] = 'Valor del claim aud en las aserciones de lanzamiento. El backend de Rumbos debe estar configurado con el mismo valor.';
 $string['containerlabel'] = 'Mapa del curso Rumbos';
+$string['copykey'] = 'Copiar clave pública';
+$string['enabled'] = 'Habilitar Rumbos';
+$string['enabled_desc'] = 'Interruptor general. Si está desactivado, las páginas de curso Rumbos muestran solo el contenido estándar de Moodle.';
+$string['errorappurl'] = 'Introduzca una dirección https:// válida, sin credenciales, parámetros de consulta ni fragmento.';
+$string['errorkeygeneration'] = 'No se pudo generar el par de claves de firma. Compruebe que la extensión OpenSSL de PHP está disponible.';
+$string['errornotenabled'] = 'Esta acción de Rumbos no está disponible: Rumbos está desactivado o no se ha configurado la URL de la aplicación.';
+$string['errornotrumbos'] = 'Este curso no usa el formato Rumbos.';
+$string['keycopied'] = 'Clave pública copiada';
+$string['keyrotated'] = 'Se generó una nueva clave de firma. Registre la nueva clave pública en el backend de Rumbos; los accesos fallarán hasta que lo haga.';
+$string['kid'] = 'ID de clave';
 $string['newsection'] = 'Nueva sección';
 $string['pluginname'] = 'Rumbos';
 $string['privacy:metadata'] = 'El plugin de formato de curso Rumbos no almacena datos personales.';
+$string['publickey'] = 'Clave pública';
+$string['publickey_desc'] = 'Registre esta clave en el backend de Rumbos para confiar en las aserciones de lanzamiento de este sitio. Es seguro compartirla; la clave privada nunca sale de Moodle.';
+$string['rotatekey'] = 'Rotar clave';
+$string['rotatekey_confirm'] = '¿Generar un nuevo par de claves de firma? La clave pública actual deja de funcionar de inmediato y Rumbos rechazará los accesos de este sitio hasta que registre la nueva clave pública en el backend.';
 $string['rumbos:editmap'] = 'Editar el mapa de Rumbos';
 $string['section0name'] = 'General';
 $string['showactivitylist'] = 'Ver la lista de actividades';
