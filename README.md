@@ -26,9 +26,13 @@ Moodle:
 2. The launch assertion is a short-lived JWS signed with a key that belongs to the
    Moodle site. It tells the Rumbos service who is asking and with which role. The
    service verifies it with the site's public key.
-3. When the app asks to open an activity, the page opens it in the same tab. The page
-   only follows URLs found in its own copy of the course state, never a URL supplied
-   by the app.
+3. When the app asks to open an activity, the page opens it in a popup over the map
+   (see [Activity popups](#activity-popups)), or in a new tab for the modules listed in
+   the settings. The page only follows URLs found in its own copy of the course state,
+   never a URL supplied by the app.
+4. The map editor appears only for users who hold `format/rumbos:editmap` **and** have
+   Moodle's editing mode on ("Turn editing on"). With editing off a teacher sees the
+   map as students do, with a note to turn editing on.
 
 If the app does not answer within 8 seconds, or reports an error, the iframe is
 removed and the standard course content is shown, so users never lose access to their
@@ -66,7 +70,9 @@ The assertion contains no name, email address or other personal data.
 
 ### From a ZIP file
 
-Build the ZIP from a checkout of this repository:
+Every release (a Git tag such as `v0.2.0`) has its ZIP attached to the GitHub release
+and to the workflow run that built it; see [docs/RELEASE.md](docs/RELEASE.md). To build
+one yourself, from a checkout of this repository:
 
 ```sh
 scripts/build-zip.sh
@@ -105,6 +111,7 @@ Open **Site administration > Plugins > Course formats > Rumbos**.
 | Enable Rumbos | Master switch, off by default. When off, Rumbos courses show only the standard Moodle content. |
 | Rumbos app URL | HTTPS address of the Rumbos app, for example `https://rumbos.example.com`. The value is stored as an origin plus an optional path with no trailing slash. Anything that is not HTTPS is rejected, as are credentials, query strings and fragments. The URL must not be on the same origin as Moodle. |
 | Audience | Value of the `aud` claim. It must match the value configured in the Rumbos service. Default `rumbos`. |
+| Modules that open in a new tab | Comma-separated module names (default `bigbluebuttonbn,lti`) whose activities open in a new tab instead of the popup, because video conferences and external tools usually refuse to run inside a frame. Leave it empty to open everything in the popup. |
 | Registration | Read-only panel with what the Rumbos service needs to know about this site: issuer, host origin, audience, key id, public key and its fingerprint, a registration command, and a diagnostic. See [Registering the site](#registering-the-site-in-the-rumbos-service). |
 
 To use the format, a teacher selects **Rumbos** as the course format in the course
@@ -112,6 +119,28 @@ settings.
 
 The capability `format/rumbos:editmap` decides who is an editor in the app. By default
 it is granted to the editing teacher and manager roles.
+
+### Activity popups
+
+Activities open in a dialog over the map, with the activity title and a visible
+**Back to the map** button. Inside it the activity runs in Moodle's core as usual:
+assignments, quizzes, SCORM, H5P, lessons, forums, pages, files and URLs can be opened,
+used and submitted. When the user leaves (the button, the Escape key, or an activity's
+"Continue" / "Exit activity" that goes to the course page) the popup closes, the course
+state is refreshed and the app gets the new progress.
+
+- The popup hides Moodle's top bar, drawers, breadcrumb and footer, only inside the
+  popup frame.
+- Links in an activity that lead to another website open in a new tab.
+- On small screens the popup fills the screen. It follows the visible viewport, so the
+  on-screen keyboard does not cover it.
+- Moodle sends the `Sec-Fetch-Dest` and `Sec-Fetch-Site` headers that the page hook
+  uses to recognise the popup. If a proxy strips them the activity still works, but with
+  Moodle's full header and drawers inside the popup.
+
+The results of testing every activity type are in [docs/MANUAL-TESTS.md](docs/MANUAL-TESTS.md)
+and the reasoning behind the design in
+[docs/DESIGN-activity-popups.md](docs/DESIGN-activity-popups.md).
 
 ### Rotating the key
 
@@ -270,6 +299,10 @@ report a vulnerability.
 - **Escape leaves full screen only when the focus is on the Moodle page.** Browsers do
   not deliver key presses from inside an iframe to the page that contains it. The
   visible **Exit full screen** button always works.
+- **Escape closes the popup from inside an activity only when nothing in the activity
+  uses it** (an open Moodle dialog keeps it). The **Back to the map** button always works.
+- **The Moodle site must not strip `Sec-Fetch-*` headers** for the popup to look tidy
+  (see [Activity popups](#activity-popups)).
 - Course-level options are not available in this release.
 
 ## Development

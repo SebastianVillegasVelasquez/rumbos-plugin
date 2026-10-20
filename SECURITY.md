@@ -92,9 +92,12 @@ come from the configured app origin **and** from the iframe's own window, that i
 version 1, or whose type or fields are not exactly as expected. In particular:
 
 - `open-activity` carries only an activity id. The page looks it up in its own copy of
-  the user's course state and opens that URL, in the same tab, and only if the
-  activity is not restricted and the URL stays on the Moodle site. The app never
-  supplies a URL.
+  the user's course state. It opens the URL only if the activity is not restricted and
+  the URL is a Moodle URL: in the popup when it is on the page's own origin under
+  `{wwwroot}/mod/` and its module is not in the new-tab list, in a new tab (with
+  `noopener`) for any other Moodle page, and not at all for anything else. Dot segments
+  are resolved before the path is checked, and only `http` and `https` are accepted. The
+  app never supplies a URL.
 - `error` details come from the app and are untrusted. They are shortened to one line
   of at most 200 characters and shown as text, never as HTML.
 - `request-fullscreen` toggles an overlay. The page always shows its own exit button.
@@ -109,6 +112,31 @@ inside the frame.
 
 The Moodle administrator therefore decides which service receives this data. Point the
 plugin only at a service you trust.
+
+## The activity popup
+
+The popup frames a **same-origin** Moodle page from the Moodle page itself, never from
+inside the Rumbos iframe, so the framed page is not a child of a cross-site ancestor and
+keeps its normal cookies.
+
+- **What it validates.** Only URLs from the host's own course state, under
+  `{wwwroot}/mod/`, on the page's origin. The activity title is shown with `textContent`
+  and never as HTML.
+- **No sandbox on the popup frame.** A same-origin page that needs scripts needs
+  `allow-same-origin` too, and the two together give the page no isolation (it can lift
+  the sandbox itself). Chrome also refuses to show a PDF in any sandboxed frame. So the
+  attribute would add no protection and would break file activities. The protection is
+  the URL check above; compare the Rumbos app frame, which is cross-origin and sandboxed.
+- **Messages from the framed page** (`rumbos:popup-leave`, `rumbos:popup-escape`) are
+  accepted only from the popup frame's own window, from this site's origin, and only
+  close the popup. They carry no data.
+- **The page hook** loads the popup script only for same-origin iframe requests (browser
+  headers `Sec-Fetch-Dest: iframe` and `Sec-Fetch-Site: same-origin`, which page scripts
+  cannot forge) on a page of a Rumbos course; the script also checks that the window is
+  named `rumbos-popup`. Every other page is served unchanged. The same check keeps the
+  Rumbos map from being rendered inside the popup.
+- **Links to other sites** inside the popup get `target="_blank"` and `rel="noopener"`,
+  so an external page cannot take over the popup or reach the Moodle page.
 
 ## Keys and secrets
 
