@@ -80,4 +80,17 @@ class config {
         $audience = (string) get_config('format_rumbos', 'audience');
         return $audience === '' ? 'rumbos' : $audience;
     }
+
+    /**
+     * How long the page waits for the app before showing the standard content, in milliseconds.
+     *
+     * It has no admin setting: 8 seconds is right for users. Tests that play the app's part
+     * need longer and raise it with the plugin config value timeoutms.
+     *
+     * @return int
+     */
+    public static function get_app_timeout_ms(): int {
+        $timeout = (int) get_config('format_rumbos', 'timeoutms');
+        return $timeout > 0 ? min($timeout, 300000) : 8000;
+    }
 }

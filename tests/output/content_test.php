@@ -189,6 +189,24 @@ final class content_test extends \advanced_testcase {
     }
 
     /**
+     * The wait for the app is 8 seconds unless a test raises it, and is capped.
+     */
+    public function test_app_timeout(): void {
+        $this->resetAfterTest();
+        unset_config('timeoutms', 'format_rumbos');
+        $this->assertSame(8000, config::get_app_timeout_ms());
+
+        set_config('timeoutms', 120000, 'format_rumbos');
+        $this->assertSame(120000, config::get_app_timeout_ms());
+
+        set_config('timeoutms', 99999999, 'format_rumbos');
+        $this->assertSame(300000, config::get_app_timeout_ms());
+
+        set_config('timeoutms', -5, 'format_rumbos');
+        $this->assertSame(8000, config::get_app_timeout_ms());
+    }
+
+    /**
      * Without the master switch only the standard content renders.
      */
     public function test_disabled_renders_only_the_standard_content(): void {

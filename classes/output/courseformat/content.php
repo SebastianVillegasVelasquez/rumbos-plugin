@@ -80,7 +80,7 @@ class content extends content_base {
                 'appOrigin' => app_url::origin($appurl),
                 'mode' => access::map_mode($context, $editing),
                 'locale' => str_replace('_', '-', current_language()),
-                'timeoutMs' => 8000,
+                'timeoutMs' => config::get_app_timeout_ms(),
                 'wwwroot' => $CFG->wwwroot,
                 'popupFrameName' => popup::FRAME_NAME,
                 'newTabModules' => popup::get_newtab_modules(),
