@@ -110,6 +110,39 @@ class key_manager {
     }
 
     /**
+     * SHA-256 fingerprint of the current public key.
+     *
+     * @return string Lower-case hexadecimal, 64 characters.
+     */
+    public static function get_fingerprint(): string {
+        return self::fingerprint_of(self::get_public_key());
+    }
+
+    /**
+     * SHA-256 fingerprint of a PEM public key: the hash of its DER
+     * SubjectPublicKeyInfo, which is what
+     * `openssl pkey -pubin -outform DER | openssl dgst -sha256` prints.
+     *
+     * An operator can compare it with what the Rumbos service reports for the key.
+     * It is not the key id: the id (kid) is derived differently and is not the
+     * start of this value.
+     *
+     * @param string $publicpem A PEM "PUBLIC KEY" block.
+     * @return string Lower-case hexadecimal, 64 characters.
+     * @throws \coding_exception When the text is not a PEM public key.
+     */
+    public static function fingerprint_of(string $publicpem): string {
+        if (!preg_match('/-----BEGIN PUBLIC KEY-----(.+?)-----END PUBLIC KEY-----/s', $publicpem, $matches)) {
+            throw new \coding_exception('Not a PEM public key');
+        }
+        $der = base64_decode(preg_replace('/\s+/', '', $matches[1]), true);
+        if ($der === false || $der === '') {
+            throw new \coding_exception('Not a PEM public key');
+        }
+        return hash('sha256', $der);
+    }
+
+    /**
      * Decrypted PEM private key. Only the signer should call this.
      *
      * @return string

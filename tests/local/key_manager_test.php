@@ -154,6 +154,60 @@ final class key_manager_test extends \advanced_testcase {
     }
 
     /**
+     * The fingerprint is the SHA-256 of the DER SubjectPublicKeyInfo.
+     *
+     * The vector was produced independently with
+     * `openssl pkey -pubin -outform DER | openssl dgst -sha256`.
+     */
+    public function test_fingerprint_matches_an_independent_openssl_vector(): void {
+        $pem = "-----BEGIN PUBLIC KEY-----\n"
+            . "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmwnP0FuNuIgLoVeJ9+FK\n"
+            . "lGLN+Ie6LHP91G58ZO7vqCo1oyTPhoKN62ynMUm9xpPT7Sj0JOXv+zQcxopHGplc\n"
+            . "nSB1/z7noNrcBFujUd7LnlJ0Y/Yc7tP0IU/wF1ZlIXb57H4Gy10EmA8TJlKx5bm2\n"
+            . "GVt1CvgUM6V3F9ZAOypaxPSXT1pSANEiX0b4HT3VUG6bk+LyANvKaSVm6403o6Hw\n"
+            . "PFy7wpofIw36esy7E4W5fEv3PbcGTV3sckKhE3iaiNBjnk516iAcctCwyKeIPAeX\n"
+            . "dyz8Vz40IEB31Cn+x+HRgVC0oQc+z1Q7i13eBz/F2Hk1qI42DWUnFpLWjfvN5XhW\n"
+            . "KQIDAQAB\n"
+            . "-----END PUBLIC KEY-----\n";
+
+        $this->assertSame(
+            'e1de5fc2e2c6b116be7a8d646463bbfea14eb6e1da043a7d04313932e6366ff9',
+            key_manager::fingerprint_of($pem)
+        );
+    }
+
+    /**
+     * Line breaks and surrounding whitespace do not change the fingerprint.
+     */
+    public function test_fingerprint_ignores_formatting(): void {
+        key_manager::ensure_initialised();
+        $pem = key_manager::get_public_key();
+
+        $this->assertSame(key_manager::fingerprint_of($pem), key_manager::fingerprint_of("\n  " . trim($pem) . "  \r\n"));
+        $this->assertSame(key_manager::fingerprint_of($pem), key_manager::get_fingerprint());
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', key_manager::get_fingerprint());
+    }
+
+    /**
+     * The fingerprint changes when the key is rotated.
+     */
+    public function test_fingerprint_changes_on_rotation(): void {
+        $before = key_manager::get_fingerprint();
+
+        key_manager::rotate();
+
+        $this->assertNotSame($before, key_manager::get_fingerprint());
+    }
+
+    /**
+     * Something that is not a PEM public key is refused.
+     */
+    public function test_fingerprint_of_garbage_is_refused(): void {
+        $this->expectException(\coding_exception::class);
+        key_manager::fingerprint_of('not a key');
+    }
+
+    /**
      * The pseudonym matches the contract: 32 lowercase hex of HMAC-SHA256.
      */
     public function test_pseudonym_follows_the_contract(): void {
