@@ -157,8 +157,9 @@ Content-Security-Policy: frame-ancestors https://moodle.example.com
 
 and it must not send `X-Frame-Options: DENY` or `SAMEORIGIN`.
 
-The iframe is sandboxed with `allow-scripts allow-same-origin` and sends no referrer.
-It cannot navigate the Moodle page, open pop-ups or submit forms. The page takes care
+The iframe is sandboxed with `allow-scripts allow-same-origin allow-forms` and sends no
+referrer. The app needs the forms because its editor is built on them. It cannot navigate
+the Moodle page, open pop-ups, show modal dialogs or download files. The page takes care
 of opening activities.
 
 ## Troubleshooting

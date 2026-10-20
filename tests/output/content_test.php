@@ -107,18 +107,21 @@ final class content_test extends \advanced_testcase {
         $this->assertSame('no-referrer', $iframe->getAttribute('referrerpolicy'));
         $this->assertSame('fullscreen', $iframe->getAttribute('allow'));
         $this->assertSame('eager', $iframe->getAttribute('loading'));
-        $this->assertSame('allow-scripts allow-same-origin', $iframe->getAttribute('sandbox'));
+        $this->assertSame('allow-scripts allow-same-origin allow-forms', $iframe->getAttribute('sandbox'));
     }
 
     /**
      * The iframe is never given more sandbox permissions than needed.
+     *
+     * Forms are allowed because the app's editor is built on them; popups, modals,
+     * downloads and top navigation stay blocked.
      */
     public function test_sandbox_does_not_allow_dangerous_tokens(): void {
         [$course, $student] = $this->setup_course();
 
         $sandbox = $this->iframe($this->render($course, $student))->getAttribute('sandbox');
 
-        foreach (['allow-top-navigation', 'allow-popups', 'allow-forms', 'allow-modals', 'allow-downloads'] as $token) {
+        foreach (['allow-top-navigation', 'allow-popups', 'allow-modals', 'allow-downloads', 'allow-pointer-lock'] as $token) {
             $this->assertStringNotContainsString($token, $sandbox);
         }
     }

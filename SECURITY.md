@@ -56,14 +56,19 @@ responses out; check your own logging configuration if that matters to you.
 
 ## The iframe
 
-The app runs in an iframe with `sandbox="allow-scripts allow-same-origin"`, no
-referrer, and `allow="fullscreen"`.
+The app runs in an iframe with `sandbox="allow-scripts allow-same-origin allow-forms"`,
+no referrer, and `allow="fullscreen"`.
 
 **What the app cannot do.** Navigate or script the Moodle page, read Moodle's cookies
-or DOM, open pop-ups, submit forms, or download files. The plugin refuses to render the
-iframe unless the app is on a different origin than Moodle, because
+or DOM, open pop-ups, show modal dialogs, or download files. The plugin refuses to render
+the iframe unless the app is on a different origin than Moodle, because
 `allow-scripts` with `allow-same-origin` would let a same-origin page remove its own
 sandbox.
+
+`allow-forms` is granted because the app's editor is built on forms, and a sandbox without
+it blocks their submission before the app's handlers run. It adds nothing the app cannot
+already do with scripts: a form can only navigate the iframe itself, since top navigation
+and pop-ups stay blocked, so it does not widen what the app can do to Moodle.
 
 **What the host accepts from the app.** The page ignores any message that does not
 come from the configured app origin **and** from the iframe's own window, that is not

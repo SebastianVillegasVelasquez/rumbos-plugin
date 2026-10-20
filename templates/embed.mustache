@@ -26,9 +26,15 @@
         not verify who is talking. This is safe only because the app is
         required to be on a different origin than Moodle (see
         format_rumbos\local\config::is_usable()).
-    Everything else stays blocked: no forms, popups, modals, downloads,
-    top navigation or pointer lock. Navigation to an activity is done by the
-    host, from its own state.
+      - allow-forms: the app's editor is built on forms (creating and editing
+        levels and maps, uploading backgrounds). A sandbox without it blocks
+        the submission before the submit event fires, so the app's own handlers
+        never run. It gives the app nothing it does not already have with
+        scripts: a form can only navigate the iframe itself, because top
+        navigation and popups stay blocked.
+    Everything else stays blocked: no popups, modals, downloads, top navigation
+    or pointer lock. The app does not need popups in this mode, because it
+    asks the host to open an activity and the host does it, from its own state.
 
     Example context (json):
     {
@@ -55,7 +61,7 @@
                 title="{{#str}} frametitle, format_rumbos {{/str}}"
                 referrerpolicy="no-referrer"
                 allow="fullscreen"
-                sandbox="allow-scripts allow-same-origin"
+                sandbox="allow-scripts allow-same-origin allow-forms"
                 loading="eager"></iframe>
     </div>
 </div>
