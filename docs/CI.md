@@ -115,7 +115,9 @@ The Behat scenarios that open activities play the part of the Rumbos app (the te
 has none): the steps in `tests/behat/behat_format_rumbos.php` put a stand-in window where
 the iframe's window is and record what the host sends. The host gives up waiting for the
 app after 8 seconds, longer than a Behat step sequence takes, so those scenarios raise it
-with the hidden config value `timeoutms`.
+with the hidden config value `timeoutms`. The Behat site is plain HTTP on `webserver`, so
+Chrome sends no `Sec-Fetch-*` headers there: the scenarios cover the host and popup
+behaviour, not the hidden Moodle chrome (see [MANUAL-TESTS.md](MANUAL-TESTS.md)).
 
 ## Releases
 

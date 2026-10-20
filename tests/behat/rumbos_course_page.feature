@@ -33,6 +33,16 @@ Feature: The Rumbos course page
     And I should see "Page 1"
     And I should not see "View the activity list"
 
+  Scenario: A teacher with editing off gets the map as students do and a note to turn editing on
+    Given I am on the "Course 1" course page logged in as teacher1
+    Then "iframe[data-region='rumbos-frame']" "css_element" should exist
+    And "details#format-rumbos-list summary" "css_element" should exist
+    And I should see "Turn editing on to modify the map."
+
+  Scenario: A student does not get the note about editing
+    Given I am on the "Course 1" course page logged in as student1
+    Then I should not see "Turn editing on to modify the map."
+
   Scenario: A student sees the container and the accessible control to the activity list
     Given I am on the "Course 1" course page logged in as student1
     Then "[data-region='rumbos-container']" "css_element" should exist
@@ -47,8 +57,9 @@ Feature: The Rumbos course page
     And I should see "Page 1"
     And I should not see "Rumbos did not respond in time"
 
-  Scenario: A teacher is told why the app was replaced by the standard content
+  Scenario: A teacher in editing mode is told why the app was replaced by the standard content
     Given I am on the "Course 1" course page logged in as teacher1
+    And I turn editing mode on
     When I wait until "[data-region='rumbos-container'][data-state='degraded']" "css_element" exists
     Then I should see "Rumbos did not respond in time"
     And I should see "Page 1"
