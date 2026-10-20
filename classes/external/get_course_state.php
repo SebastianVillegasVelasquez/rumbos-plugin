@@ -75,7 +75,7 @@ class get_course_state extends external_api {
         return new external_single_structure([
             'schemaVersion' => new external_value(PARAM_INT, 'Contract schema version'),
             'courseId' => new external_value(PARAM_INT, 'Course id'),
-            'generatedAt' => new external_value(PARAM_INT, 'Unix timestamp of generation'),
+            'generatedAt' => new external_value(PARAM_RAW, 'ISO 8601 time of generation in UTC, for example 2026-10-20T11:50:48Z'),
             'sections' => new external_multiple_structure(new external_single_structure([
                 'id' => new external_value(PARAM_INT, 'Section id'),
                 'number' => new external_value(PARAM_INT, 'Section number'),

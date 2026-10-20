@@ -68,7 +68,9 @@ final class course_state_test extends \advanced_testcase {
 
         $this->assertSame(1, $state['schemaVersion']);
         $this->assertSame((int) $course->id, $state['courseId']);
-        $this->assertEqualsWithDelta(time(), $state['generatedAt'], 5);
+        $this->assertIsString($state['generatedAt']);
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $state['generatedAt']);
+        $this->assertEqualsWithDelta(time(), strtotime($state['generatedAt']), 5);
         $this->assertEqualsCanonicalizing(
             ['schemaVersion', 'courseId', 'generatedAt', 'sections', 'activities', 'unavailableCmids'],
             array_keys($state)
@@ -85,6 +87,64 @@ final class course_state_test extends \advanced_testcase {
         $this->assertNull($activity['availabilityInfo']);
         $this->assertSame('none', $activity['completion']);
         $this->assertStringContainsString('/mod/page/view.php?id=' . $page->cmid, $activity['url']);
+    }
+
+    /**
+     * Every field has exactly the JSON type the Rumbos app validates.
+     *
+     * The app discards a whole state, and with it the host-init message, if one
+     * field has another type: a generatedAt sent as an integer instead of a
+     * string made every launch time out. This pins the type of each field, for
+     * activities that are available, restricted and hidden from the user.
+     */
+    public function test_every_field_has_the_type_the_app_validates(): void {
+        $this->resetAfterTest();
+        [$course, $student] = $this->setup_course();
+        $generator = $this->getDataGenerator();
+        $generator->create_module('page', ['course' => $course->id, 'name' => 'Open', 'completion' => COMPLETION_TRACKING_MANUAL]);
+        $generator->create_module('page', [
+            'course' => $course->id,
+            'name' => 'Later',
+            'availability' => json_encode([
+                'op' => '&',
+                'c' => [['type' => 'date', 'd' => '>=', 't' => strtotime('+1 year')]],
+                'showc' => [true],
+            ]),
+        ]);
+        $generator->create_module('page', ['course' => $course->id, 'name' => 'Secret', 'visible' => 0]);
+
+        $state = course_state::for_user($course->id, $student->id);
+
+        $this->assertSame(1, $state['schemaVersion']);
+        $this->assertIsInt($state['courseId']);
+        $this->assertGreaterThan(0, $state['courseId']);
+        $this->assertIsString($state['generatedAt']);
+        $this->assertLessThanOrEqual(64, strlen($state['generatedAt']));
+
+        $this->assertNotEmpty($state['sections']);
+        foreach ($state['sections'] as $section) {
+            $this->assertIsInt($section['id']);
+            $this->assertIsInt($section['number']);
+            $this->assertIsString($section['name']);
+        }
+
+        $this->assertCount(2, $state['activities']);
+        foreach ($state['activities'] as $activity) {
+            $this->assertIsInt($activity['cmid']);
+            $this->assertGreaterThan(0, $activity['cmid']);
+            $this->assertIsString($activity['name']);
+            $this->assertIsString($activity['modname']);
+            $this->assertLessThanOrEqual(64, strlen($activity['modname']));
+            $this->assertIsInt($activity['sectionId']);
+            $this->assertTrue($activity['url'] === null || is_string($activity['url']));
+            $this->assertContains($activity['availability'], ['available', 'restricted', 'hidden']);
+            $this->assertTrue($activity['availabilityInfo'] === null || is_string($activity['availabilityInfo']));
+            $this->assertContains($activity['completion'], ['none', 'incomplete', 'complete', 'failed']);
+        }
+        $this->assertSame(['available', 'restricted'], array_column($state['activities'], 'availability'));
+
+        $this->assertCount(1, $state['unavailableCmids']);
+        $this->assertContainsOnlyInt($state['unavailableCmids']);
     }
 
     /**

@@ -66,7 +66,8 @@ class course_state {
         return [
             'schemaVersion' => self::SCHEMA_VERSION,
             'courseId' => (int) $courseid,
-            'generatedAt' => time(),
+            // An ISO 8601 string in UTC, which is the type the Rumbos app validates.
+            'generatedAt' => gmdate('Y-m-d\TH:i:s\Z'),
             'sections' => self::sections($course, $modinfo),
             'activities' => $activities,
             'unavailableCmids' => $unavailable,
