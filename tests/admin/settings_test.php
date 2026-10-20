@@ -17,6 +17,8 @@
 namespace format_rumbos\admin;
 
 use format_rumbos\local\key_manager;
+use format_rumbos\local\launch_assertion;
+use format_rumbos\local\registration;
 
 /**
  * Tests for the admin settings.
@@ -26,7 +28,7 @@ use format_rumbos\local\key_manager;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 #[\PHPUnit\Framework\Attributes\CoversClass(\format_rumbos\admin\setting_appurl::class)]
-#[\PHPUnit\Framework\Attributes\CoversClass(\format_rumbos\admin\setting_publickey::class)]
+#[\PHPUnit\Framework\Attributes\CoversClass(\format_rumbos\admin\setting_registration::class)]
 final class settings_test extends \advanced_testcase {
     /**
      * Starts every test without stored keys.
@@ -80,21 +82,98 @@ final class settings_test extends \advanced_testcase {
     }
 
     /**
-     * The public key setting is read-only, shows the key and never the private key.
+     * Renders the registration panel as the current user.
+     *
+     * @return string
      */
-    public function test_publickey_setting_is_read_only_and_never_leaks_the_private_key(): void {
-        $this->resetAfterTest();
+    private function render_panel(): string {
+        $setting = new setting_registration('format_rumbos/registration', 'Registration', '');
+        return $setting->output_html(true);
+    }
+
+    /**
+     * The panel is read-only: it writes nothing under its own name.
+     */
+    public function test_registration_setting_writes_nothing(): void {
         $this->setAdminUser();
-        $setting = new setting_publickey('format_rumbos/publickeyinfo', 'Public key', '');
+        $setting = new setting_registration('format_rumbos/registration', 'Registration', '');
 
         $this->assertSame('', $setting->write_setting('anything'));
-        $this->assertFalse(get_config('format_rumbos', 'publickeyinfo'));
+        $this->assertFalse(get_config('format_rumbos', 'registration'));
+    }
 
-        $html = $setting->output_html(true);
+    /**
+     * An administrator sees every value to register, taken from the signing code.
+     */
+    public function test_administrator_sees_the_values_to_register(): void {
+        global $CFG;
+        $CFG->wwwroot = 'https://LMS.Example.com:443/moodle/';
+        $this->setAdminUser();
+
+        $html = $this->render_panel();
+        $values = registration::values();
+
+        $this->assertStringContainsString('https://lms.example.com/moodle', $html);
+        $this->assertStringContainsString('https://lms.example.com', $html);
+        $this->assertStringContainsString(launch_assertion::issuer(), $html);
+        $this->assertStringContainsString($values['audience'], $html);
+        $this->assertStringContainsString($values['kid'], $html);
+        $this->assertStringContainsString($values['fingerprint'], $html);
         $this->assertStringContainsString('BEGIN PUBLIC KEY', $html);
-        $this->assertStringContainsString(key_manager::get_kid(), $html);
-        $this->assertStringNotContainsString('PRIVATE KEY', $html);
+        $this->assertStringContainsString('--kid ' . $values['kid'], $html);
+        $this->assertStringContainsString('python -m app.scripts.tenants add', $html);
+    }
+
+    /**
+     * The fingerprint on the panel matches the stored key.
+     */
+    public function test_the_fingerprint_matches_the_stored_key(): void {
+        $this->setAdminUser();
+
+        $html = $this->render_panel();
+
+        $this->assertStringContainsString(key_manager::fingerprint_of(get_config('format_rumbos', 'publickey')), $html);
+    }
+
+    /**
+     * The panel offers copy buttons, the diagnostic and the rotation, and never a secret.
+     */
+    public function test_the_panel_has_its_actions_and_never_leaks_a_secret(): void {
+        $this->setAdminUser();
+
+        $html = $this->render_panel();
+
         $this->assertStringContainsString('data-action="copytoclipboard"', $html);
+        $this->assertStringContainsString('data-action="format-rumbos-preview"', $html);
         $this->assertStringContainsString('rotatekey.php', $html);
+        $this->assertStringNotContainsString('PRIVATE KEY', $html);
+        $this->assertStringNotContainsString(key_manager::get_private_key(), $html);
+        $this->assertStringNotContainsString(key_manager::get_hmac_secret(), $html);
+    }
+
+    /**
+     * Nothing is rendered for someone who cannot configure the site.
+     */
+    public function test_the_panel_is_empty_without_the_site_configuration_capability(): void {
+        $course = $this->getDataGenerator()->create_course(['format' => 'rumbos']);
+        $teacher = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($teacher->id, $course->id, 'editingteacher');
+        $this->setUser($teacher);
+
+        $this->assertSame('', $this->render_panel());
+    }
+
+    /**
+     * Unreadable keys show an alert with the reset link, and the public values still render.
+     */
+    public function test_unhealthy_keys_show_the_reset_alert(): void {
+        $this->setAdminUser();
+        key_manager::ensure_initialised();
+        set_config('hmacsecret', base64_encode(random_bytes(80)), 'format_rumbos');
+
+        $html = $this->render_panel();
+
+        $this->assertStringContainsString('rotatekey.php?reset=1', $html);
+        $this->assertStringContainsString('BEGIN PUBLIC KEY', $html);
     }
 }

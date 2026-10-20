@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 use format_rumbos\admin\setting_appurl;
-use format_rumbos\admin\setting_publickey;
+use format_rumbos\admin\setting_registration;
 
 // The rotation confirmation page lives outside the settings page but inside the admin tree.
 $ADMIN->add('formatsettings', new admin_externalpage(
@@ -58,9 +58,9 @@ if ($ADMIN->fulltree) {
         '/^[A-Za-z0-9._:\/-]{1,128}$/'
     ));
 
-    $settings->add(new setting_publickey(
-        'format_rumbos/publickeyinfo',
-        get_string('publickey', 'format_rumbos'),
-        get_string('publickey_desc', 'format_rumbos')
+    $settings->add(new setting_registration(
+        'format_rumbos/registration',
+        get_string('registration', 'format_rumbos'),
+        get_string('registration_desc', 'format_rumbos')
     ));
 }

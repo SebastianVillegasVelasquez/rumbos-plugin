@@ -1,0 +1,123 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template format_rumbos/registration
+
+    The panel an administrator uses to register this site in the Rumbos service:
+    the values exactly as the plugin signs them, the public key with its
+    fingerprint, a copy-ready registration command and a diagnostic that shows the
+    decoded header and claims of a sample assertion (never the token).
+
+    Everything shown is read-only and none of it is secret: the private key and the
+    pseudonym secret never reach this template.
+
+    Example context (json):
+    {
+        "unhealthy": false,
+        "unhealthymessage": "The stored keys cannot be decrypted.",
+        "reseturl": "https://lms.example.com/course/format/rumbos/rotatekey.php?reset=1",
+        "resetlabel": "Reset keys",
+        "rows": [
+            {
+                "id": "issuer",
+                "label": "Issuer (iss)",
+                "value": "https://lms.example.com",
+                "note": "The Moodle wwwroot as configured."
+            }
+        ],
+        "publickeylabel": "Public key (PEM)",
+        "publickey": "-----BEGIN PUBLIC KEY-----\nMIIB...\n-----END PUBLIC KEY-----",
+        "commandlabel": "Registration command",
+        "command": "python -m app.scripts.tenants add --name \"<site name>\"",
+        "commandnote": "Verify the flags with --help.",
+        "copylabel": "Copy",
+        "copiedmessage": "Copied",
+        "rotateurl": "https://lms.example.com/course/format/rumbos/rotatekey.php",
+        "rotatelabel": "Rotate key",
+        "previewlabel": "View sample assertion (unsigned)",
+        "previewwarning": "For diagnosis only.",
+        "issuedlabel": "Issued at (UTC)",
+        "expireslabel": "Expires at (UTC)"
+    }
+}}
+<div data-region="format-rumbos-registration">
+    {{#unhealthy}}
+        <div class="alert alert-danger" role="alert">
+            {{unhealthymessage}}
+            <a href="{{reseturl}}">{{resetlabel}}</a>
+        </div>
+    {{/unhealthy}}
+
+    <dl class="row">
+        {{#rows}}
+            <dt class="col-sm-3">{{label}}</dt>
+            <dd class="col-sm-9">
+                <code id="format-rumbos-reg-{{id}}" class="user-select-all">{{value}}</code>
+                <button type="button" class="btn btn-link btn-sm"
+                        data-action="copytoclipboard"
+                        data-clipboard-target="#format-rumbos-reg-{{id}}"
+                        data-clipboard-success-message="{{copiedmessage}}">
+                    {{copylabel}}<span class="visually-hidden"> {{label}}</span>
+                </button>
+                <div class="form-text">{{note}}</div>
+            </dd>
+        {{/rows}}
+    </dl>
+
+    <div class="mb-3">
+        <label class="form-label fw-bold" for="format-rumbos-reg-publickey">{{publickeylabel}}</label>
+        <textarea id="format-rumbos-reg-publickey" class="form-control font-monospace" rows="9" readonly>{{publickey}}</textarea>
+        <button type="button" class="btn btn-secondary mt-2"
+                data-action="copytoclipboard"
+                data-clipboard-target="#format-rumbos-reg-publickey"
+                data-clipboard-success-message="{{copiedmessage}}">
+            {{copylabel}}<span class="visually-hidden"> {{publickeylabel}}</span>
+        </button>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label fw-bold" for="format-rumbos-reg-command">{{commandlabel}}</label>
+        <textarea id="format-rumbos-reg-command" class="form-control font-monospace" rows="14" readonly>{{command}}</textarea>
+        <div class="form-text">{{commandnote}}</div>
+        <button type="button" class="btn btn-secondary mt-2"
+                data-action="copytoclipboard"
+                data-clipboard-target="#format-rumbos-reg-command"
+                data-clipboard-success-message="{{copiedmessage}}">
+            {{copylabel}}<span class="visually-hidden"> {{commandlabel}}</span>
+        </button>
+    </div>
+
+    <div class="mb-3">
+        <button type="button" class="btn btn-outline-secondary me-2" data-action="format-rumbos-preview">
+            {{previewlabel}}
+        </button>
+        <a class="btn btn-outline-danger" href="{{rotateurl}}">{{rotatelabel}}</a>
+    </div>
+
+    <div data-region="format-rumbos-preview" class="mb-3" hidden>
+        <div class="alert alert-warning" role="status">{{previewwarning}}</div>
+        <pre class="border rounded p-3 bg-light" data-region="format-rumbos-preview-output"
+             data-issued-label="{{issuedlabel}}" data-expires-label="{{expireslabel}}"></pre>
+        <p class="form-text" data-region="format-rumbos-preview-times"></p>
+    </div>
+</div>
+{{#js}}
+require(['core/copy_to_clipboard']);
+require(['format_rumbos/assertion_preview'], function(preview) {
+    preview.init();
+});
+{{/js}}
