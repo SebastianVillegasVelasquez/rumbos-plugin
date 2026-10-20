@@ -45,6 +45,35 @@ final class settings_test extends \advanced_testcase {
     }
 
     /**
+     * The new-tab list is stored clean and drives the popup policy.
+     */
+    public function test_newtabmodules_is_stored_clean(): void {
+        $this->setAdminUser();
+        $setting = new setting_newtabmodules('format_rumbos/newtabmodules', 'New tab', '');
+
+        $this->assertSame('', $setting->write_setting(" LTI,
+zoom, lti "));
+
+        $this->assertSame('lti,zoom', get_config('format_rumbos', 'newtabmodules'));
+        $this->assertSame(['lti', 'zoom'], \format_rumbos\local\popup::get_newtab_modules());
+    }
+
+    /**
+     * An empty list is valid (everything opens in the popup); names that are not modules are refused.
+     */
+    public function test_newtabmodules_validation(): void {
+        $this->setAdminUser();
+        $setting = new setting_newtabmodules('format_rumbos/newtabmodules', 'New tab', '');
+
+        $this->assertSame('', $setting->write_setting(''));
+        $this->assertSame([], \format_rumbos\local\popup::get_newtab_modules());
+
+        $this->assertNotSame('', $setting->write_setting('lti,../etc'));
+        $this->assertNotSame(true, $setting->validate('mod_lti'));
+        $this->assertSame([], \format_rumbos\local\popup::get_newtab_modules(), 'a refused value is not stored');
+    }
+
+    /**
      * The URL setting stores the normalised https URL.
      */
     public function test_appurl_is_stored_normalised(): void {
