@@ -111,5 +111,17 @@ On this setup the 75 PHPUnit tests take about 30 seconds and the Behat scenarios
 between 70 seconds and 2.5 minutes (the strict mode adds the core theme features). PHPUnit needs its `init.php` again whenever the plugin
 version or the container changes.
 
+The Behat scenarios that open activities play the part of the Rumbos app (the test site
+has none): the steps in `tests/behat/behat_format_rumbos.php` put a stand-in window where
+the iframe's window is and record what the host sends. The host gives up waiting for the
+app after 8 seconds, longer than a Behat step sequence takes, so those scenarios raise it
+with the hidden config value `timeoutms`.
+
+## Releases
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, a separate workflow that does not
+run on branches or pull requests, so it costs no minutes until you release. It builds the
+ZIP and attaches it to a release; see [RELEASE.md](RELEASE.md).
+
 The CI also reruns failed Behat scenarios twice, so the summary at the end of the
 log can describe only the rerun, not the first pass.

@@ -1,0 +1,74 @@
+name: Release
+
+# Builds the installable ZIP when a version tag is pushed, so nobody has to build it by
+# hand: the archive is attached to the workflow run as an artifact and to a GitHub
+# release as an asset. See docs/RELEASE.md for the steps.
+#
+# The tag must be "v" plus the release in version.php (tag v0.2.0 for
+# $plugin->release = '0.2.0'); the job fails otherwise, so a tag cannot publish a ZIP
+# whose name or content disagrees with it.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # Creating the release and uploading its asset.
+
+jobs:
+  zip:
+    name: Build the installable ZIP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the tagged revision
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check the tag against version.php
+        run: |
+          release="$(sed -n "s/^\$plugin->release = '\(.*\)';.*/\1/p" version.php)"
+          if [ -z "$release" ]; then
+            echo "Could not read the release from version.php" >&2
+            exit 1
+          fi
+          if [ "${GITHUB_REF_NAME}" != "v${release}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match release ${release} in version.php (expected v${release})" >&2
+            exit 1
+          fi
+          echo "RELEASE=${release}" >> "$GITHUB_ENV"
+
+      - name: Build the ZIP
+        run: scripts/build-zip.sh "${GITHUB_REF_NAME}"
+
+      - name: Check the archive layout
+        run: |
+          zip="dist/format_rumbos-${RELEASE}.zip"
+          # Exactly one top-level folder, named rumbos, holding the plugin.
+          tops="$(unzip -Z1 "$zip" | cut -d/ -f1 | sort -u)"
+          if [ "$tops" != "rumbos" ]; then
+            echo "Unexpected top-level entries in the ZIP:" >&2
+            echo "$tops" >&2
+            exit 1
+          fi
+          unzip -Z1 "$zip" | grep -qx 'rumbos/version.php'
+          unzip -Z1 "$zip" | grep -qx 'rumbos/amd/build/host.min.js'
+
+      - name: Keep the ZIP as a build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: format_rumbos-${{ env.RELEASE }}
+          path: dist/format_rumbos-${{ env.RELEASE }}.zip
+          if-no-files-found: error
+
+      - name: Attach the ZIP to a GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip="dist/format_rumbos-${RELEASE}.zip"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "$zip" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "$zip" --title "${GITHUB_REF_NAME}" --generate-notes --prerelease
+          fi
