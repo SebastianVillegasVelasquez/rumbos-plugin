@@ -33,6 +33,14 @@ $functions = [
         'ajax' => true,
         'loginrequired' => true,
     ],
+    'format_rumbos_get_assertion_preview' => [
+        'classname' => \format_rumbos\external\get_assertion_preview::class,
+        'description' => 'Returns the decoded header and claims of a fresh assertion, never the token or its signature.',
+        'type' => 'read',
+        'ajax' => true,
+        'loginrequired' => true,
+        'capabilities' => 'moodle/site:config',
+    ],
     'format_rumbos_get_launch_assertion' => [
         'classname' => \format_rumbos\external\get_launch_assertion::class,
         'description' => 'Returns a short-lived signed launch assertion for the current user.',
