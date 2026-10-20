@@ -1,6 +1,5 @@
 {
   "name": "moodle-format_rumbos",
-  "version": "0.1.0",
   "private": true,
   "description": "Development tooling for the Moodle course format plugin format_rumbos (no runtime dependencies).",
   "license": "GPL-3.0-or-later",
