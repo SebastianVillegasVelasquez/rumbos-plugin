@@ -9,7 +9,7 @@ holds no map data and no game logic.
 | | |
 | --- | --- |
 | Component | `format_rumbos` |
-| Release | 0.1.1 (alpha) |
+| Release | 0.1.2 (alpha) |
 | Moodle | 5.2 to 5.3 |
 | PHP | 8.3 or later |
 | Licence | GPL-3.0-or-later |
