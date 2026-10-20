@@ -98,6 +98,40 @@ final class launch_assertion_test extends \advanced_testcase {
     }
 
     /**
+     * The issuer is the wwwroot in one canonical form, the one the service stores.
+     */
+    public function test_issuer_is_canonical(): void {
+        global $CFG;
+        $this->resetAfterTest();
+
+        $expected = [
+            'HTTPS://LMS.Example.com:443/moodle/' => 'https://lms.example.com/moodle',
+            'https://lms.example.com/' => 'https://lms.example.com',
+            'https://lms.example.com' => 'https://lms.example.com',
+            'https://lms.example.com:8443/a/b/' => 'https://lms.example.com:8443/a/b',
+        ];
+        foreach ($expected as $wwwroot => $issuer) {
+            $CFG->wwwroot = $wwwroot;
+            $this->assertSame($issuer, launch_assertion::issuer(), $wwwroot);
+        }
+    }
+
+    /**
+     * The assertion is signed with the very issuer that issuer() reports.
+     */
+    public function test_the_assertion_carries_the_reported_issuer(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        [$course, $user] = $this->enrolled('student');
+        $CFG->wwwroot = 'https://LMS.Example.com:443/moodle/';
+
+        $claims = $this->verify(launch_assertion::create($course->id, $user->id)['token']);
+
+        $this->assertSame(launch_assertion::issuer(), $claims->iss);
+        $this->assertSame('https://lms.example.com/moodle', $claims->iss);
+    }
+
+    /**
      * The audience is configurable.
      */
     public function test_audience_is_configurable(): void {

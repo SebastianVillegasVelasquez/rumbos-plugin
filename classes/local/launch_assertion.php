@@ -34,6 +34,26 @@ class launch_assertion {
     public const LIFETIME = 60;
 
     /**
+     * The issuer ("iss") this site signs assertions with.
+     *
+     * It is Moodle's configured wwwroot in one canonical form: lower-case scheme and
+     * host, default port dropped, no trailing slash. The Rumbos service compares it
+     * byte for byte with the issuer registered for the site, so the admin panel shows
+     * exactly this value and {@see self::create()} signs exactly this value.
+     *
+     * It can differ from the address in the browser's address bar, for example behind
+     * a reverse proxy.
+     *
+     * @return string
+     */
+    public static function issuer(): string {
+        global $CFG;
+
+        $path = parse_url(trim($CFG->wwwroot), PHP_URL_PATH) ?? '';
+        return app_url::origin($CFG->wwwroot) . rtrim($path, '/');
+    }
+
+    /**
      * Signs an assertion for a user in a course.
      *
      * Claims: iss, aud, sub (pseudonym), course, role, iat, exp, jti. No name,
@@ -45,14 +65,12 @@ class launch_assertion {
      * @return array{token: string, expiresat: int}
      */
     public static function create(int $courseid, int $userid, ?int $now = null): array {
-        global $CFG;
-
         $now = $now ?? time();
         $context = context_course::instance($courseid);
         $iseditor = has_capability('format/rumbos:editmap', $context, $userid);
 
         $claims = [
-            'iss' => rtrim($CFG->wwwroot, '/'),
+            'iss' => self::issuer(),
             'aud' => config::get_audience(),
             'sub' => pseudonym::for_user($userid),
             'course' => $courseid,
