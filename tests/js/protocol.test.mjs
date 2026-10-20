@@ -25,12 +25,16 @@ import {
     ERROR_CODES,
     MAX_DETAIL_LENGTH,
     MESSAGE,
-    findActivityUrl,
+    POPUP_MESSAGE,
     hostFullscreen,
     hostInit,
     hostLaunch,
+    hostOverlay,
     hostState,
+    isCourseViewUrl,
     parseAppMessage,
+    parsePopupMessage,
+    resolveActivityTarget,
 } from '../../amd/src/protocol.js';
 
 const APP = 'https://rumbos.example.com';
@@ -186,49 +190,150 @@ describe('message builders', () => {
         assert.deepEqual(hostState({a: 1}), {type: 'rumbos:host-state', v: 1, state: {a: 1}});
         assert.deepEqual(hostLaunch('jws'), {type: 'rumbos:host-launch', v: 1, assertion: 'jws'});
     });
+
+    it('build host-overlay with the exact boolean (contract v5.3)', () => {
+        assert.deepEqual(hostOverlay(true), {type: 'rumbos:host-overlay', v: 1, open: true});
+        assert.deepEqual(hostOverlay(false), {type: 'rumbos:host-overlay', v: 1, open: false});
+    });
 });
 
-describe('findActivityUrl', () => {
+describe('resolveActivityTarget', () => {
+    const page = (cmid, extra = {}) => ({
+        cmid,
+        modname: 'page',
+        name: `Page ${cmid}`,
+        availability: 'available',
+        url: `${SITE}/mod/page/view.php?id=${cmid}`,
+        ...extra,
+    });
     const state = {
         activities: [
-            {cmid: 1, availability: 'available', url: `${SITE}/mod/page/view.php?id=1`},
-            {cmid: 2, availability: 'restricted', url: null},
-            {cmid: 3, availability: 'restricted', url: `${SITE}/mod/page/view.php?id=3`},
-            {cmid: 4, availability: 'hidden', url: `${SITE}/mod/page/view.php?id=4`},
-            {cmid: 5, availability: 'available', url: 'https://evil.example.com/steal'},
-            {cmid: 6, availability: 'available', url: 'javascript:alert(1)'},
-            {cmid: 7, availability: 'available', url: '/mod/page/view.php?id=7'},
+            page(1),
+            page(2, {availability: 'restricted', url: null}),
+            page(3, {availability: 'restricted'}),
+            page(4, {availability: 'hidden'}),
+            page(5, {url: 'https://evil.example.com/steal'}),
+            page(6, {url: 'javascript:alert(1)'}),
+            page(7, {url: '/mod/page/view.php?id=7'}),
+            page(8, {modname: 'lti', url: `${SITE}/mod/lti/view.php?id=8`}),
+            page(9, {url: `${SITE}/course/view.php?id=2`}),
+            page(10, {url: `${SITE}/mod/../admin/index.php`}),
+            page(11, {url: 'https://lms.example.com.evil.example.com/mod/page/view.php?id=11'}),
+            page(12, {url: `${SITE}/modx/page/view.php?id=12`}),
+            page(13, {url: 'data:text/html,<script>1</script>'}),
         ],
     };
+    const site = {siteOrigin: SITE, wwwroot: SITE, newTabModules: ['lti']};
+    const resolve = (cmid, overrides = {}) => resolveActivityTarget(state, cmid, {...site, ...overrides});
 
-    it('returns the URL of an available activity from the host state', () => {
-        assert.equal(findActivityUrl(state, 1, SITE), `${SITE}/mod/page/view.php?id=1`);
+    it('opens an available activity under /mod/ in the popup, with its title', () => {
+        assert.deepEqual(resolve(1), {target: 'popup', url: `${SITE}/mod/page/view.php?id=1`, title: 'Page 1'});
     });
 
-    it('returns the URL of a hidden activity (editors only receive them)', () => {
-        assert.equal(findActivityUrl(state, 4, SITE), `${SITE}/mod/page/view.php?id=4`);
+    it('opens a hidden activity (editors only receive them)', () => {
+        assert.equal(resolve(4).target, 'popup');
     });
 
-    it('returns null for cmids that are not in the state', () => {
-        assert.equal(findActivityUrl(state, 99, SITE), null);
+    it('returns null for cmids that are not in the state, or when there is no state', () => {
+        assert.equal(resolve(99), null);
+        assert.equal(resolveActivityTarget(null, 1, site), null);
+        assert.equal(resolveActivityTarget({}, 1, site), null);
     });
 
     it('returns null for restricted activities, with or without URL', () => {
-        assert.equal(findActivityUrl(state, 2, SITE), null);
-        assert.equal(findActivityUrl(state, 3, SITE), null);
+        assert.equal(resolve(2), null);
+        assert.equal(resolve(3), null);
     });
 
-    it('returns null for URLs outside the Moodle site or with another scheme', () => {
-        assert.equal(findActivityUrl(state, 5, SITE), null);
-        assert.equal(findActivityUrl(state, 6, SITE), null);
+    it('refuses URLs outside the Moodle site or with another scheme', () => {
+        for (const cmid of [5, 6, 11, 13]) {
+            assert.equal(resolve(cmid), null, `cmid ${cmid}`);
+        }
     });
 
     it('resolves a relative URL against the site', () => {
-        assert.equal(findActivityUrl(state, 7, SITE), `${SITE}/mod/page/view.php?id=7`);
+        assert.equal(resolve(7).url, `${SITE}/mod/page/view.php?id=7`);
     });
 
-    it('returns null when there is no state yet', () => {
-        assert.equal(findActivityUrl(null, 1, SITE), null);
-        assert.equal(findActivityUrl({}, 1, SITE), null);
+    it('opens modules in the new-tab list in a new tab', () => {
+        assert.equal(resolve(8).target, 'tab');
+        assert.equal(resolve(8, {newTabModules: []}).target, 'popup');
+    });
+
+    it('opens Moodle URLs that are not under /mod/ in a new tab', () => {
+        assert.equal(resolve(9).target, 'tab');
+    });
+
+    it('does not treat a path that only starts like /mod/ as an activity', () => {
+        assert.equal(resolve(12).target, 'tab');
+    });
+
+    it('normalises dot segments before checking the path', () => {
+        assert.equal(resolve(10).target, 'tab');
+    });
+
+    it('honours a Moodle site installed in a sub-directory', () => {
+        const sub = `${SITE}/moodle`;
+        const subState = {
+            activities: [
+                {cmid: 1, modname: 'page', name: 'A', availability: 'available', url: `${sub}/mod/page/view.php?id=1`},
+                {cmid: 2, modname: 'page', name: 'B', availability: 'available', url: `${SITE}/mod/page/view.php?id=2`},
+            ],
+        };
+        const subSite = {siteOrigin: SITE, wwwroot: sub, newTabModules: []};
+        assert.equal(resolveActivityTarget(subState, 1, subSite).target, 'popup');
+        assert.equal(resolveActivityTarget(subState, 2, subSite), null);
+    });
+
+    it('keeps the title as plain text', () => {
+        const titled = {activities: [page(1, {name: '<img src=x onerror=alert(1)>'})]};
+        assert.equal(resolveActivityTarget(titled, 1, site).title, '<img src=x onerror=alert(1)>');
+    });
+});
+
+describe('isCourseViewUrl', () => {
+    const site = {wwwroot: SITE, courseId: 2};
+
+    it('recognises the view page of this course', () => {
+        assert.equal(isCourseViewUrl(`${SITE}/course/view.php?id=2`, site), true);
+        assert.equal(isCourseViewUrl(`${SITE}/course/view.php?id=2&section=3#x`, site), true);
+    });
+
+    it('does not match other courses, pages, origins or garbage', () => {
+        assert.equal(isCourseViewUrl(`${SITE}/course/view.php?id=3`, site), false);
+        assert.equal(isCourseViewUrl(`${SITE}/course/view.php`, site), false);
+        assert.equal(isCourseViewUrl(`${SITE}/mod/page/view.php?id=2`, site), false);
+        assert.equal(isCourseViewUrl('https://evil.example.com/course/view.php?id=2', site), false);
+        assert.equal(isCourseViewUrl('not a url', site), false);
+        assert.equal(isCourseViewUrl('about:blank', site), false);
+    });
+
+    it('honours a Moodle site installed in a sub-directory', () => {
+        const sub = {wwwroot: `${SITE}/moodle`, courseId: 2};
+        assert.equal(isCourseViewUrl(`${SITE}/moodle/course/view.php?id=2`, sub), true);
+        assert.equal(isCourseViewUrl(`${SITE}/course/view.php?id=2`, sub), false);
+    });
+});
+
+describe('parsePopupMessage', () => {
+    const popupWindow = {name: 'popup-window'};
+    const expectedPopup = {siteOrigin: SITE, frameWindow: popupWindow};
+    const fromPopup = (data, overrides = {}) => ({origin: SITE, source: popupWindow, data, ...overrides});
+
+    it('accepts the known messages from the popup frame on this site', () => {
+        const leave = fromPopup({type: POPUP_MESSAGE.LEAVE, v: 1});
+        const escape = fromPopup({type: POPUP_MESSAGE.ESCAPE, v: 1});
+        assert.equal(parsePopupMessage(leave, expectedPopup), POPUP_MESSAGE.LEAVE);
+        assert.equal(parsePopupMessage(escape, expectedPopup), POPUP_MESSAGE.ESCAPE);
+    });
+
+    it('ignores other origins, other windows, other versions and unknown types', () => {
+        const message = {type: POPUP_MESSAGE.LEAVE, v: 1};
+        assert.equal(parsePopupMessage(fromPopup(message, {origin: APP}), expectedPopup), null);
+        assert.equal(parsePopupMessage(fromPopup(message, {source: {}}), expectedPopup), null);
+        assert.equal(parsePopupMessage(fromPopup({...message, v: 2}), expectedPopup), null);
+        assert.equal(parsePopupMessage(fromPopup({type: 'rumbos:open-activity', v: 1}), expectedPopup), null);
+        assert.equal(parsePopupMessage(fromPopup('rumbos:popup-leave'), expectedPopup), null);
+        assert.equal(parsePopupMessage(fromPopup(message), {siteOrigin: SITE, frameWindow: null}), null);
     });
 });

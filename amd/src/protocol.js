@@ -37,6 +37,15 @@ export const MESSAGE = {
     HOST_STATE: 'rumbos:host-state',
     HOST_LAUNCH: 'rumbos:host-launch',
     HOST_FULLSCREEN: 'rumbos:host-fullscreen',
+    HOST_OVERLAY: 'rumbos:host-overlay',
+};
+
+/**
+ * Messages the activity page inside the popup sends to the host (same origin, not part of the app contract).
+ */
+export const POPUP_MESSAGE = {
+    LEAVE: 'rumbos:popup-leave',
+    ESCAPE: 'rumbos:popup-escape',
 };
 
 /** Error codes the app may report (contract v5.1). */
@@ -148,26 +157,91 @@ export const hostLaunch = (assertion) => ({type: MESSAGE.HOST_LAUNCH, v: PROTOCO
 export const hostFullscreen = (on) => ({type: MESSAGE.HOST_FULLSCREEN, v: PROTOCOL_VERSION, on});
 
 /**
- * Finds the URL to open for an activity, using ONLY the host's own last state.
+ * The host-overlay message: the host opened or closed an overlay above the app.
  *
- * The app never supplies URLs. The cmid must be in the state, the activity
- * must be openable (not restricted, with a URL), and the URL must stay on the
- * Moodle site.
+ * @param {boolean} open
+ * @returns {Object}
+ */
+export const hostOverlay = (open) => ({type: MESSAGE.HOST_OVERLAY, v: PROTOCOL_VERSION, open});
+
+/**
+ * Path of the Moodle site without a trailing slash ("" for a site at the root of its host).
+ *
+ * @param {URL} root The wwwroot URL.
+ * @returns {string}
+ */
+const rootPath = (root) => root.pathname.replace(/\/+$/, '');
+
+/**
+ * Decides how to open an activity, using ONLY the host's own last state.
+ *
+ * The app never supplies URLs. The cmid must be in the state, the activity must
+ * be openable (not restricted, with a URL) and the URL must be a Moodle URL:
+ *  - "popup": same origin as this page and under {wwwroot}/mod/, and the module
+ *    is not in the new-tab list.
+ *  - "tab": any other URL under the Moodle site (a module that works poorly in a
+ *    frame, or a page that is not an activity).
+ *  - null: not a Moodle URL at all, so it is not opened.
  *
  * @param {?{activities: Array}} state Last CourseState received from Moodle.
  * @param {number} cmid Course module id requested by the app.
- * @param {string} siteOrigin Origin of this Moodle site.
- * @returns {?string} Absolute URL, or null when it must not be opened.
+ * @param {{siteOrigin: string, wwwroot: string, newTabModules: string[]}} site Where the page is running.
+ * @returns {?{target: string, url: string, title: string}} What to open, or null when it must not be opened.
  */
-export const findActivityUrl = (state, cmid, siteOrigin) => {
+export const resolveActivityTarget = (state, cmid, {siteOrigin, wwwroot, newTabModules}) => {
     const activity = state?.activities?.find((candidate) => candidate.cmid === cmid);
     if (!activity || activity.availability === 'restricted' || typeof activity.url !== 'string') {
         return null;
     }
     try {
+        const root = new URL(wwwroot);
         const url = new URL(activity.url, siteOrigin);
-        return url.origin === siteOrigin ? url.href : null;
+        const base = rootPath(root);
+        if (!['http:', 'https:'].includes(url.protocol) || url.origin !== root.origin ||
+                (url.pathname !== base && !url.pathname.startsWith(`${base}/`))) {
+            return null;
+        }
+        const inMod = url.origin === siteOrigin && url.pathname.startsWith(`${base}/mod/`);
+        const popup = inMod && !newTabModules.includes(activity.modname);
+        return {target: popup ? 'popup' : 'tab', url: url.href, title: String(activity.name ?? '')};
     } catch (error) {
         return null;
     }
+};
+
+/**
+ * Whether a URL is the view page of a course (where "Continue" and "Back to course" lead).
+ *
+ * @param {string} href
+ * @param {{wwwroot: string, courseId: number}} site
+ * @returns {boolean}
+ */
+export const isCourseViewUrl = (href, {wwwroot, courseId}) => {
+    try {
+        const root = new URL(wwwroot);
+        const url = new URL(href);
+        return url.origin === root.origin &&
+            url.pathname === `${rootPath(root)}/course/view.php` &&
+            url.searchParams.get('id') === String(courseId);
+    } catch (error) {
+        return false;
+    }
+};
+
+/**
+ * Validates a message sent by the activity page inside the popup.
+ *
+ * @param {{origin: string, source: *, data: *}} event
+ * @param {{siteOrigin: string, frameWindow: *}} expected The popup frame's own window on this site.
+ * @returns {?string} The message type, or null when the event must be ignored.
+ */
+export const parsePopupMessage = (event, {siteOrigin, frameWindow}) => {
+    if (!event || !frameWindow || event.origin !== siteOrigin || event.source !== frameWindow) {
+        return null;
+    }
+    const data = event.data;
+    if (!isPlainObject(data) || data.v !== PROTOCOL_VERSION || !Object.values(POPUP_MESSAGE).includes(data.type)) {
+        return null;
+    }
+    return data.type;
 };
