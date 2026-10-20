@@ -69,3 +69,94 @@ body.format-rumbos-fullscreen-open {
     right: 0.5rem;
     z-index: 1;
 }
+
+/*
+ * Activity popup: a dialog over the map that frames the Moodle activity page.
+ * It is full screen on small screens and a large sheet on wide ones. Its height
+ * follows the visible viewport (--format-rumbos-popup-height is set by the host
+ * module from visualViewport), so the on-screen keyboard does not cover it.
+ */
+.format-rumbos-popup {
+    position: fixed;
+    inset: 0;
+    z-index: 1070;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    overscroll-behavior: contain;
+}
+
+@media (min-width: 768px) {
+    .format-rumbos-popup {
+        inset: 2vh 3vw;
+        border-radius: 0.5rem;
+        box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .format-rumbos-popup {
+        height: var(--format-rumbos-popup-height, 100vh);
+        bottom: auto;
+    }
+}
+
+.format-rumbos-popup-bar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.format-rumbos-popup-bar .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.format-rumbos-popup-title {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 1.1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.format-rumbos-popup-frame {
+    display: block;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    border: 0;
+}
+
+body.format-rumbos-popup-open {
+    overflow: hidden;
+}
+
+/*
+ * The activity page inside the popup (the body class is added by the popup_page
+ * module, only when the window is the popup frame). The popup already shows the
+ * title and the way back, so the site chrome goes: the top bar, the drawers, the
+ * breadcrumb, the secondary tabs and the footer. The rules are all scoped to that
+ * class, so no other page changes, and Moodle's own frames (H5P, the SCORM player,
+ * editors) are separate documents that never get the class.
+ */
+body.format-rumbos-popup-page nav.navbar.fixed-top,
+body.format-rumbos-popup-page .drawer,
+body.format-rumbos-popup-page .drawer-toggles,
+body.format-rumbos-popup-page .secondary-navigation,
+body.format-rumbos-popup-page #page-navbar,
+body.format-rumbos-popup-page .activity-navigation,
+body.format-rumbos-popup-page #page-footer {
+    display: none;
+}
+
+body.format-rumbos-popup-page #page.drawers {
+    margin: 0;
+    padding: 0;
+}

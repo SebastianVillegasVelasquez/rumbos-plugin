@@ -18,7 +18,7 @@
  *
  * It contains no Rumbos logic. It verifies who is talking, answers with data
  * computed by Moodle for the current user, opens activities from its own last
- * state, and falls back to the standard course content when the app does not
+ * state (in a popup over the map, or in a new tab), and falls back to the standard course content when the app does not
  * answer.
  *
  * @module     format_rumbos/host
@@ -28,15 +28,19 @@
 
 import Ajax from 'core/ajax';
 import Log from 'core/log';
-import {getString} from 'core/str';
+import {getString, getStrings} from 'core/str';
+import ActivityPopup from 'format_rumbos/popup';
 import {
     MESSAGE,
-    findActivityUrl,
     hostFullscreen,
     hostInit,
     hostLaunch,
+    hostOverlay,
     hostState,
+    isCourseViewUrl,
     parseAppMessage,
+    parsePopupMessage,
+    resolveActivityTarget,
 } from 'format_rumbos/protocol';
 
 const SELECTORS = {
@@ -54,6 +58,9 @@ const CLASSES = {
     HIDDEN: 'd-none',
 };
 
+/** Minimum time between two state refreshes caused by the activity navigating (ms). */
+const NAVIGATION_REFRESH_MS = 5000;
+
 class RumbosHost {
     /**
      * @param {Object} params
@@ -62,14 +69,20 @@ class RumbosHost {
      * @param {string} params.mode "student" or "editor".
      * @param {string} params.locale BCP 47 language tag.
      * @param {number} params.timeoutMs How long to wait for embed-ready.
+     * @param {string} params.wwwroot Moodle's wwwroot, the base of every URL the host may open.
+     * @param {string} params.popupFrameName Name of the activity popup frame.
+     * @param {string[]} params.newTabModules Modules whose activities open in a new tab.
      */
-    constructor({courseId, appOrigin, mode, locale, timeoutMs}) {
+    constructor({courseId, appOrigin, mode, locale, timeoutMs, wwwroot, popupFrameName, newTabModules}) {
         this.courseId = courseId;
         this.appOrigin = appOrigin;
         this.mode = mode;
         this.locale = locale;
         this.timeoutMs = timeoutMs;
         this.siteOrigin = window.location.origin;
+        this.wwwroot = wwwroot;
+        this.popupFrameName = popupFrameName;
+        this.newTabModules = newTabModules;
 
         this.state = null;
         this.degraded = false;
@@ -77,6 +90,11 @@ class RumbosHost {
         this.timer = null;
         this.scrollY = 0;
         this.returnFocus = null;
+        this.popup = null;
+        this.strings = {back: 'Back to the map', frameTitle: '{$a}'};
+        this.popupLoads = 0;
+        this.lastNavigationRefresh = 0;
+        this.overlayToken = 0;
 
         this.onMessage = this.onMessage.bind(this);
         this.onKeydown = this.onKeydown.bind(this);
@@ -97,7 +115,21 @@ class RumbosHost {
         this.activityList = document.querySelector(SELECTORS.ACTIVITY_LIST);
 
         this.setState('waiting');
+        getStrings([
+            {key: 'backtomap', component: 'format_rumbos'},
+            {key: 'popupframetitle', component: 'format_rumbos', param: '{$a}'},
+        ]).then(([back, frameTitle]) => {
+            this.strings = {back, frameTitle};
+            return true;
+        }).catch(() => false);
         window.addEventListener('message', this.onMessage);
+        // A page restored from the back/forward cache would keep the mode and state of the
+        // moment it was left (editing mode is toggled by reloading the page): start afresh.
+        window.addEventListener('pageshow', (event) => {
+            if (event.persisted) {
+                window.location.reload();
+            }
+        });
         this.exitButton?.addEventListener('click', () => this.setFullscreen(false));
         this.timer = window.setTimeout(() => this.degrade('timeout'), this.timeoutMs);
 
@@ -114,6 +146,13 @@ class RumbosHost {
      * @param {MessageEvent} event
      */
     onMessage(event) {
+        if (this.popup?.isOpen) {
+            const popupMessage = parsePopupMessage(event, {siteOrigin: this.siteOrigin, frameWindow: this.popup.frameWindow});
+            if (popupMessage) {
+                this.closePopup();
+                return;
+            }
+        }
         const message = parseAppMessage(event, {appOrigin: this.appOrigin, frameWindow: this.frame.contentWindow});
         if (!message) {
             return;
@@ -201,14 +240,108 @@ class RumbosHost {
     }
 
     /**
-     * Opens an activity in the same tab, from the host's own last state only.
+     * Opens an activity from the host's own last state only: in the popup over the map, or in a new tab.
      *
      * @param {number} cmid
      */
     openActivity(cmid) {
-        const url = findActivityUrl(this.state, cmid, this.siteOrigin);
-        if (url) {
-            window.location.assign(url);
+        if (this.popup?.isOpen) {
+            return;
+        }
+        const target = resolveActivityTarget(this.state, cmid, {
+            siteOrigin: this.siteOrigin,
+            wwwroot: this.wwwroot,
+            newTabModules: this.newTabModules,
+        });
+        if (!target) {
+            return;
+        }
+        if (target.target === 'tab') {
+            // The click that started this happened in the app's frame; browsers pass that activation to
+            // this window. Where they do not (Safari), the activity opens here rather than not at all.
+            if (!window.open(target.url, '_blank', 'noopener')) {
+                window.location.assign(target.url);
+            }
+            return;
+        }
+        this.openPopup(target);
+    }
+
+    /**
+     * Opens the activity popup and tells the app an overlay is above it.
+     *
+     * @param {{url: string, title: string}} target
+     */
+    openPopup({url, title}) {
+        if (!this.popup) {
+            this.popup = this.createPopup();
+        }
+        this.popupLoads = 0;
+        this.overlayToken += 1;
+        this.popup.open(url, title, this.frame);
+        this.send(hostOverlay(true));
+    }
+
+    /**
+     * @returns {ActivityPopup}
+     */
+    createPopup() {
+        return new ActivityPopup({
+            frameName: this.popupFrameName,
+            backLabel: this.strings.back,
+            frameTitle: (title) => this.strings.frameTitle.replace('{$a}', () => title),
+            onClose: () => this.closePopup(),
+            onLoad: () => this.onPopupLoad(),
+        });
+    }
+
+    /**
+     * The activity frame finished a navigation: leave if it went to the course page, else refresh the progress.
+     */
+    onPopupLoad() {
+        this.popupLoads += 1;
+        const href = this.popup?.currentHref();
+        if (href && isCourseViewUrl(href, {wwwroot: this.wwwroot, courseId: this.courseId})) {
+            // "Continue" and "Back to course" end here: the map is already behind the popup.
+            this.closePopup();
+            return;
+        }
+        const now = Date.now();
+        if (this.popupLoads > 1 && now - this.lastNavigationRefresh >= NAVIGATION_REFRESH_MS) {
+            // A second page in the popup (a submission, a finished attempt) may have changed the completion.
+            this.lastNavigationRefresh = now;
+            this.refreshState()
+                .then((state) => this.send(hostState(state)))
+                .catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`));
+        }
+    }
+
+    /**
+     * Closes the popup, then gives the app the refreshed state and tells it the overlay is gone.
+     */
+    closePopup() {
+        if (!this.popup?.isOpen) {
+            return;
+        }
+        this.popup.close();
+        this.finishClose(this.overlayToken);
+    }
+
+    /**
+     * After closing: the refreshed state first, then the end of the overlay.
+     *
+     * @param {number} token Which popup was closed.
+     * @returns {Promise}
+     */
+    async finishClose(token) {
+        try {
+            this.send(hostState(await this.refreshState()));
+        } catch (error) {
+            Log.debug(`format_rumbos/host: ${error?.message ?? error}`);
+        }
+        // Another popup may have been opened while the state was loading: that one owns the overlay flag.
+        if (token === this.overlayToken) {
+            this.send(hostOverlay(false));
         }
     }
 

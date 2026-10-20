@@ -21,6 +21,7 @@ use core_courseformat\output\local\content as content_base;
 use format_rumbos\local\access;
 use format_rumbos\local\app_url;
 use format_rumbos\local\config;
+use format_rumbos\local\popup;
 use renderer_base;
 
 /**
@@ -55,13 +56,15 @@ class content extends content_base {
      * @return \stdClass
      */
     public function export_for_template(renderer_base $output) {
-        global $PAGE;
+        global $CFG, $PAGE;
 
         $data = parent::export_for_template($output);
 
         $courseid = $this->format->get_courseid();
         $context = context_course::instance($courseid);
-        $showrumbos = config::is_usable() && access::can_use($context);
+        // The activity popup frames pages of this course, and "Continue" there can land on the
+        // course page: never nest the app inside the popup.
+        $showrumbos = config::is_usable() && access::can_use($context) && !popup::is_popup_request($_SERVER);
 
         $data->showrumbos = $showrumbos;
         $data->courseid = $courseid;
@@ -78,6 +81,9 @@ class content extends content_base {
                 'mode' => access::map_mode($context, $editing),
                 'locale' => str_replace('_', '-', current_language()),
                 'timeoutMs' => 8000,
+                'wwwroot' => $CFG->wwwroot,
+                'popupFrameName' => popup::FRAME_NAME,
+                'newTabModules' => popup::get_newtab_modules(),
             ]]);
         }
 
