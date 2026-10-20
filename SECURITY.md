@@ -54,6 +54,23 @@ page.
 It is not verified that every logging store of a given Moodle site leaves AJAX
 responses out; check your own logging configuration if that matters to you.
 
+### The administrator's diagnostic
+
+The settings page has a **View sample assertion (unsigned)** action for diagnosing a
+registration. It is restricted to users with `moodle/site:config`: the external function
+checks the capability itself, and the panel renders nothing for anyone else.
+
+It signs a fresh assertion for the administrator who asks, decodes it **on the server**
+and returns only the header and the claims: `alg`, `typ`, `kid`, `iss`, `aud`, `sub`,
+`course`, `role`, `iat`, `exp` and `jti`. The result is built field by field from that
+fixed list, so it cannot carry anything else. It never returns the compact token or the
+signature, and the token is discarded, so nothing it returns can be replayed.
+
+What it does expose is already what the service sees, plus the administrator's own
+pseudonymous id: nothing secret. It exposes no key, no secret, and no data about any
+other user. The page shows it with `textContent`, not as HTML, and the plugin does not
+log it.
+
 ## The iframe
 
 The app runs in an iframe with `sandbox="allow-scripts allow-same-origin allow-forms"`,

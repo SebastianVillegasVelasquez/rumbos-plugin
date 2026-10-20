@@ -105,7 +105,7 @@ Open **Site administration > Plugins > Course formats > Rumbos**.
 | Enable Rumbos | Master switch, off by default. When off, Rumbos courses show only the standard Moodle content. |
 | Rumbos app URL | HTTPS address of the Rumbos app, for example `https://rumbos.example.com`. The value is stored as an origin plus an optional path with no trailing slash. Anything that is not HTTPS is rejected, as are credentials, query strings and fragments. The URL must not be on the same origin as Moodle. |
 | Audience | Value of the `aud` claim. It must match the value configured in the Rumbos service. Default `rumbos`. |
-| Public key | Read-only. Shows the key id and the public key, with a button to copy it. |
+| Registration | Read-only panel with what the Rumbos service needs to know about this site: issuer, host origin, audience, key id, public key and its fingerprint, a registration command, and a diagnostic. See [Registering the site](#registering-the-site-in-the-rumbos-service). |
 
 To use the format, a teacher selects **Rumbos** as the course format in the course
 settings.
@@ -115,23 +115,63 @@ it is granted to the editing teacher and manager roles.
 
 ### Rotating the key
 
-**Rotate key** (next to the public key) generates a new key pair after a confirmation.
+**Rotate key** (in the registration panel) generates a new key pair after a confirmation.
 The pseudonymous ids do not change. The previous public key stops working immediately,
-so register the new one in the Rumbos service straight away; launches fail until you do.
+so add the new one in the Rumbos service straight away; launches fail until you do.
+The site is already registered, so the first-time `add` command would be refused: use the
+service's `add-key` command with the new key file, the issuer and the new key id, all
+shown in the panel (`python -m app.scripts.tenants add-key --issuer ISSUER --kid KID
+--public-key-file moodle.pub.pem`; check the flags with `--help`).
 
 ## Registering the site in the Rumbos service
 
-The Rumbos service must know the site before it accepts its assertions. Give the
-operator of the service, or use the service's own command-line tool with, these values:
+The Rumbos service must know the site before it accepts its assertions, and it compares
+what it knows with each assertion character by character. One wrong character makes
+every launch fail with the same generic error, so the plugin shows everything in one
+panel, read from the code that signs the assertions rather than worked out by hand.
 
-| Value | Where to find it |
-| --- | --- |
-| Issuer | The Moodle `wwwroot`, without a trailing slash |
-| Audience | The **Audience** setting |
-| Key id | Shown with the public key |
-| Public key | The PEM block shown on the settings page; use the copy button |
+1. Open **Site administration > Plugins > Course formats > Rumbos** and find the
+   **Registration in the Rumbos service** panel. It shows:
 
-The exact command belongs to the Rumbos service. See its documentation.
+   | Value | Meaning |
+   | --- | --- |
+   | Issuer (`iss`) | Moodle's `wwwroot` in the form the plugin signs: lower-case host, no default port, no trailing slash. It can differ from the address in your browser, for example behind a proxy. |
+   | Host origin | The origin of this site, which the service allows to embed the app. |
+   | Audience (`aud`) | The service must be configured with the same one. |
+   | Key id (`kid`) | Identifies the key in the assertion header. |
+   | Fingerprint | SHA-256 of the public key, to compare with what the service reports. |
+   | Public key | The PEM block, with a copy button. |
+
+2. Copy the **registration command**, replace `<site name>` with a name for the site, and
+   run it where the Rumbos backend is installed. It writes the public key to
+   `moodle.pub.pem` and calls the backend's tenants command:
+
+   ```sh
+   python -m app.scripts.tenants add --name "<site name>" \
+     --issuer https://moodle.example.com \
+     --host-origin https://moodle.example.com \
+     --kid 0123456789abcdef \
+     --public-key-file moodle.pub.pem
+   ```
+
+   The command comes from the backend, not from the plugin: check its flags with
+   `python -m app.scripts.tenants add --help`, because they can change until that
+   command line is final.
+
+3. Always pass `--kid`, as the panel does. Without it the backend derives a key id from
+   the DER encoding of the key, which is **not** the id the plugin puts in the assertion
+   header, and every launch fails because the key is unknown.
+
+4. Make sure the backend runs with the same audience as the panel shows.
+
+5. Compare the fingerprint, then check the registration with
+   `python -m app.scripts.tenants list`.
+
+If launches still fail, **View sample assertion (unsigned)** in the panel shows the
+decoded header and claims of a fresh assertion for you, so you can compare the `iss`,
+`aud` and `kid` with what you registered. It never shows the token or its signature.
+The backend's `python -m app.scripts.tenants diagnose` command reads a real assertion on
+standard input and says which check it fails; an assertion expires after 60 seconds.
 
 ## Network and Content Security Policy
 
@@ -155,7 +195,9 @@ it, using the origin of the Moodle site:
 Content-Security-Policy: frame-ancestors https://moodle.example.com
 ```
 
-and it must not send `X-Frame-Options: DENY` or `SAMEORIGIN`.
+and it must not send `X-Frame-Options: DENY` or `SAMEORIGIN`. If you operate the Rumbos
+backend, `python -m app.scripts.tenants frame-ancestors` prints the header value for
+every registered site.
 
 The iframe is sandboxed with `allow-scripts allow-same-origin allow-forms` and sends no
 referrer. The app needs the forms because its editor is built on them. It cannot navigate
@@ -181,7 +223,14 @@ above. Also check that the app URL is reachable from the user's browser and that
 certificate is valid.
 
 **Launches are rejected after rotating the key.** The Rumbos service still has the old
-public key. Register the current one from the settings page.
+public key. Add the current one as described under [Rotating the key](#rotating-the-key).
+
+**Launches fail with `launch_failed` right after registering the site.** Use **View
+sample assertion (unsigned)** and compare its `iss`, `aud` and `kid` with the
+registration. The usual causes are a site registered without `--kid`, an issuer that
+differs by one character (`http` instead of `https`, `www`, a trailing slash, a
+sub-path), a different audience, and clocks on the two servers that differ by more than a
+few seconds, since an assertion lasts 60 seconds.
 
 **The settings page reports that the keys cannot be decrypted.** Moodle's encryption
 key file, in `dataroot/secret`, was lost or replaced, for example by restoring a
@@ -189,6 +238,13 @@ database without it. The stored private key and the secret for pseudonymous ids 
 longer be read. Use **Reset keys**. This replaces the key pair and the secret, so every
 user gets a new pseudonymous id and the Rumbos service sees them as new users. Back up
 `dataroot/secret` together with the database to avoid this.
+
+A second cause needs no reset: ownership. The key file is created readable only by the
+user that first needed it, so installing or upgrading the plugin from the command line as
+another user than the web server's (for example `root`) leaves a key the web server
+cannot read. Fix the ownership of `dataroot/secret` so the web server user owns it, and
+run such commands as that user from then on, for example
+`sudo -u www-data php admin/cli/upgrade.php`.
 
 **An error about the app URL.** It must be HTTPS and on a different origin than Moodle.
 
