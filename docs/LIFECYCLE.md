@@ -54,3 +54,13 @@ persistent dataroot), the secrets can no longer be decrypted:
 
 **Back up `dataroot/secret` together with the database.** Ordinary key rotation
 keeps the HMAC secret, so ids stay stable.
+
+### The same symptom without a lost key: ownership
+
+Moodle creates the key file readable only by the user that first needed it. If the
+plugin is installed or upgraded from the command line as a different user than the
+web server's (for example `root`), the file belongs to that user and the web server
+cannot read it, so the stored secrets look undecryptable even though nothing was lost.
+Fix the ownership of `dataroot/secret` so the web server user owns it, and run such
+commands as that user (for example `sudo -u www-data php admin/cli/upgrade.php`). No
+reset is needed, and a reset would not help: it also has to read the key file.
