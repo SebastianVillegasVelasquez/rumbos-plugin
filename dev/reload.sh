@@ -3,4 +3,4 @@
 # strings, templates, AMD modules or db/ definitions that Moodle caches.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
-mdc exec -T webserver php admin/cli/purge_caches.php
+mdc exec -T -u www-data webserver php admin/cli/purge_caches.php

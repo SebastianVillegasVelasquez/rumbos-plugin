@@ -34,9 +34,9 @@ cp "$RUMBOS_REPO/dev/docker/local.yml" "$RUMBOS_DEV_ROOT/moodle-docker/local.yml
 mdc up -d
 "$RUMBOS_DEV_ROOT/moodle-docker/bin/moodle-docker-wait-for-db"
 
-mdc exec webserver php admin/cli/install_database.php --agree-license \
+mdc exec -u www-data webserver php admin/cli/install_database.php --agree-license \
   --fullname="Rumbos dev" --shortname="rumbos" \
   --adminpass="Admin123!" --adminemail="admin@example.com"
-mdc exec webserver php admin/cli/cfg.php --name=debug --set=32767
-mdc exec webserver php admin/cli/cfg.php --name=debugdisplay --set=1
+mdc exec -u www-data webserver php admin/cli/cfg.php --name=debug --set=32767
+mdc exec -u www-data webserver php admin/cli/cfg.php --name=debugdisplay --set=1
 echo "Moodle ready at http://localhost:${MOODLE_DOCKER_WEB_PORT} (admin / Admin123!)"
