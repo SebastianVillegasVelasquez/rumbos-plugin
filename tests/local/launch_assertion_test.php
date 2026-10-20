@@ -145,6 +145,20 @@ final class launch_assertion_test extends \advanced_testcase {
     }
 
     /**
+     * The role claim does not depend on Moodle's editing mode: only the page's mode does.
+     */
+    public function test_role_claim_ignores_the_editing_mode(): void {
+        global $USER;
+        [$course, $teacher] = $this->enrolled('editingteacher');
+
+        foreach ([0, 1] as $editing) {
+            $USER->editing = $editing;
+            $token = launch_assertion::create($course->id, $teacher->id)['token'];
+            $this->assertSame('editor', $this->verify($token)->role);
+        }
+    }
+
+    /**
      * The role claim follows format/rumbos:editmap.
      */
     public function test_role_follows_the_capability(): void {

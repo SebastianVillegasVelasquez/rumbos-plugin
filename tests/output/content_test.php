@@ -172,6 +172,23 @@ final class content_test extends \advanced_testcase {
     }
 
     /**
+     * A teacher with editing off is reminded to turn it on, outside the iframe; nobody else is.
+     */
+    public function test_only_a_teacher_with_editing_off_gets_the_editing_note(): void {
+        [$course, $student, $teacher] = $this->setup_course();
+        $query = '//*[@data-region="rumbos-edit-note"]';
+
+        $xpath = $this->render($course, $teacher);
+        $note = $xpath->query($query);
+        $this->assertSame(1, $note->length);
+        $this->assertSame(get_string('turneditingon', 'format_rumbos'), trim($note->item(0)->textContent));
+        $this->assertSame(0, $xpath->query('//iframe//*[@data-region="rumbos-edit-note"]')->length);
+
+        $this->assertSame(0, $this->render($course, $teacher, true)->query($query)->length);
+        $this->assertSame(0, $this->render($course, $student)->query($query)->length);
+    }
+
+    /**
      * Without the master switch only the standard content renders.
      */
     public function test_disabled_renders_only_the_standard_content(): void {

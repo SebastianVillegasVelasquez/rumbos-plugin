@@ -81,3 +81,4 @@ $string['rumbos:editmap'] = 'Edit the Rumbos map';
 $string['section0name'] = 'General';
 $string['showactivitylist'] = 'View the activity list';
 $string['skipmap'] = 'Skip the Rumbos map and go to the activity list';
+$string['turneditingon'] = 'Turn editing on to modify the map.';

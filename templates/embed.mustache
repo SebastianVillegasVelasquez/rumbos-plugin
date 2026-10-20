@@ -39,12 +39,16 @@
     Example context (json):
     {
         "courseid": 2,
+        "suggestediting": true,
         "embedurl": "https://rumbos.example.com/embed?host=https%3A%2F%2Flms.example.com"
     }
 }}
 <a class="visually-hidden visually-hidden-focusable btn btn-link" href="#format-rumbos-list">
     {{#str}} skipmap, format_rumbos {{/str}}
 </a>
+{{#suggestediting}}
+<p class="text-muted small mb-2" data-region="rumbos-edit-note">{{#str}} turneditingon, format_rumbos {{/str}}</p>
+{{/suggestediting}}
 <div class="format-rumbos-container mb-3"
      data-region="rumbos-container"
      data-courseid="{{courseid}}"

@@ -81,3 +81,4 @@ $string['rumbos:editmap'] = 'Editar el mapa de Rumbos';
 $string['section0name'] = 'General';
 $string['showactivitylist'] = 'Ver la lista de actividades';
 $string['skipmap'] = 'Saltar el mapa de Rumbos e ir a la lista de actividades';
+$string['turneditingon'] = 'Activa la edición del curso para modificar el mapa.';

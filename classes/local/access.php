@@ -44,4 +44,31 @@ class access {
         return is_enrolled($context, $userid, '', true)
             || has_capability('format/rumbos:editmap', $context, $userid);
     }
+
+    /**
+     * The mode the page tells the app to run in (host-init "mode").
+     *
+     * The map editor is for users who may edit the map AND have Moodle's editing
+     * mode switched on ("Turn editing on"); with editing off a teacher sees the
+     * map exactly as a student does. The role claim of the launch assertion is
+     * capability based and does not depend on this.
+     *
+     * @param context_course $context
+     * @param bool $editing Whether the page is in editing mode ($PAGE->user_is_editing()).
+     * @return string "editor" or "student"
+     */
+    public static function map_mode(context_course $context, bool $editing): string {
+        return $editing && has_capability('format/rumbos:editmap', $context) ? 'editor' : 'student';
+    }
+
+    /**
+     * Whether to remind the user to switch editing on: they may edit the map but editing is off.
+     *
+     * @param context_course $context
+     * @param bool $editing Whether the page is in editing mode.
+     * @return bool
+     */
+    public static function should_suggest_editing(context_course $context, bool $editing): bool {
+        return !$editing && has_capability('format/rumbos:editmap', $context);
+    }
 }

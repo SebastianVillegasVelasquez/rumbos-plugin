@@ -48,6 +48,8 @@ class content extends content_base {
      *   only while Rumbos is enabled and configured.
      * - collapselist: students get the standard list behind a disclosure
      *   control; teachers in editing mode keep the core editor expanded.
+     * - suggestediting: a teacher with editing off gets a note to turn it on.
+     *   The map editor itself needs the capability and Moodle's editing mode.
      *
      * @param renderer_base $output
      * @return \stdClass
@@ -64,6 +66,8 @@ class content extends content_base {
         $data->showrumbos = $showrumbos;
         $data->courseid = $courseid;
         $data->collapselist = $showrumbos && !$this->format->show_editor();
+        $editing = (bool) $PAGE->user_is_editing();
+        $data->suggestediting = $showrumbos && access::should_suggest_editing($context, $editing);
 
         if ($showrumbos) {
             $appurl = config::get_app_url();
@@ -71,7 +75,7 @@ class content extends content_base {
             $PAGE->requires->js_call_amd('format_rumbos/host', 'init', [[
                 'courseId' => (int) $courseid,
                 'appOrigin' => app_url::origin($appurl),
-                'mode' => has_capability('format/rumbos:editmap', $context) ? 'editor' : 'student',
+                'mode' => access::map_mode($context, $editing),
                 'locale' => str_replace('_', '-', current_language()),
                 'timeoutMs' => 8000,
             ]]);
