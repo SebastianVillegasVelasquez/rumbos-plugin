@@ -199,7 +199,8 @@ user's browser connects to it directly, so it also sees the network address and
 browser details of that request. This is declared through Moodle's privacy API.
 Requests to export or delete data held by the service go to its operator. See
 [docs/LIFECYCLE.md](docs/LIFECYCLE.md) for what happens on install, uninstall and
-course deletion.
+course deletion, and [SECURITY.md](SECURITY.md) for the threat model and how to
+report a vulnerability.
 
 ## Limitations
 
