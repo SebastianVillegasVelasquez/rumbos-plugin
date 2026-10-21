@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'format_rumbos';
-$plugin->version = 2026102003;
+$plugin->version = 2026102100;
 $plugin->requires = 2026042000; // Moodle 5.2.0.
 $plugin->supported = [502, 503]; // Branch numbers, inclusive range.
 $plugin->maturity = MATURITY_ALPHA;
-$plugin->release = '0.1.3';
+$plugin->release = '0.2.0';
