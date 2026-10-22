@@ -312,6 +312,26 @@ JS
     }
 
     /**
+     * Completes an activity for a user the way a package reporting from inside its own frame would:
+     * Moodle changes, and no page of the activity is loaded.
+     *
+     * @When /^the activity "(?P<name_string>(?:[^"]|\\")*)" is completed for "(?P<username_string>(?:[^"]|\\")*)" in the background$/
+     * @param string $name Activity name.
+     * @param string $username
+     */
+    public function the_activity_is_completed_in_the_background(string $name, string $username): void {
+        global $DB;
+
+        $cm = get_coursemodule_from_id('page', $this->find_page_cmid($name), 0, false, MUST_EXIST);
+        $course = get_course($cm->course);
+        $user = $DB->get_record('user', ['username' => $username], '*', MUST_EXIST);
+        $completion = new \completion_info($course);
+        $data = $completion->get_data($cm, false, $user->id);
+        $data->completionstate = COMPLETION_COMPLETE;
+        $completion->internal_set_data($cm, $data);
+    }
+
+    /**
      * Gets the id of the course module with an activity name, which must exist.
      *
      * @param string $name Activity name.
