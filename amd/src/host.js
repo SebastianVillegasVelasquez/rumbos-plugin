@@ -91,6 +91,7 @@ class RumbosHost {
         this.state = null;
         this.degraded = false;
         this.fullscreen = false;
+        this.expectNativeExit = false;
         this.timer = null;
         this.scrollY = 0;
         this.returnFocus = null;
@@ -142,6 +143,7 @@ class RumbosHost {
             }
         });
         this.exitButton?.addEventListener('click', () => this.setFullscreen(false));
+        document.addEventListener('fullscreenchange', () => this.onNativeFullscreenChange());
         this.timer = window.setTimeout(() => this.degrade('timeout'), this.timeoutMs);
 
         // The iframe is in the page HTML, so it can finish loading and send embed-ready
@@ -327,6 +329,7 @@ class RumbosHost {
             this.popup = this.createPopup();
         }
         this.overlayToken += 1;
+        this.stepOutOfNativeFullscreen();
         this.popup.open(url, title, this.frame);
         this.send(hostOverlay(true));
     }
@@ -393,7 +396,11 @@ class RumbosHost {
     }
 
     /**
-     * Toggles the full screen overlay (CSS based: iOS Safari has no Fullscreen API for arbitrary elements).
+     * Toggles the full screen mode and, where the browser allows it, also the browser's own full screen.
+     *
+     * The mode is a CSS overlay that always works (iPhone Safari has no Fullscreen API for arbitrary
+     * elements, and any browser may refuse the request), so a refused native request changes nothing
+     * the app can see. While it is on, the host's exit control owns the top-right corner (styles.css).
      *
      * @param {boolean} on
      * @param {boolean} notify Tell the app the new state (every change is reported, whoever caused it).
@@ -417,8 +424,10 @@ class RumbosHost {
             }
             document.addEventListener('keydown', this.onKeydown);
             this.frame.focus();
+            this.requestNativeFullscreen();
         } else {
             document.removeEventListener('keydown', this.onKeydown);
+            this.leaveNativeFullscreen();
             this.frameWrap.classList.remove(CLASSES.FULLSCREEN);
             this.frameWrap.removeAttribute('role');
             this.frameWrap.removeAttribute('aria-modal');
@@ -436,6 +445,57 @@ class RumbosHost {
 
         if (notify) {
             this.send(hostFullscreen(on));
+        }
+    }
+
+    /**
+     * Asks the browser for its own full screen on the wrapper. A refusal is fine: the overlay stays.
+     */
+    requestNativeFullscreen() {
+        if (typeof this.frameWrap.requestFullscreen !== 'function' || document.fullscreenElement) {
+            return;
+        }
+        try {
+            Promise.resolve(this.frameWrap.requestFullscreen({navigationUI: 'hide'}))
+                .catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`));
+        } catch (error) {
+            Log.debug(`format_rumbos/host: ${error?.message ?? error}`);
+        }
+    }
+
+    /**
+     * Leaves the browser's own full screen if the wrapper is in it.
+     */
+    leaveNativeFullscreen() {
+        if (document.fullscreenElement && document.fullscreenElement === this.frameWrap) {
+            document.exitFullscreen().catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`));
+        }
+    }
+
+    /**
+     * The browser's full screen ended. If the user did it (the browser handles Escape itself there and
+     * the page never sees the key), the mode ends too, and the app is told.
+     */
+    onNativeFullscreenChange() {
+        if (document.fullscreenElement || !this.fullscreen) {
+            return;
+        }
+        if (this.expectNativeExit) {
+            // The host left it on purpose, to show the activity popup above the map: the overlay stays.
+            this.expectNativeExit = false;
+            return;
+        }
+        this.setFullscreen(false);
+    }
+
+    /**
+     * The activity popup lives in the page body, which the browser's full screen would hide:
+     * leave the browser's full screen first. The overlay (and the mode) stays.
+     */
+    stepOutOfNativeFullscreen() {
+        if (document.fullscreenElement === this.frameWrap) {
+            this.expectNativeExit = true;
+            this.leaveNativeFullscreen();
         }
     }
 
