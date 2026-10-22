@@ -84,6 +84,7 @@ class content extends content_base {
                 'wwwroot' => $CFG->wwwroot,
                 'popupFrameName' => popup::FRAME_NAME,
                 'newTabModules' => popup::get_newtab_modules(),
+                'pollModules' => popup::get_poll_modules(),
             ]]);
         }
 

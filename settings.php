@@ -27,6 +27,7 @@ defined('MOODLE_INTERNAL') || die();
 use format_rumbos\admin\setting_appurl;
 use format_rumbos\admin\setting_newtabmodules;
 use format_rumbos\admin\setting_registration;
+use format_rumbos\local\popup;
 
 // The rotation confirmation page lives outside the settings page but inside the admin tree.
 $ADMIN->add('formatsettings', new admin_externalpage(
@@ -63,6 +64,13 @@ if ($ADMIN->fulltree) {
         'format_rumbos/newtabmodules',
         get_string('newtabmodules', 'format_rumbos'),
         get_string('newtabmodules_desc', 'format_rumbos')
+    ));
+
+    $settings->add(new setting_newtabmodules(
+        'format_rumbos/pollmodules',
+        get_string('pollmodules', 'format_rumbos'),
+        get_string('pollmodules_desc', 'format_rumbos'),
+        popup::DEFAULT_POLL_MODULES
     ));
 
     $settings->add(new setting_registration(

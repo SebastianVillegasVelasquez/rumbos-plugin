@@ -74,6 +74,25 @@ zoom, lti "));
     }
 
     /**
+     * The polled modules use the same list setting with their own default, and are stored clean.
+     */
+    public function test_pollmodules_is_stored_clean(): void {
+        $this->setAdminUser();
+        $setting = new setting_newtabmodules(
+            'format_rumbos/pollmodules',
+            'Polled',
+            '',
+            \format_rumbos\local\popup::DEFAULT_POLL_MODULES
+        );
+        $this->assertSame('scorm,h5pactivity', $setting->get_defaultsetting());
+
+        $this->assertSame('', $setting->write_setting(' H5PActivity, scorm '));
+        $this->assertSame(['h5pactivity', 'scorm'], \format_rumbos\local\popup::get_poll_modules());
+        $this->assertNotSame('', $setting->write_setting('scorm,../etc'));
+        $this->assertSame(['h5pactivity', 'scorm'], \format_rumbos\local\popup::get_poll_modules());
+    }
+
+    /**
      * The URL setting stores the normalised https URL.
      */
     public function test_appurl_is_stored_normalised(): void {

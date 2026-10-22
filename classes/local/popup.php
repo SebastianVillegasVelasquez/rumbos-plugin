@@ -33,6 +33,9 @@ class popup {
     /** @var string Modules that open in a new tab unless the admin changes the list. */
     public const DEFAULT_NEWTAB_MODULES = 'bigbluebuttonbn,lti';
 
+    /** @var string Modules that report completion without the page navigating, so the popup polls for them. */
+    public const DEFAULT_POLL_MODULES = 'scorm,h5pactivity';
+
     /**
      * Parses a list of module names (commas, spaces or new lines) into a clean list.
      *
@@ -60,6 +63,19 @@ class popup {
         $value = get_config('format_rumbos', 'newtabmodules');
         if ($value === false) {
             $value = self::DEFAULT_NEWTAB_MODULES;
+        }
+        return self::parse_modules((string) $value) ?? [];
+    }
+
+    /**
+     * Modules whose completion can change while their page stays put (a package reporting inside its own frame).
+     *
+     * @return string[]
+     */
+    public static function get_poll_modules(): array {
+        $value = get_config('format_rumbos', 'pollmodules');
+        if ($value === false) {
+            $value = self::DEFAULT_POLL_MODULES;
         }
         return self::parse_modules((string) $value) ?? [];
     }

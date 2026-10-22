@@ -23,7 +23,7 @@ defined('MOODLE_INTERNAL') || die();
 require_once($CFG->libdir . '/adminlib.php');
 
 /**
- * Admin setting: the modules whose activities open in a new tab instead of the popup.
+ * Admin setting: a list of module names (the modules that open in a new tab, the modules the popup polls for).
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
@@ -36,9 +36,15 @@ class setting_newtabmodules extends \admin_setting_configtext {
      * @param string $name Setting name including the component.
      * @param string $visiblename
      * @param string $description
+     * @param string $default Module names the setting holds until the admin changes it.
      */
-    public function __construct(string $name, string $visiblename, string $description) {
-        parent::__construct($name, $visiblename, $description, popup::DEFAULT_NEWTAB_MODULES, PARAM_RAW, 50);
+    public function __construct(
+        string $name,
+        string $visiblename,
+        string $description,
+        string $default = popup::DEFAULT_NEWTAB_MODULES
+    ) {
+        parent::__construct($name, $visiblename, $description, $default, PARAM_RAW, 50);
     }
 
     /**

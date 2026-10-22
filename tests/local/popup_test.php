@@ -77,6 +77,21 @@ final class popup_test extends \advanced_testcase {
     }
 
     /**
+     * The polled modules default to the ones that report completion inside their own frame, and can be emptied.
+     */
+    public function test_poll_modules_default_and_empty(): void {
+        $this->resetAfterTest();
+        unset_config('pollmodules', 'format_rumbos');
+        $this->assertSame(['scorm', 'h5pactivity'], popup::get_poll_modules());
+
+        set_config('pollmodules', '', 'format_rumbos');
+        $this->assertSame([], popup::get_poll_modules());
+
+        set_config('pollmodules', 'scorm, ../x', 'format_rumbos');
+        $this->assertSame([], popup::get_poll_modules(), 'a corrupt value turns polling off');
+    }
+
+    /**
      * Only same-origin iframe requests are popup requests; absent headers are not.
      */
     public function test_is_popup_request_needs_a_same_origin_iframe(): void {
