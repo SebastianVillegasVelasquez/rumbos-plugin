@@ -19,7 +19,7 @@
  * It contains no Rumbos logic. It verifies who is talking, answers with data
  * computed by Moodle for the current user, opens activities from its own last
  * state (in a popup over the map, or in a new tab), and falls back to the standard course content when the app does not
- * answer.
+ * answer. It reads the state again, one request at a time, whenever completion can have changed.
  *
  * @module     format_rumbos/host
  * @copyright  2026 OBJ Digital
@@ -30,6 +30,7 @@ import Ajax from 'core/ajax';
 import Log from 'core/log';
 import {getString, getStrings} from 'core/str';
 import ActivityPopup from 'format_rumbos/popup';
+import {createRefresher} from 'format_rumbos/refresher';
 import {
     MESSAGE,
     hostFullscreen,
@@ -58,8 +59,11 @@ const CLASSES = {
     HIDDEN: 'd-none',
 };
 
-/** Minimum time between two state refreshes caused by the activity navigating (ms). */
-const NAVIGATION_REFRESH_MS = 5000;
+/** A burst of navigations in the activity popup is refreshed once, this long after the last one (ms). */
+const NAVIGATION_DEBOUNCE_MS = 400;
+
+/** Minimum time between two refreshes caused by the activity popup navigating (ms). */
+const NAVIGATION_REFRESH_MS = 2000;
 
 class RumbosHost {
     /**
@@ -92,9 +96,16 @@ class RumbosHost {
         this.returnFocus = null;
         this.popup = null;
         this.strings = {back: 'Back to the map', frameTitle: '{$a}'};
-        this.popupLoads = 0;
-        this.lastNavigationRefresh = 0;
         this.overlayToken = 0;
+        this.lastPushed = '';
+        // Every read of the state goes through this: one request at a time, whoever asks.
+        this.refresher = createRefresher({
+            fetch: () => this.fetchState(),
+            onState: (state) => this.onStateFetched(state),
+            onError: (error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`),
+            debounceMs: NAVIGATION_DEBOUNCE_MS,
+            minIntervalMs: NAVIGATION_REFRESH_MS,
+        });
 
         this.onMessage = this.onMessage.bind(this);
         this.onKeydown = this.onKeydown.bind(this);
@@ -164,7 +175,7 @@ class RumbosHost {
                 this.init();
                 break;
             case MESSAGE.REQUEST_STATE:
-                this.refreshState().then((state) => this.send(hostState(state))).catch((error) => this.fail(error));
+                this.refreshState().then((state) => this.pushState(state)).catch((error) => this.fail(error));
                 break;
             case MESSAGE.REQUEST_LAUNCH:
                 this.fetchAssertion().then((assertion) => this.send(hostLaunch(assertion)))
@@ -206,16 +217,55 @@ class RumbosHost {
     }
 
     /**
-     * Fetches the current user's course state and remembers it.
+     * Reads the current user's course state, joining the read already in flight if there is one.
      *
      * @returns {Promise<Object>}
      */
     refreshState() {
-        return Ajax.call([{methodname: 'format_rumbos_get_course_state', args: {courseid: this.courseId}}])[0]
-            .then((state) => {
-                this.state = state;
-                return state;
-            });
+        return this.refresher.load();
+    }
+
+    /**
+     * The request itself; use refreshState(), which never runs two at once.
+     *
+     * @returns {Promise<Object>}
+     */
+    fetchState() {
+        return Ajax.call([{methodname: 'format_rumbos_get_course_state', args: {courseid: this.courseId}}])[0];
+    }
+
+    /**
+     * Remembers a state that was just read and, while the activity popup is open, tells the app if it changed.
+     *
+     * The app is not looking at the map then, but it keeps the progress it will show when the popup closes.
+     *
+     * @param {Object} state
+     */
+    onStateFetched(state) {
+        this.state = state;
+        if (this.popup?.isOpen && this.signature(state) !== this.lastPushed) {
+            this.pushState(state);
+        }
+    }
+
+    /**
+     * Sends the app a state and remembers what it has been told.
+     *
+     * @param {Object} state
+     */
+    pushState(state) {
+        this.lastPushed = this.signature(state);
+        this.send(hostState(state));
+    }
+
+    /**
+     * What identifies a state apart from the time it was generated.
+     *
+     * @param {Object} state
+     * @returns {string}
+     */
+    signature(state) {
+        return JSON.stringify({...state, generatedAt: undefined});
     }
 
     /**
@@ -276,7 +326,6 @@ class RumbosHost {
         if (!this.popup) {
             this.popup = this.createPopup();
         }
-        this.popupLoads = 0;
         this.overlayToken += 1;
         this.popup.open(url, title, this.frame);
         this.send(hostOverlay(true));
@@ -297,23 +346,18 @@ class RumbosHost {
 
     /**
      * The activity frame finished a navigation: leave if it went to the course page, else refresh the progress.
+     *
+     * Completion can change on any page of the activity (viewing it, a submission, the review page that
+     * follows a quiz), so every navigation asks for a refresh; the refresher debounces and spaces them.
      */
     onPopupLoad() {
-        this.popupLoads += 1;
         const href = this.popup?.currentHref();
         if (href && isCourseViewUrl(href, {wwwroot: this.wwwroot, courseId: this.courseId})) {
             // "Continue" and "Back to course" end here: the map is already behind the popup.
             this.closePopup();
             return;
         }
-        const now = Date.now();
-        if (this.popupLoads > 1 && now - this.lastNavigationRefresh >= NAVIGATION_REFRESH_MS) {
-            // A second page in the popup (a submission, a finished attempt) may have changed the completion.
-            this.lastNavigationRefresh = now;
-            this.refreshState()
-                .then((state) => this.send(hostState(state)))
-                .catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`));
-        }
+        this.refresher.schedule();
     }
 
     /**
@@ -324,6 +368,8 @@ class RumbosHost {
             return;
         }
         this.popup.close();
+        // Nothing is read on a timer while no overlay is open; the close has its own read below.
+        this.refresher.cancel();
         this.finishClose(this.overlayToken);
     }
 
@@ -335,7 +381,8 @@ class RumbosHost {
      */
     async finishClose(token) {
         try {
-            this.send(hostState(await this.refreshState()));
+            // Not a read that began before the close: the last page of the activity may have changed it.
+            this.pushState(await this.refresher.flush());
         } catch (error) {
             Log.debug(`format_rumbos/host: ${error?.message ?? error}`);
         }
@@ -451,6 +498,7 @@ class RumbosHost {
         this.degraded = true;
         this.setState('degraded', reason === 'apperror' ? code : reason);
         this.clearTimer();
+        this.refresher.cancel();
         this.setFullscreen(false);
         window.removeEventListener('message', this.onMessage);
 
