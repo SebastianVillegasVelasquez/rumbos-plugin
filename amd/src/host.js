@@ -100,7 +100,6 @@ class RumbosHost {
         this.state = null;
         this.degraded = false;
         this.fullscreen = false;
-        this.expectNativeExit = false;
         this.timer = null;
         this.scrollY = 0;
         this.returnFocus = null;
@@ -377,8 +376,10 @@ class RumbosHost {
             this.popup = this.createPopup();
         }
         this.overlayToken += 1;
-        this.stepOutOfNativeFullscreen();
-        this.popup.open(url, title, this.frame);
+        // Anything outside the element that is in the browser's full screen is not shown, so the popup goes
+        // inside it. Opening an activity then does not end the full screen, and neither does closing it.
+        const inNativeFullscreen = document.fullscreenElement && document.fullscreenElement === this.frameWrap;
+        this.popup.open(url, title, this.frame, inNativeFullscreen ? this.frameWrap : document.body);
         this.send(hostOverlay(true));
     }
 
@@ -501,7 +502,8 @@ class RumbosHost {
      * Asks the browser for its own full screen on the wrapper. A refusal is fine: the overlay stays.
      */
     requestNativeFullscreen() {
-        if (typeof this.frameWrap.requestFullscreen !== 'function' || document.fullscreenElement) {
+        // A popup already open in the body would be hidden by the browser's full screen; the overlay will do.
+        if (typeof this.frameWrap.requestFullscreen !== 'function' || document.fullscreenElement || this.popup?.isOpen) {
             return;
         }
         try {
@@ -529,23 +531,9 @@ class RumbosHost {
         if (document.fullscreenElement || !this.fullscreen) {
             return;
         }
-        if (this.expectNativeExit) {
-            // The host left it on purpose, to show the activity popup above the map: the overlay stays.
-            this.expectNativeExit = false;
-            return;
-        }
+        // An open popup stays where it is: it is a fixed dialog, so it keeps showing without the full screen
+        // (moving its frame to the body would reload the activity, and a quiz attempt would be lost).
         this.setFullscreen(false);
-    }
-
-    /**
-     * The activity popup lives in the page body, which the browser's full screen would hide:
-     * leave the browser's full screen first. The overlay (and the mode) stays.
-     */
-    stepOutOfNativeFullscreen() {
-        if (document.fullscreenElement === this.frameWrap) {
-            this.expectNativeExit = true;
-            this.leaveNativeFullscreen();
-        }
     }
 
     /**

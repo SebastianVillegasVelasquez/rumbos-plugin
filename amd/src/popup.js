@@ -21,7 +21,8 @@
  * third-party-cookie treatment and a login screen.
  *
  * It only builds DOM, manages focus and reports events; deciding what to open
- * and what to tell the app is the host's job.
+ * and what to tell the app is the host's job. The host says where to mount it: the page body, or
+ * the element that is in the browser's full screen (anything outside that element is not shown).
  *
  * @module     format_rumbos/popup
  * @copyright  2026 OBJ Digital
@@ -106,8 +107,9 @@ export default class ActivityPopup {
      * @param {string} url Activity URL, already validated by the caller.
      * @param {string} title Activity title (plain text).
      * @param {?HTMLElement} returnFocus Where the focus goes back to on close.
+     * @param {HTMLElement} [mount] Where to put the dialog; the page body by default.
      */
-    open(url, title, returnFocus) {
+    open(url, title, returnFocus, mount = document.body) {
         if (this.isOpen) {
             return;
         }
@@ -150,8 +152,8 @@ export default class ActivityPopup {
         const after = this.sentinel(() => this.backButton.focus());
         root.append(before, bar, frame, after);
 
+        mount.append(root);
         this.makeBackgroundInert(root);
-        document.body.append(root);
         document.body.classList.add(CLASSES.BODY_OPEN);
         this.root = root;
 
@@ -205,10 +207,20 @@ export default class ActivityPopup {
     /**
      * The rest of the page is unreachable while the dialog is open (no focus, no clicks, hidden from screen readers).
      *
+     * The dialog may be inside another element (the one in the browser's full screen), so what is made inert
+     * is every sibling of the dialog and of each of its ancestors, up to the body.
+     *
      * @param {HTMLElement} root The dialog, which stays active.
      */
     makeBackgroundInert(root) {
-        this.inerted = [...document.body.children].filter((element) => element !== root && !element.inert);
+        this.inerted = [];
+        for (let node = root; node !== document.body && node.parentElement; node = node.parentElement) {
+            for (const sibling of node.parentElement.children) {
+                if (sibling !== node && !sibling.inert) {
+                    this.inerted.push(sibling);
+                }
+            }
+        }
         this.inerted.forEach((element) => {
             element.inert = true;
         });
