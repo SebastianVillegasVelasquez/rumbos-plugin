@@ -100,7 +100,14 @@ version 1, or whose type or fields are not exactly as expected. In particular:
   app never supplies a URL.
 - `error` details come from the app and are untrusted. They are shortened to one line
   of at most 200 characters and shown as text, never as HTML.
-- `request-fullscreen` toggles an overlay. The page always shows its own exit button.
+- `open-activity-settings` (editor mode only) carries only an activity id and can do one
+  thing: open, in a new tab, the settings page of that activity on this Moodle site. See
+  [below](#opening-an-activitys-settings).
+- `request-fullscreen` toggles an overlay (and asks the browser for its own full screen,
+  which the browser may refuse). While it is on, the top-right 64 x 64 CSS px of the viewport
+  belong to the page: its exit control sits there, above the app, so the app cannot cover it,
+  and it works even if the app is frozen. A malicious app can still draw a fake prompt
+  elsewhere in its frame, as noted below.
 
 **What the app can do.** It receives the signed-in user's assertion and their course
 state: activity and section names, the URLs of activities they can open, whether each
@@ -112,6 +119,26 @@ inside the frame.
 
 The Moodle administrator therefore decides which service receives this data. Point the
 plugin only at a service you trust.
+
+## Opening an activity's settings
+
+`rumbos:open-activity-settings { cmid }` lets a teacher editing the map jump to an activity's
+completion settings. What it can and cannot do:
+
+- **It can** make the page open one new tab (with `noopener`) on
+  `{wwwroot}/course/modedit.php?update={cmid}&showonly=activitycompletionheader`, the settings
+  page Moodle's own completion dialog links to.
+- **It cannot** open anything else. The app supplies only the id, never an address. The page
+  ignores the message unless the page is in editor mode and the id is in its own last course
+  state; then it asks the AJAX function `format_rumbos_get_activity_settings_url`, which has
+  no user id parameter, requires a Rumbos participant who holds `format/rumbos:editmap` in the
+  course **and** `moodle/course:manageactivities` in the activity, rejects an id that is not an
+  activity of that course or is being deleted, and builds the address with Moodle's URL class.
+  The page then checks again that the answer is the settings page of this site before opening it.
+- **It cannot change anything.** It opens a page; saving the settings is Moodle's own form,
+  with its own capability checks and session key. A student, or a teacher who does not edit the
+  map or may not manage that activity, gets nothing, and the message gets no answer.
+- If the browser blocks the new tab the page shows a notice instead of navigating away.
 
 ## The activity popup
 

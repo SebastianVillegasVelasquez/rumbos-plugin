@@ -23,7 +23,7 @@ for every activity). Completion rules are in brackets.
 | Activity | Opens | Interact / submit | Completion on the map | Notes |
 | --- | --- | --- | --- | --- |
 | Assignment, file upload (on submit) | yes | File added in the file manager, **Save changes** clicked: "Submitted for grading" | complete, also refreshed while the popup was open | The file was added by simulating a drop on the file manager's drop zone, not through the native file picker |
-| Quiz (a finished attempt) | yes | Attempt started, answered, **Finish attempt**, **Submit all and finish** with the confirmation dialog: review page shown | complete after closing | The refresh while the popup was open did not catch it (5 s throttle); the refresh on close did |
+| Quiz (a finished attempt) | yes | Attempt started, answered, **Finish attempt**, **Submit all and finish** with the confirmation dialog: review page shown | complete after closing | At version 0.2.0 the refresh while the popup was open did not catch it (5 s throttle); the refresh on close did. Fixed since: see [Completion flow](#completion-flow) |
 | SCORM (view) | yes | Package played in the player; **Exit activity** | complete | **Exit activity** loads the course page: the popup closed by itself and the map was not rendered inside it. SCORM display "Current window" (the default) was tested; "New window" was not |
 | H5P activity (view) | yes | Opened and rendered | complete | Playing the content and the xAPI completion were not exercised |
 | Custom certificate | **not tested** | | | `mod_customcert` is third party and was not installed |
@@ -77,3 +77,81 @@ testing the actual tools in production.
   Moodle's full page, and leaving through the course page still closes it (about 2 seconds
   on the development site, because the course page loads fully before the host can see
   it). Moodle served over plain HTTP on a host other than `localhost` behaves this way too.
+
+## Completion flow
+
+Moodle 5.2.4 development site, Chrome on Windows 11, a student in a throwaway Rumbos course with
+five quizzes that have one numerical question and a grade to pass of 80 out of 100. The Rumbos
+app was simulated as described above. "State" is what `format_rumbos_get_course_state` returned
+for the student, read in a **separate PHP process** from the one that made the attempt (as the
+AJAX call is), next to what Moodle's own `cm_completion_details` says for the same user.
+
+| Completion condition of the quiz | Student does | State returned | Moodle's own overall state |
+| --- | --- | --- | --- |
+| None | Views, finishes an attempt | `none` | no completion information |
+| View | Opens the quiz | `complete` | complete |
+| Receive a grade | Finishes an attempt with a wrong answer (grade 0) | `failed` | failed: the "receive a grade" rule is reported as failed because the grade is below the grade to pass |
+| Receive a passing grade | Wrong answer, then a right one in a new attempt | `failed`, then `complete` | the same |
+| Receive a passing grade or complete all attempts (2 attempts) | Wrong answer; a second wrong answer | `incomplete`, then `failed` | the same: the overall state is failed although the "all attempts used" rule is met |
+
+None of these conditions waits for a scheduled task: the quiz handles the submitted attempt in the
+request that submits it. The exception is an attempt abandoned past its time limit, which the
+scheduled task `mod_quiz\task\update_overdue_attempts` closes later; completion then changes with
+nobody navigating anywhere.
+
+The same quizzes were then taken **inside the activity popup**, the way a student would, with the
+host's messages recorded with their timing:
+
+- *Receive a passing grade*, a right answer: attempt page, summary page, confirmation dialog,
+  review page. The popup was still open when `host-state` arrived with `complete`, about a second
+  after the review page loaded (the 400 ms debounce plus the request). Earlier pages caused no
+  message because nothing had changed. Closing the popup sent `host-state` and then
+  `host-overlay { open: false }`.
+- *View*: `host-state` with `complete` arrived about a second after the popup opened, before
+  anything was clicked.
+
+Also covered by PHPUnit (`tests/local/course_state_test.php`): view, grade, pass and fail are reflected
+by the next state in the same test; a cache entry that another server left behind is not served; the
+flag follows the course and the site setting.
+
+### To repeat by hand
+
+1. Create five quizzes, one for each condition above, with a grade to pass.
+2. As a student, open each from the map (or from the course page), finish attempts as in the table
+   and check the activity's colour on the map after each step, with the popup open and after closing it.
+3. As a teacher with editing on, ask for the settings of an activity that never completes: a new tab
+   opens on its settings with only "Completion conditions" expanded.
+
+## Full screen
+
+What was run, on Moodle 5.2.4, Chrome on Windows 11, desktop viewport 1536 x 735, with a stand-in
+for the app (an iframe whose window records the host's messages; the app's own button was a 44 px
+button 8 px from the top-right corner):
+
+| Check | Result |
+| --- | --- |
+| Exit control geometry while full screen | Exactly the top-right 64 x 64 CSS px of the viewport (left 1472, top 0, right 1536, bottom 64) |
+| What is at the corner | `elementFromPoint` at three points of the square returned the exit control (the app's button was hidden under it) |
+| Stacking | The wrapper is `position: fixed; z-index: 1060`, above Moodle's top bar (1030), drawers (1015 and 1021), the "back to top" button (1000) and toasts (1051). Bootstrap popovers and tooltips (1070 and 1080) can still be above it, and they are transient |
+| Exit by click | Left full screen, `host-fullscreen { on: false }` sent, page scroll position (120 px) restored, the control hidden again |
+| Exit by Escape on the page | Same |
+| A request to leave (`request-fullscreen { on: false }`) | Left, and answered with `host-fullscreen { on: false }` |
+| The browser refusing its own full screen | The request after a real click did not enter the browser's full screen in this automated Chrome session; the overlay stayed and the app was told `on: true`, which is the designed behaviour for a refusal |
+| Exit control label | `aria-label` and `title` "Exit full screen" |
+
+Also covered by Behat (`tests/behat/rumbos_fullscreen.feature`): the control's size and corner and that
+it is above the app, exit by click and by the app's request, and the messages sent. Escape is not in Behat: the key goes to the focused app frame there, as it does for a user (see the README).
+
+### Not verified
+
+- **The browser's own full screen** (`requestFullscreen`) did not engage from the automated Chrome
+  session, so entering it, leaving it with Escape (the `fullscreenchange` path) and the popup stepping
+  out of it were not exercised. The code is guarded so that every failure leaves the overlay.
+- **Mobile.** iPhone Safari (no Fullscreen API for elements; the dynamic viewport units and the
+  address bar), iPad Safari, Android Chrome (rotation, the on-screen keyboard) and the notch: not run.
+  To check on a phone: ask for full screen, confirm the cross sits in the top-right corner, is large
+  enough to tap and is not covered by the browser's bars, exit, and confirm the page scroll position
+  is where it was; rotate while in full screen.
+- **Keyboard and screen readers.** Tab reaching the exit control from the app frame, and the dialog
+  announcement, were not tried.
+- **Firefox, Safari and Edge on desktop.**

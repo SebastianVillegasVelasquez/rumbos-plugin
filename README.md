@@ -30,7 +30,10 @@ Moodle:
    (see [Activity popups](#activity-popups)), or in a new tab for the modules listed in
    the settings. The page only follows URLs found in its own copy of the course state,
    never a URL supplied by the app.
-4. The map editor appears only for users who hold `format/rumbos:editmap` **and** have
+4. While the popup is open the page reads the course state again after every page the
+   activity loads, so progress is current when the user comes back (see
+   [Progress and completion](#progress-and-completion)).
+5. The map editor appears only for users who hold `format/rumbos:editmap` **and** have
    Moodle's editing mode on ("Turn editing on"). With editing off a teacher sees the
    map as students do, with a note to turn editing on.
 
@@ -40,6 +43,38 @@ activities. Teachers also see a notice that explains what happened.
 
 The course state is always computed for the user who is logged in. Nothing in the
 plugin accepts a user id.
+
+### Progress and completion
+
+The course state tells the app, for each activity, whether it is `none` (no completion
+condition), `incomplete`, `complete` or `failed`, and whether the course tracks completion
+at all (`courseCompletionEnabled`). The page never serves it from Moodle's completion cache,
+which a web server can keep for up to an hour after another one changed the data.
+
+- **An activity with no completion condition never completes on the map.** In the activity's
+  settings, under "Completion conditions", choose "Add requirements" (for example view, receive
+  a grade, receive a passing grade). Editors get a one-click shortcut from the map editor: the
+  app asks the page to open the activity's settings, and the page opens them in a new tab, with
+  only the completion section expanded.
+- **A quiz that requires a passing grade is `failed` until an attempt passes.** That is Moodle's
+  own state, not the plugin's.
+- **Refresh.** While the popup is open the state is read again after every page the activity
+  loads (at most once every two seconds, never two requests at once) and when the popup closes.
+  A quiz submission ends on a review page, so it is caught. Nothing is read on a timer while the
+  popup is closed. Completion that changes without the page navigating (a SCORM or H5P package
+  reporting inside its frame, a teacher grading later) shows at the next read: closing the
+  popup, or the app's own refresh. The full policy is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md).
+
+### Full screen
+
+The app can ask for full screen. It is a CSS overlay over the whole viewport, plus the
+browser's own full screen where it exists (a refusal changes nothing). **While it is on, the
+top-right 64 x 64 CSS px of the viewport belong to the page**: a labelled **Exit full screen**
+button sits there, above the app, works from the keyboard, and works even if the app is frozen.
+Escape also exits when the focus is on the Moodle page. The app must keep that corner free of
+controls and hide its own fullscreen toggle until the mode ends. The page tells the app
+(`host-fullscreen`) every time the mode changes, for whatever reason, and restores the focus
+and the scroll position on exit. The whole contract is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md).
 
 ### Launch assertion
 
@@ -298,7 +333,7 @@ report a vulnerability.
   [docs/DESIGN-backup-restore.md](docs/DESIGN-backup-restore.md).
 - **Escape leaves full screen only when the focus is on the Moodle page.** Browsers do
   not deliver key presses from inside an iframe to the page that contains it. The
-  visible **Exit full screen** button always works.
+  **Exit full screen** button in the top-right corner always works.
 - **Escape closes the popup from inside an activity only when nothing in the activity
   uses it** (an open Moodle dialog keeps it). The **Back to the map** button always works.
 - **The Moodle site must not strip `Sec-Fetch-*` headers** for the popup to look tidy

@@ -121,9 +121,14 @@ On close (button, Escape, or the course-page redirect) the host closes the dialo
 app is never left believing an overlay is open. If another popup opened meanwhile, the
 older close does not send `open: false`.
 
-After a second page loads inside the popup (a submitted form, a finished attempt) the
-host also refreshes, at most once every 5 seconds. This is a convenience: the refresh on
-close is the one that always runs.
+While the popup is open the host also refreshes after **every** page the activity frame loads
+(its `load` event, the first one included, because viewing can complete an activity), debounced
+by 400 ms and at least 2 seconds after the previous scheduled read, and sends `host-state` when
+the state changed. An earlier version only counted the second page and dropped anything inside
+a 5 second window, so the review page that follows a quiz submission was never read. Reads never
+overlap: one in flight is joined, and a navigation during it causes one follow-up read after it.
+The read on close always starts after the close and always sends `host-state`. A failed read keeps
+the last state. The policy for the whole host is in [HOST-CONTRACT.md](HOST-CONTRACT.md).
 
 ### The popup frame has no `sandbox`
 
