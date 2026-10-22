@@ -11,8 +11,8 @@ Feature: Activity popups over the Rumbos map
       | appurl    | https://rumbos.invalid | format_rumbos |
       | timeoutms | 120000                 | format_rumbos |
     And the following "courses" exist:
-      | fullname | shortname | format |
-      | Course 1 | C1        | rumbos |
+      | fullname | shortname | format | enablecompletion |
+      | Course 1 | C1        | rumbos | 1                |
     And the following "users" exist:
       | username | firstname | lastname | email                |
       | student1 | Student   | One      | student1@example.com |
@@ -20,8 +20,8 @@ Feature: Activity popups over the Rumbos map
       | user     | course | role    |
       | student1 | C1     | student |
     And the following "activities" exist:
-      | activity | name   | content           | course | idnumber | section |
-      | page     | Page 1 | A page body text  | C1     | page1    | 1       |
+      | activity | name   | content          | course | idnumber | section | completion | completionview |
+      | page     | Page 1 | A page body text | C1     | page1    | 1       | 2          | 1              |
     And the Rumbos signing keys are generated afresh
     And I am on the "Course 1" course page logged in as student1
     And the Rumbos app announces that it is ready
@@ -40,6 +40,11 @@ Feature: Activity popups over the Rumbos map
     And I switch to "rumbos-popup" iframe
     Then I should see "A page body text"
     And I switch to the main frame
+
+  Scenario: Viewing the activity refreshes the state while the popup is still open
+    When the Rumbos app asks to open the activity "Page 1"
+    Then the Rumbos app should have been sent "rumbos:host-overlay:true, rumbos:host-state" last
+    And I should see "Page 1" in the ".format-rumbos-popup" "css_element"
 
   Scenario: Closing the popup refreshes the state, then tells the app the overlay is gone
     Given the Rumbos app asks to open the activity "Page 1"

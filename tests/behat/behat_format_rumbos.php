@@ -50,7 +50,8 @@ class behat_format_rumbos extends behat_base {
                 window.rumbosSent = [];
                 window.rumbosOpened = [];
                 win.postMessage = function(message) {
-                    window.rumbosSent.push(message.type + (message.type === 'rumbos:host-overlay' ? ':' + message.open : ''));
+                    var detail = {'rumbos:host-overlay': message.open, 'rumbos:host-fullscreen': message.on}[message.type];
+                    window.rumbosSent.push(message.type + (detail === undefined ? '' : ':' + detail));
                 };
                 window.open = function(url) {
                     window.rumbosOpened.push(url);
@@ -122,6 +123,118 @@ JS
             'window.rumbosAppSays({type: "rumbos:open-activity", cmid: ' . (int) $cmid . '});'
         );
         $this->wait_for_pending_js();
+    }
+
+    /**
+     * The app asks the host to open the settings page of an activity (contract v5.4).
+     *
+     * @When /^the Rumbos app asks to open the settings of the activity "(?P<name_string>(?:[^"]|\\")*)"$/
+     * @param string $name Activity name.
+     */
+    public function the_rumbos_app_asks_to_open_the_settings_of_the_activity(string $name): void {
+        $this->ask_to_open_settings($this->find_page_cmid($name));
+    }
+
+    /**
+     * The app asks for the settings of an activity that does not exist.
+     *
+     * @When /^the Rumbos app asks to open the settings of an activity that does not exist$/
+     */
+    public function the_rumbos_app_asks_to_open_the_settings_of_an_unknown_activity(): void {
+        $this->ask_to_open_settings(999999);
+    }
+
+    /**
+     * Sends open-activity-settings and gives the host time to ask Moodle and answer.
+     *
+     * @param int $cmid
+     */
+    protected function ask_to_open_settings(int $cmid): void {
+        $this->getSession()->wait(2000);
+        $this->getSession()->executeScript(
+            'window.rumbosAppSays({type: "rumbos:open-activity-settings", cmid: ' . $cmid . '});'
+        );
+        $this->wait_for_pending_js();
+        $this->getSession()->wait(2000);
+    }
+
+    /**
+     * Checks that the host asked for a new tab with the settings page of an activity, on this site.
+     *
+     * @Then /^a new tab should have been requested for the settings of the activity "(?P<name_string>(?:[^"]|\\")*)"$/
+     * @param string $name Activity name.
+     */
+    public function a_new_tab_should_have_been_requested_for_the_settings(string $name): void {
+        global $CFG;
+
+        $cmid = $this->find_page_cmid($name);
+        $opened = $this->getSession()->evaluateScript('return window.rumbosOpened;');
+        $expected = $CFG->wwwroot . '/course/modedit.php?update=' . $cmid . '&showonly=activitycompletionheader';
+        if ($opened !== [$expected]) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'Expected exactly one new tab, for ' . $expected . '; requested: [' . implode(', ', $opened) . ']',
+                $this->getSession()->getDriver()
+            );
+        }
+    }
+
+    /**
+     * Checks that the host has not asked the browser for any new tab.
+     *
+     * @Then /^no new tab should have been requested$/
+     */
+    public function no_new_tab_should_have_been_requested(): void {
+        $opened = $this->getSession()->evaluateScript('return window.rumbosOpened;');
+        if ($opened) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'No new tab was expected; requested: [' . implode(', ', $opened) . ']',
+                $this->getSession()->getDriver()
+            );
+        }
+    }
+
+    /**
+     * The app asks the host to turn the full screen mode on or off.
+     *
+     * @When /^the Rumbos app asks for full screen (?P<state>on|off)$/
+     * @param string $state "on" or "off".
+     */
+    public function the_rumbos_app_asks_for_full_screen(string $state): void {
+        $this->getSession()->executeScript(
+            'window.rumbosAppSays({type: "rumbos:request-fullscreen", on: ' . ($state === 'on' ? 'true' : 'false') . '});'
+        );
+        $this->wait_for_pending_js();
+    }
+
+    /**
+     * Checks the host contract: a 64 x 64 CSS px exit control in the top-right corner of the viewport, above the app.
+     *
+     * @Then /^the Rumbos exit control should own the top-right corner of the screen$/
+     */
+    public function the_rumbos_exit_control_should_own_the_top_right_corner(): void {
+        $result = $this->getSession()->evaluateScript(<<<'JS'
+            return (function() {
+                var button = document.querySelector('[data-action="rumbos-exit-fullscreen"]');
+                var rect = button.getBoundingClientRect();
+                var width = document.documentElement.clientWidth;
+                var points = [[width - 4, 4], [width - 60, 60], [width - 32, 32]];
+                var hit = [];
+                var above = points.every(function(point) {
+                    var element = document.elementFromPoint(point[0], point[1]);
+                    hit.push(element === null ? 'null' : element.tagName + '.' + element.className);
+                    return element !== null && button.contains(element);
+                });
+                return [Math.round(rect.width), Math.round(rect.height), Math.round(rect.top),
+                    Math.round(width - rect.right), above ? 1 : hit.join(','), button.getAttribute('aria-label')].join('|');
+            })();
+JS
+        );
+        if ($result !== '64|64|0|0|1|Exit full screen') {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'Expected the exit control to be 64x64 at the top-right corner, above the app and labelled; got ' . $result,
+                $this->getSession()->getDriver()
+            );
+        }
     }
 
     /**
