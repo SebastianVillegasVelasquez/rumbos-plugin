@@ -176,7 +176,8 @@ class course_state {
         if ($completioninfo->is_enabled($cm) == COMPLETION_TRACKING_NONE) {
             return 'none';
         }
-        $data = $completioninfo->get_data($cm, false, $userid);
+        // The whole course in one query (Moodle ignores the flag for any user but the current one).
+        $data = $completioninfo->get_data($cm, true, $userid);
         switch ((int) $data->completionstate) {
             case COMPLETION_COMPLETE:
             case COMPLETION_COMPLETE_PASS:
