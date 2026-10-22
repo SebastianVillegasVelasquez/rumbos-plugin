@@ -207,6 +207,68 @@ JS
     }
 
     /**
+     * The app asks for full screen after a real click, which browsers require before they grant their own full screen.
+     *
+     * A button is added to the page and clicked through the browser driver; its handler plays the app's message.
+     *
+     * @When /^the Rumbos app asks for full screen on after a real click$/
+     */
+    public function the_rumbos_app_asks_for_full_screen_after_a_real_click(): void {
+        $this->getSession()->executeScript(<<<'JS'
+            (function() {
+                var button = document.createElement('button');
+                button.id = 'rumbos-test-click';
+                button.textContent = 'Test click';
+                button.style.cssText = 'position:fixed;left:0;bottom:0;z-index:5000';
+                button.addEventListener('click', function() {
+                    window.rumbosAppSays({type: 'rumbos:request-fullscreen', on: true});
+                });
+                document.body.appendChild(button);
+            })();
+JS
+        );
+        $this->getSession()->getPage()->find('css', '#rumbos-test-click')->click();
+        $this->wait_for_pending_js();
+        $this->getSession()->wait(1000);
+    }
+
+    /**
+     * Checks whether the browser's own full screen is on the map's wrapper.
+     *
+     * @Then /^the browser's full screen should (?P<state>be|not be) on the Rumbos map$/
+     * @param string $state "be" or "not be".
+     */
+    public function the_browsers_full_screen_should_be_on_the_map(string $state): void {
+        $on = (bool) $this->getSession()->evaluateScript(
+            'return !!document.fullscreenElement && document.fullscreenElement.classList.contains("format-rumbos-frame-wrap");'
+        );
+        if ($on !== ($state === 'be')) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'Expected the browser full screen ' . $state . ' on the map, but it ' . ($on ? 'is' : 'is not'),
+                $this->getSession()->getDriver()
+            );
+        }
+    }
+
+    /**
+     * Checks that the activity popup is inside the element that is in the browser's full screen.
+     *
+     * @Then /^the Rumbos popup should be inside the browser's full screen$/
+     */
+    public function the_rumbos_popup_should_be_inside_the_browsers_full_screen(): void {
+        $inside = (bool) $this->getSession()->evaluateScript(
+            '(function() { var p = document.querySelector(".format-rumbos-popup"); ' .
+            'return !!p && !!document.fullscreenElement && document.fullscreenElement.contains(p); })()'
+        );
+        if (!$inside) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'The activity popup is not inside the browser full screen element',
+                $this->getSession()->getDriver()
+            );
+        }
+    }
+
+    /**
      * Checks the host contract: a 64 x 64 CSS px exit control in the top-right corner of the viewport, above the app.
      *
      * @Then /^the Rumbos exit control should own the top-right corner of the screen$/
