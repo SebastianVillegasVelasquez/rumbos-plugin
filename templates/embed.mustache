@@ -19,6 +19,9 @@
 
     The Rumbos iframe and the elements the host JavaScript module drives.
 
+    While the map is full screen the exit button owns the top-right 64 x 64 CSS pixels
+    of the viewport, above the app (see "Full screen" in the README).
+
     The sandbox allows only what the app needs:
       - allow-scripts: the app is a JavaScript application.
       - allow-same-origin: without it the document has an opaque origin, so
@@ -56,8 +59,16 @@
      aria-label="{{#str}} containerlabel, format_rumbos {{/str}}">
     <div class="alert alert-warning d-none mb-2" role="alert" data-region="rumbos-notice"></div>
     <div class="format-rumbos-frame-wrap" data-region="rumbos-frame-wrap">
-        <button type="button" class="btn btn-secondary format-rumbos-exit" data-action="rumbos-exit-fullscreen" hidden>
-            {{#str}} exitfullscreen, format_rumbos {{/str}}
+        <button type="button"
+                class="format-rumbos-exit"
+                data-action="rumbos-exit-fullscreen"
+                title="{{#str}} exitfullscreen, format_rumbos {{/str}}"
+                aria-label="{{#str}} exitfullscreen, format_rumbos {{/str}}"
+                hidden>
+            <svg class="format-rumbos-exit-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" focusable="false">
+                <path d="M5 5l14 14M19 5L5 19"/>
+            </svg>
         </button>
         <iframe class="format-rumbos-frame"
                 data-region="rumbos-frame"

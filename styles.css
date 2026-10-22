@@ -63,11 +63,45 @@ body.format-rumbos-fullscreen-open {
     overflow: hidden;
 }
 
+/*
+ * The exit control of the full screen mode. It is part of the host contract: while the map
+ * is full screen this 64 x 64 CSS px square in the top-right corner of the viewport belongs
+ * to the host and stays above the app, which keeps the area free of its own controls.
+ * The wrapper is fixed to the viewport then, so the corner of the wrapper is the corner
+ * of the viewport.
+ */
 .format-rumbos-exit {
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 1;
+    top: 0;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 64px;
+    height: 64px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0 0 0 0.5rem;
+    color: #fff;
+    background: rgba(33, 37, 41, 0.88);
+    cursor: pointer;
+}
+
+.format-rumbos-exit[hidden] {
+    display: none;
+}
+
+.format-rumbos-exit:hover {
+    background: #000;
+}
+
+.format-rumbos-exit:focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: -7px;
+    box-shadow: inset 0 0 0 7px #0d6efd;
 }
 
 /*
