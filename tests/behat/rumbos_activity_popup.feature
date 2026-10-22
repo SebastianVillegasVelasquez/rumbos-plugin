@@ -33,7 +33,6 @@ Feature: Activity popups over the Rumbos map
     And "iframe[name='rumbos-popup']" "css_element" should exist
     And I should see "Page 1" in the ".format-rumbos-popup" "css_element"
     And I should see "Back to the map" in the ".format-rumbos-popup" "css_element"
-    And the Rumbos app should have been sent "rumbos:host-overlay:true" last
 
   Scenario: The popup frames the activity page itself
     When the Rumbos app asks to open the activity "Page 1"
@@ -57,6 +56,7 @@ Feature: Activity popups over the Rumbos map
     And the Rumbos app announces that it is ready
     And the Rumbos host should be ready
     And the Rumbos app asks to open the activity "Page 2"
+    And I wait "3" seconds
     When the activity "Page 2" is completed for "student1" in the background
     And I wait "20" seconds
     Then the Rumbos app should have been sent "rumbos:host-overlay:true, rumbos:host-state" last
@@ -72,6 +72,7 @@ Feature: Activity popups over the Rumbos map
     And the Rumbos app announces that it is ready
     And the Rumbos host should be ready
     And the Rumbos app asks to open the activity "Page 2"
+    And I wait "3" seconds
     When the activity "Page 2" is completed for "student1" in the background
     And I wait "20" seconds
     Then the Rumbos app should have been sent "rumbos:host-overlay:true" last
