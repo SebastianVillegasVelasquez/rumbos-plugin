@@ -30,11 +30,13 @@ import {
     hostInit,
     hostLaunch,
     hostOverlay,
+    hasActivity,
     hostState,
     isCourseViewUrl,
     parseAppMessage,
     parsePopupMessage,
     resolveActivityTarget,
+    resolveSettingsUrl,
 } from '../../amd/src/protocol.js';
 
 const APP = 'https://rumbos.example.com';
@@ -55,6 +57,21 @@ describe('parseAppMessage', () => {
             parseAppMessage(fromApp({type: MESSAGE.OPEN_ACTIVITY, v: 1, cmid: 42}), expected),
             {type: MESSAGE.OPEN_ACTIVITY, cmid: 42},
         );
+    });
+
+    it('accepts open-activity-settings (contract v5.4) with a positive integer cmid only', () => {
+        assert.deepEqual(
+            parseAppMessage(fromApp({type: MESSAGE.OPEN_ACTIVITY_SETTINGS, v: 1, cmid: 42}), expected),
+            {type: MESSAGE.OPEN_ACTIVITY_SETTINGS, cmid: 42},
+        );
+        for (const cmid of [0, -1, 1.5, '42', null, undefined, NaN, Infinity]) {
+            assert.equal(parseAppMessage(fromApp({type: MESSAGE.OPEN_ACTIVITY_SETTINGS, v: 1, cmid}), expected), null);
+        }
+    });
+
+    it('drops anything else the app adds to open-activity-settings, such as an address', () => {
+        const message = {type: MESSAGE.OPEN_ACTIVITY_SETTINGS, v: 1, cmid: 42, url: 'https://evil.example.com/'};
+        assert.deepEqual(parseAppMessage(fromApp(message), expected), {type: MESSAGE.OPEN_ACTIVITY_SETTINGS, cmid: 42});
     });
 
     it('accepts request-fullscreen with a boolean', () => {
@@ -335,5 +352,55 @@ describe('parsePopupMessage', () => {
         assert.equal(parsePopupMessage(fromPopup({type: 'rumbos:open-activity', v: 1}), expectedPopup), null);
         assert.equal(parsePopupMessage(fromPopup('rumbos:popup-leave'), expectedPopup), null);
         assert.equal(parsePopupMessage(fromPopup(message), {siteOrigin: SITE, frameWindow: null}), null);
+    });
+});
+
+describe('hasActivity', () => {
+    const state = {activities: [{cmid: 7, availability: 'restricted', url: null}, {cmid: 8, availability: 'hidden'}]};
+
+    it('finds any listed activity, whatever its availability', () => {
+        assert.equal(hasActivity(state, 7), true);
+        assert.equal(hasActivity(state, 8), true);
+    });
+
+    it('does not find an activity the last state does not list', () => {
+        assert.equal(hasActivity(state, 9), false);
+        assert.equal(hasActivity({activities: [], unavailableCmids: [9]}, 9), false);
+        assert.equal(hasActivity(null, 7), false);
+        assert.equal(hasActivity({}, 7), false);
+    });
+});
+
+describe('resolveSettingsUrl', () => {
+    const site = {wwwroot: SITE};
+
+    it('accepts the activity settings page of this site', () => {
+        const href = `${SITE}/course/modedit.php?update=12&showonly=activitycompletionheader`;
+        assert.equal(resolveSettingsUrl(href, site), href);
+    });
+
+    it('honours a Moodle site installed in a sub-directory', () => {
+        const href = `${SITE}/moodle/course/modedit.php?update=12`;
+        assert.equal(resolveSettingsUrl(href, {wwwroot: `${SITE}/moodle`}), href);
+        assert.equal(resolveSettingsUrl(`${SITE}/course/modedit.php?update=12`, {wwwroot: `${SITE}/moodle`}), null);
+    });
+
+    it('rejects other sites, other pages, other schemes and a missing or odd activity id', () => {
+        for (const href of [
+            'https://evil.example.com/course/modedit.php?update=12',
+            `${SITE}.evil.example.com/course/modedit.php?update=12`,
+            `${SITE}/course/view.php?id=2`,
+            `${SITE}/course/modedit.php`,
+            `${SITE}/course/modedit.php?update=abc`,
+            `${SITE}/course/modedit.php?update=0`,
+            `${SITE}/course/modedit.php/extra?update=12`,
+            `javascript:alert(1)//${SITE}/course/modedit.php?update=12`,
+            'data:text/html,hello',
+            '//evil.example.com/course/modedit.php?update=12',
+            '',
+            'not a url',
+        ]) {
+            assert.equal(resolveSettingsUrl(href, site), null, href);
+        }
     });
 });

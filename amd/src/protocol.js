@@ -14,7 +14,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5).
+ * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.4).
  *
  * Nothing here touches the DOM or Moodle APIs, so it can be unit tested with
  * plain Node (see tests/js).
@@ -31,6 +31,7 @@ export const MESSAGE = {
     REQUEST_STATE: 'rumbos:request-state',
     REQUEST_LAUNCH: 'rumbos:request-launch',
     OPEN_ACTIVITY: 'rumbos:open-activity',
+    OPEN_ACTIVITY_SETTINGS: 'rumbos:open-activity-settings',
     REQUEST_FULLSCREEN: 'rumbos:request-fullscreen',
     ERROR: 'rumbos:error',
     HOST_INIT: 'rumbos:host-init',
@@ -104,6 +105,7 @@ export const parseAppMessage = (event, {appOrigin, frameWindow}) => {
         case MESSAGE.REQUEST_LAUNCH:
             return {type: data.type};
         case MESSAGE.OPEN_ACTIVITY:
+        case MESSAGE.OPEN_ACTIVITY_SETTINGS:
             return Number.isSafeInteger(data.cmid) && data.cmid > 0 ? {type: data.type, cmid: data.cmid} : null;
         case MESSAGE.REQUEST_FULLSCREEN:
             return typeof data.on === 'boolean' ? {type: data.type, on: data.on} : null;
@@ -204,6 +206,41 @@ export const resolveActivityTarget = (state, cmid, {siteOrigin, wwwroot, newTabM
         const inMod = url.origin === siteOrigin && url.pathname.startsWith(`${base}/mod/`);
         const popup = inMod && !newTabModules.includes(activity.modname);
         return {target: popup ? 'popup' : 'tab', url: url.href, title: String(activity.name ?? '')};
+    } catch (error) {
+        return null;
+    }
+};
+
+/**
+ * Whether the host's last state lists an activity.
+ *
+ * It is the only thing the host needs to know about an activity before asking Moodle for its settings page:
+ * unlike opening an activity, configuring it does not depend on the activity being available to the user.
+ *
+ * @param {?{activities: Array}} state Last CourseState received from Moodle.
+ * @param {number} cmid Course module id requested by the app.
+ * @returns {boolean}
+ */
+export const hasActivity = (state, cmid) => Array.isArray(state?.activities) &&
+    state.activities.some((candidate) => candidate.cmid === cmid);
+
+/**
+ * Whether an address is the activity settings page of this Moodle site, the only kind the host opens for the editor.
+ *
+ * Moodle builds the address; this is a second check on what came back, so a wrong answer can never send
+ * the editor to another site or another page.
+ *
+ * @param {string} href
+ * @param {{wwwroot: string}} site
+ * @returns {?string} The normalised address, or null when it must not be opened.
+ */
+export const resolveSettingsUrl = (href, {wwwroot}) => {
+    try {
+        const root = new URL(wwwroot);
+        const url = new URL(href);
+        const isSettingsPage = url.pathname === `${rootPath(root)}/course/modedit.php` &&
+            /^[1-9]\d*$/.test(url.searchParams.get('update') ?? '');
+        return ['http:', 'https:'].includes(url.protocol) && url.origin === root.origin && isSettingsPage ? url.href : null;
     } catch (error) {
         return null;
     }
