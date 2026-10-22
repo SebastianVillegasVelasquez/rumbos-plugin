@@ -84,6 +84,7 @@ $string['rotatekey'] = 'Rotar clave';
 $string['rotatekey_confirm'] = '¿Generar un nuevo par de claves de firma? La clave pública actual deja de funcionar de inmediato y Rumbos rechazará los accesos de este sitio hasta que registre la nueva clave pública en el backend.';
 $string['rumbos:editmap'] = 'Editar el mapa de Rumbos';
 $string['section0name'] = 'General';
+$string['settingsblocked'] = 'Su navegador bloqueó la nueva pestaña. Permita las ventanas emergentes de este sitio e inténtelo de nuevo.';
 $string['showactivitylist'] = 'Ver la lista de actividades';
 $string['skipmap'] = 'Saltar el mapa de Rumbos e ir a la lista de actividades';
 $string['turneditingon'] = 'Activa la edición del curso para modificar el mapa.';

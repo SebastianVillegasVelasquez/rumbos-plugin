@@ -33,6 +33,13 @@ $functions = [
         'ajax' => true,
         'loginrequired' => true,
     ],
+    'format_rumbos_get_activity_settings_url' => [
+        'classname' => \format_rumbos\external\get_activity_settings_url::class,
+        'description' => 'Returns the address of the settings page of an activity, for map editors who may manage it.',
+        'type' => 'read',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
     'format_rumbos_get_assertion_preview' => [
         'classname' => \format_rumbos\external\get_assertion_preview::class,
         'description' => 'Returns the decoded header and claims of a fresh assertion, never the token or its signature.',

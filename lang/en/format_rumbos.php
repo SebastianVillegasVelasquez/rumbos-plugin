@@ -84,6 +84,7 @@ $string['rotatekey'] = 'Rotate key';
 $string['rotatekey_confirm'] = 'Generate a new signing key pair? The current public key stops working immediately and Rumbos will reject launches from this site until the new public key is registered in the backend.';
 $string['rumbos:editmap'] = 'Edit the Rumbos map';
 $string['section0name'] = 'General';
+$string['settingsblocked'] = 'Your browser blocked the new tab. Allow pop-ups for this site and try again.';
 $string['showactivitylist'] = 'View the activity list';
 $string['skipmap'] = 'Skip the Rumbos map and go to the activity list';
 $string['turneditingon'] = 'Turn editing on to modify the map.';
