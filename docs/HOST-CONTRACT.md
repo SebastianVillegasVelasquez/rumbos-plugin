@@ -111,8 +111,11 @@ leaves the mode when the focus is on the Moodle page; the browser does not deliv
 pressed inside the iframe to the page, so the app should not rely on the host to see them.
 
 The activity popup opens above the full screen mode. When the browser's own full screen is
-active it is left first, because the popup lives in the page body, which a fullscreen
-element hides; the CSS overlay (and the mode) stays.
+active the popup is mounted inside the fullscreen element (anything outside it is not shown),
+so opening an activity does not end the full screen and closing it returns to the map still in
+full screen. If the user leaves the browser's full screen with Escape while a popup is open, the
+mode ends and the popup stays open where it is: moving its frame would reload the activity.
+A full screen request made while a popup is already open is a CSS overlay only.
 
 ## Refresh policy
 
@@ -122,6 +125,7 @@ The host reads the course state again at the moments completion can change:
 | --- | --- |
 | The app asks (`request-state`) and at `embed-ready` | Reads and sends `host-state`. |
 | Every navigation of the activity popup's frame (its `load` event) | Schedules a read, debounced by 400 ms and at least 2 s after the previous scheduled one, and sends `host-state` **if the state changed**. A quiz submission loads a review page, so this catches it. |
+| Every 15 s while the popup of a **polled module** is open and the tab is visible | Reads through the same single-flight reader and sends `host-state` **if the state changed**. The modules are the admin setting `pollmodules` (default `scorm,h5pactivity`; empty turns it off). Stops when the popup closes. |
 | The popup closes | Reads once more, always sends `host-state`, then `host-overlay { open: false }`. |
 
 Rules:
@@ -130,11 +134,14 @@ Rules:
   happens meanwhile triggers one follow-up read afterwards, and the read on close always
   starts after the close.
 - **A failed read keeps the last state.** Nothing is sent and the error is only logged.
-- **No polling while no overlay is open.** The host reads nothing on a timer. The app
-  refreshes on visibility and on its own interval by sending `request-state`.
-- **What it cannot see.** Completion that changes without the popup navigating (a SCORM or
-  H5P package reporting inside its own frame, a teacher grading later, a scheduled task) is
-  seen at the next read: the close of the popup or the app's next `request-state`.
+- **No polling while no overlay is open, and only for the listed modules while one is.** The
+  host reads nothing on a timer otherwise. A hidden tab skips the poll and it resumes when the tab
+  is visible again. The app refreshes on visibility and on its own interval by sending `request-state`.
+- **What it cannot see.** Completion that changes without the popup navigating, in a module that
+  is not polled (a teacher grading later, a scheduled task, any module outside `pollmodules`), is
+  seen at the next read: the close of the popup or the app's next `request-state`. For a polled
+  module it is seen within about 15 seconds.
+- **What a read costs** is measured in [COMPLETION-STATES.md](COMPLETION-STATES.md#what-a-read-costs).
 
 ## Where this is implemented
 

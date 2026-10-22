@@ -122,6 +122,14 @@ flag follows the course and the site setting.
 3. As a teacher with editing on, ask for the settings of an activity that never completes: a new tab
    opens on its settings with only "Completion conditions" expanded.
 
+### Polled modules
+
+`tests/behat/rumbos_activity_popup.feature` changes a page's completion in the background while its
+popup is open: with the module in `pollmodules` the app is sent the new state within about 15 seconds,
+with the list empty it is sent nothing until the popup closes. A real SCORM package or H5P content
+reporting from inside its frame was **not** played; the poll is only known to react to a change in
+Moodle's data. The cost of a poll is in [COMPLETION-STATES.md](COMPLETION-STATES.md#what-a-read-costs).
+
 ## Full screen
 
 What was run, on Moodle 5.2.4, Chrome on Windows 11, desktop viewport 1536 x 735, with a stand-in
@@ -142,11 +150,18 @@ button 8 px from the top-right corner):
 Also covered by Behat (`tests/behat/rumbos_fullscreen.feature`): the control's size and corner and that
 it is above the app, exit by click and by the app's request, and the messages sent. Escape is not in Behat: the key goes to the focused app frame there, as it does for a user (see the README).
 
+The browser's own full screen was exercised in Behat (`tests/behat/rumbos_fullscreen_native.feature`,
+Chrome 155 on Linux driven by Selenium) with a real click through the driver, which browsers require:
+the full screen goes to the map's wrapper, opening an activity keeps it with the popup inside it, and
+closing the popup leaves the map in full screen with the exit control in the corner. The request made
+from a script with no click, as in the Chrome session above, is refused and leaves the overlay.
+
 ### Not verified
 
-- **The browser's own full screen** (`requestFullscreen`) did not engage from the automated Chrome
-  session, so entering it, leaving it with Escape (the `fullscreenchange` path) and the popup stepping
-  out of it were not exercised. The code is guarded so that every failure leaves the overlay.
+- **Leaving the browser's full screen with Escape** (the `fullscreenchange` path), with or without a
+  popup open, was not exercised, nor was the browser's full screen in Chrome on Windows, Firefox,
+  Safari or Edge. With a popup open Escape leaves the full screen and the popup stays; a second
+  Escape closes it. The code is guarded so that every failure leaves the overlay.
 - **Mobile.** iPhone Safari (no Fullscreen API for elements; the dynamic viewport units and the
   address bar), iPad Safari, Android Chrome (rotation, the on-screen keyboard) and the notch: not run.
   To check on a phone: ask for full screen, confirm the cross sits in the top-right corner, is large

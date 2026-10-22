@@ -68,6 +68,11 @@ host's own last state, never from the app:
 If a browser blocks the new tab (no user activation, as in Safari), the activity opens in
 the current tab instead of not opening.
 
+The polled list is the admin setting `pollmodules`, default `scorm,h5pactivity`: modules that
+report completion from inside their own frame, so no page load tells the host. Their open popup
+reads the state every 15 seconds while the tab is visible (through the single-flight reader),
+and stops on close.
+
 The new-tab list is the admin setting `newtabmodules`, default `bigbluebuttonbn,lti`.
 These defaults come from how those modules work, **not from a test**: a video conference
 and an external tool run on another site that usually sets `X-Frame-Options` or

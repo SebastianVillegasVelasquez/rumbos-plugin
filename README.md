@@ -63,7 +63,10 @@ which a web server can keep for up to an hour after another one changed the data
   A quiz submission ends on a review page, so it is caught. Nothing is read on a timer while the
   popup is closed. Completion that changes without the page navigating (a SCORM or H5P package
   reporting inside its frame, a teacher grading later) shows at the next read: closing the
-  popup, or the app's own refresh. The full policy is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md).
+  popup, or the app's own refresh, except for the modules in the **Modules the popup keeps
+  checking** setting (default `scorm,h5pactivity`), whose open popup also reads the state every
+  15 seconds while the tab is visible. What a read costs, and the completion state of every
+  quiz condition as measured, are in [docs/COMPLETION-STATES.md](docs/COMPLETION-STATES.md). The full policy is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md).
 
 ### Full screen
 
@@ -72,7 +75,8 @@ browser's own full screen where it exists (a refusal changes nothing). **While i
 top-right 64 x 64 CSS px of the viewport belong to the page**: a labelled **Exit full screen**
 button sits there, above the app, works from the keyboard, and works even if the app is frozen.
 Escape also exits when the focus is on the Moodle page. The app must keep that corner free of
-controls and hide its own fullscreen toggle until the mode ends. The page tells the app
+controls and hide its own fullscreen toggle until the mode ends. Activity popups open inside the
+browser's full screen when it is on, so opening and closing an activity does not end it. The page tells the app
 (`host-fullscreen`) every time the mode changes, for whatever reason, and restores the focus
 and the scroll position on exit. The whole contract is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md).
 
@@ -117,7 +121,9 @@ This writes `dist/format_rumbos-<release>.zip`. The archive has a single top-lev
 folder named `rumbos` and contains only the files that belong to the plugin.
 
 Then, as an administrator, open **Site administration > Plugins > Install plugins**,
-upload the ZIP, and follow the prompts to complete the upgrade.
+upload the ZIP, and follow the prompts to complete the upgrade. Every release that adds a web
+service function needs that upgrade, and a cache purge afterwards: the steps, and what older
+builds of the Rumbos app should expect, are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ### Manually
 
