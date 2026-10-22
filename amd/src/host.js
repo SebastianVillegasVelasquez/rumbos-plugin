@@ -212,6 +212,7 @@ class RumbosHost {
     init() {
         return Promise.all([this.refreshState(), this.fetchAssertion()])
             .then(([state, assertion]) => {
+                this.lastPushed = this.signature(state);
                 this.send(hostInit({
                     mode: this.mode,
                     locale: this.locale,
