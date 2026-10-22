@@ -90,6 +90,8 @@ final class external_functions_test extends \advanced_testcase {
             get_course_state::execute($course->id)
         );
 
+        // The generator's courses do not track completion unless asked to.
+        $this->assertFalse($studentstate['courseCompletionEnabled']);
         $this->assertSame([(int) $hidden->cmid], $studentstate['unavailableCmids']);
         $this->assertSame('hidden', $teacherstate['activities'][0]['availability']);
     }

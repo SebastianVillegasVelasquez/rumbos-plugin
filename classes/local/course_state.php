@@ -25,7 +25,7 @@ use course_modinfo;
  * Computes the CourseState (shared contract v5) for one user.
  *
  * Contains no Rumbos logic: it only reports what Moodle itself says the user
- * can see, restrict-wise and completion-wise.
+ * can see, restrict-wise and completion-wise. Completion is always read afresh.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
@@ -43,6 +43,8 @@ class course_state {
      * @return array The CourseState structure.
      */
     public static function for_user(int $courseid, int $userid): array {
+        self::forget_cached_completion($courseid, $userid);
+
         $course = get_course($courseid);
         $modinfo = get_fast_modinfo($course, $userid);
         $completioninfo = new completion_info($course);
@@ -68,10 +70,29 @@ class course_state {
             'courseId' => (int) $courseid,
             // An ISO 8601 string in UTC, which is the type the Rumbos app validates.
             'generatedAt' => gmdate('Y-m-d\TH:i:s\Z'),
+            'courseCompletionEnabled' => (bool) $completioninfo->is_enabled(),
             'sections' => self::sections($course, $modinfo),
             'activities' => $activities,
             'unavailableCmids' => $unavailable,
         ];
+    }
+
+    /**
+     * Drops the cached completion data of a user in a course, so that what follows reads the database.
+     *
+     * Moodle caches the current user's completion for up to an hour in an application cache. On a
+     * site whose web servers do not share that cache a server can keep serving data that another one
+     * has already replaced, and the map would show an activity as unfinished after it was finished.
+     * The cache is also what availability conditions that depend on completion read, so dropping it
+     * first keeps the restrictions as fresh as the completion. It is rebuilt by the reads that follow.
+     *
+     * The key is the one completion_info uses for its own entries ("{userid}_{courseid}").
+     *
+     * @param int $courseid
+     * @param int $userid
+     */
+    private static function forget_cached_completion(int $courseid, int $userid): void {
+        \cache::make('core', 'completion')->delete($userid . '_' . $courseid);
     }
 
     /**
