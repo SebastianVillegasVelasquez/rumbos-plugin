@@ -28,6 +28,7 @@
 
 import Ajax from 'core/ajax';
 import Log from 'core/log';
+import {addNotification} from 'core/notification';
 import {getString, getStrings} from 'core/str';
 import ActivityPopup from 'format_rumbos/popup';
 import {createRefresher} from 'format_rumbos/refresher';
@@ -37,11 +38,13 @@ import {
     hostInit,
     hostLaunch,
     hostOverlay,
+    hasActivity,
     hostState,
     isCourseViewUrl,
     parseAppMessage,
     parsePopupMessage,
     resolveActivityTarget,
+    resolveSettingsUrl,
 } from 'format_rumbos/protocol';
 
 const SELECTORS = {
@@ -96,7 +99,7 @@ class RumbosHost {
         this.scrollY = 0;
         this.returnFocus = null;
         this.popup = null;
-        this.strings = {back: 'Back to the map', frameTitle: '{$a}'};
+        this.strings = {back: 'Back to the map', frameTitle: '{$a}', settingsBlocked: ''};
         this.overlayToken = 0;
         this.lastPushed = '';
         // Every read of the state goes through this: one request at a time, whoever asks.
@@ -130,8 +133,9 @@ class RumbosHost {
         getStrings([
             {key: 'backtomap', component: 'format_rumbos'},
             {key: 'popupframetitle', component: 'format_rumbos', param: '{$a}'},
-        ]).then(([back, frameTitle]) => {
-            this.strings = {back, frameTitle};
+            {key: 'settingsblocked', component: 'format_rumbos'},
+        ]).then(([back, frameTitle, settingsBlocked]) => {
+            this.strings = {back, frameTitle, settingsBlocked};
             return true;
         }).catch(() => false);
         window.addEventListener('message', this.onMessage);
@@ -185,6 +189,9 @@ class RumbosHost {
                 break;
             case MESSAGE.OPEN_ACTIVITY:
                 this.openActivity(message.cmid);
+                break;
+            case MESSAGE.OPEN_ACTIVITY_SETTINGS:
+                this.openActivitySettings(message.cmid);
                 break;
             case MESSAGE.REQUEST_FULLSCREEN:
                 // The app follows the host's state: reply with what actually happened (false when denied).
@@ -317,6 +324,30 @@ class RumbosHost {
             return;
         }
         this.openPopup(target);
+    }
+
+    /**
+     * Opens an activity's settings page (where its completion is configured) in a new tab, for the map editor only.
+     *
+     * The app only names the activity. Whether the user may configure it, and the address, come from Moodle.
+     * Anything that is not editor mode, or not in the host's own last state, is ignored without an answer.
+     *
+     * @param {number} cmid
+     */
+    openActivitySettings(cmid) {
+        if (this.mode !== 'editor' || !hasActivity(this.state, cmid)) {
+            return;
+        }
+        Ajax.call([{methodname: 'format_rumbos_get_activity_settings_url', args: {courseid: this.courseId, cmid}}])[0]
+            .then(({url}) => {
+                const target = resolveSettingsUrl(url, {wwwroot: this.wwwroot});
+                if (target && !window.open(target, '_blank', 'noopener')) {
+                    // The new tab was blocked. Leaving this page could lose unsaved work in the map editor.
+                    return addNotification({message: this.strings.settingsBlocked, type: 'warning'});
+                }
+                return null;
+            })
+            .catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`));
     }
 
     /**
