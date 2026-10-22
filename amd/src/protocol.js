@@ -188,7 +188,7 @@ const rootPath = (root) => root.pathname.replace(/\/+$/, '');
  * @param {?{activities: Array}} state Last CourseState received from Moodle.
  * @param {number} cmid Course module id requested by the app.
  * @param {{siteOrigin: string, wwwroot: string, newTabModules: string[]}} site Where the page is running.
- * @returns {?{target: string, url: string, title: string}} What to open, or null when it must not be opened.
+ * @returns {?{target: string, url: string, title: string, modname: string}} What to open, or null when it must not be opened.
  */
 export const resolveActivityTarget = (state, cmid, {siteOrigin, wwwroot, newTabModules}) => {
     const activity = state?.activities?.find((candidate) => candidate.cmid === cmid);
@@ -205,7 +205,12 @@ export const resolveActivityTarget = (state, cmid, {siteOrigin, wwwroot, newTabM
         }
         const inMod = url.origin === siteOrigin && url.pathname.startsWith(`${base}/mod/`);
         const popup = inMod && !newTabModules.includes(activity.modname);
-        return {target: popup ? 'popup' : 'tab', url: url.href, title: String(activity.name ?? '')};
+        return {
+            target: popup ? 'popup' : 'tab',
+            url: url.href,
+            title: String(activity.name ?? ''),
+            modname: String(activity.modname ?? ''),
+        };
     } catch (error) {
         return null;
     }

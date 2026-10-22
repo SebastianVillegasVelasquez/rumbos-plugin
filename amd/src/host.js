@@ -31,6 +31,7 @@ import Log from 'core/log';
 import {addNotification} from 'core/notification';
 import {getString, getStrings} from 'core/str';
 import ActivityPopup from 'format_rumbos/popup';
+import {createPoller} from 'format_rumbos/poller';
 import {createRefresher} from 'format_rumbos/refresher';
 import {
     MESSAGE,
@@ -68,6 +69,9 @@ const NAVIGATION_DEBOUNCE_MS = 400;
 /** Minimum time between two refreshes caused by the activity popup navigating (ms). */
 const NAVIGATION_REFRESH_MS = 2000;
 
+/** How often an open popup of a module that reports without navigating re-reads the state (ms). */
+const POLL_INTERVAL_MS = 15000;
+
 class RumbosHost {
     /**
      * @param {Object} params
@@ -79,8 +83,9 @@ class RumbosHost {
      * @param {string} params.wwwroot Moodle's wwwroot, the base of every URL the host may open.
      * @param {string} params.popupFrameName Name of the activity popup frame.
      * @param {string[]} params.newTabModules Modules whose activities open in a new tab.
+     * @param {string[]} [params.pollModules] Modules whose open popup also re-reads the state on an interval.
      */
-    constructor({courseId, appOrigin, mode, locale, timeoutMs, wwwroot, popupFrameName, newTabModules}) {
+    constructor({courseId, appOrigin, mode, locale, timeoutMs, wwwroot, popupFrameName, newTabModules, pollModules = []}) {
         this.courseId = courseId;
         this.appOrigin = appOrigin;
         this.mode = mode;
@@ -90,6 +95,7 @@ class RumbosHost {
         this.wwwroot = wwwroot;
         this.popupFrameName = popupFrameName;
         this.newTabModules = newTabModules;
+        this.pollModules = pollModules;
 
         this.state = null;
         this.degraded = false;
@@ -109,6 +115,12 @@ class RumbosHost {
             onError: (error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`),
             debounceMs: NAVIGATION_DEBOUNCE_MS,
             minIntervalMs: NAVIGATION_REFRESH_MS,
+        });
+
+        // The same single-flight reader, so a poll that meets a navigation refresh joins it.
+        this.poller = createPoller({
+            tick: () => this.refresher.load().catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`)),
+            intervalMs: POLL_INTERVAL_MS,
         });
 
         this.onMessage = this.onMessage.bind(this);
@@ -325,6 +337,10 @@ class RumbosHost {
             return;
         }
         this.openPopup(target);
+        if (this.pollModules.includes(target.modname)) {
+            // A package reporting inside its own frame loads no page, so nothing else would notice it.
+            this.poller.start();
+        }
     }
 
     /**
@@ -403,6 +419,7 @@ class RumbosHost {
             return;
         }
         this.popup.close();
+        this.poller.stop();
         // Nothing is read on a timer while no overlay is open; the close has its own read below.
         this.refresher.cancel();
         this.finishClose(this.overlayToken);
@@ -591,6 +608,7 @@ class RumbosHost {
         this.setState('degraded', reason === 'apperror' ? code : reason);
         this.clearTimer();
         this.refresher.cancel();
+        this.poller.stop();
         this.setFullscreen(false);
         window.removeEventListener('message', this.onMessage);
 

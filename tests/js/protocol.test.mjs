@@ -244,7 +244,12 @@ describe('resolveActivityTarget', () => {
     const resolve = (cmid, overrides = {}) => resolveActivityTarget(state, cmid, {...site, ...overrides});
 
     it('opens an available activity under /mod/ in the popup, with its title', () => {
-        assert.deepEqual(resolve(1), {target: 'popup', url: `${SITE}/mod/page/view.php?id=1`, title: 'Page 1'});
+        assert.deepEqual(resolve(1), {
+            target: 'popup',
+            url: `${SITE}/mod/page/view.php?id=1`,
+            title: 'Page 1',
+            modname: 'page',
+        });
     });
 
     it('opens a hidden activity (editors only receive them)', () => {
