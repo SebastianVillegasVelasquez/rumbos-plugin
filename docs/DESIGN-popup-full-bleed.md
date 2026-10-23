@@ -108,7 +108,7 @@ Done, in the dev site (Moodle 5.2.4, PostgreSQL, PHP 8.3):
 - PHPUnit: the gating truth table, that ordinary pages are never touched (no marker, expired,
   other course, other tab, no headers, other format, mode off), the session marker and its
   external functions, selector validation, and the hook output.
-- Behat: the popup page has the `embedded` layout and the popup body class.
+- Behat: the popup page has the popup body class (the test site is plain http, so browsers send no `Sec-Fetch-*` and only the styles path runs; the `embedded` layout is covered by PHPUnit).
 - ESLint, the AMD build, stylelint, gherkin-lint, phpcs (`moodle`, `moodle-extra`).
 
 **Not verified** (needs the Mincit site or a copy of its theme and Additional HTML):
