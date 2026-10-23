@@ -19,6 +19,9 @@
 
     The Rumbos iframe and the elements the host JavaScript module drives.
 
+    The container's height comes from custom properties in its style (see styles.css), so the room is reserved
+    before the app loads and the page does not jump.
+
     While the map is full screen the exit button owns the top-right 64 x 64 CSS pixels
     of the viewport, above the app (see "Full screen" in the README).
 
@@ -43,6 +46,8 @@
     {
         "courseid": 2,
         "suggestediting": true,
+        "heightmode": "auto",
+        "sizestyle": "--format-rumbos-value: 75; --format-rumbos-mobile: 80; --format-rumbos-min: 360px; --format-rumbos-max: 1600px;",
         "embedurl": "https://rumbos.example.com/embed?host=https%3A%2F%2Flms.example.com"
     }
 }}
@@ -55,6 +60,8 @@
 <div class="format-rumbos-container mb-3"
      data-region="rumbos-container"
      data-courseid="{{courseid}}"
+     data-heightmode="{{heightmode}}"
+     style="{{sizestyle}}"
      role="region"
      aria-label="{{#str}} containerlabel, format_rumbos {{/str}}">
     <div class="alert alert-warning d-none mb-2" role="alert" data-region="rumbos-notice"></div>

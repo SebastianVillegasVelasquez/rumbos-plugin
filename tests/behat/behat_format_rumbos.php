@@ -134,6 +134,53 @@ JS
     }
 
     /**
+     * Checks the height of the Rumbos area, in CSS pixels.
+     *
+     * @Then /^the Rumbos area should be (?P<pixels>[0-9]+) pixels tall$/
+     * @param string $pixels
+     */
+    public function the_rumbos_area_should_be_pixels_tall(string $pixels): void {
+        $height = $this->rumbos_area_height();
+        if (abs($height - (int) $pixels) > 1) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'Expected the Rumbos area to be ' . $pixels . 'px tall, it is ' . $height . 'px',
+                $this->getSession()->getDriver()
+            );
+        }
+    }
+
+    /**
+     * Checks the height of the Rumbos area as a percentage of the viewport height.
+     *
+     * @Then /^the Rumbos area should be (?P<percent>[0-9]+) percent of the screen height$/
+     * @param string $percent
+     */
+    public function the_rumbos_area_should_be_percent_of_the_screen(string $percent): void {
+        $viewport = (float) $this->getSession()->evaluateScript('return window.innerHeight;');
+        $height = $this->rumbos_area_height();
+        $expected = $viewport * (int) $percent / 100;
+        // Browsers round the viewport units differently by a pixel or two.
+        if (abs($height - $expected) > 3) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'Expected the Rumbos area to be ' . $percent . '% of ' . $viewport . 'px (' . round($expected) .
+                'px), it is ' . $height . 'px',
+                $this->getSession()->getDriver()
+            );
+        }
+    }
+
+    /**
+     * Reads the height of the frame wrapper.
+     *
+     * @return float
+     */
+    protected function rumbos_area_height(): float {
+        return (float) $this->getSession()->evaluateScript(
+            'return document.querySelector("[data-region=rumbos-frame-wrap]").getBoundingClientRect().height;'
+        );
+    }
+
+    /**
      * Forgets the stored signing keys, so the next launch generates new ones.
      *
      * The baseline database holds keys that were encrypted at install time with an encryption

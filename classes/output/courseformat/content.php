@@ -21,6 +21,7 @@ use core_courseformat\output\local\content as content_base;
 use format_rumbos\local\access;
 use format_rumbos\local\app_url;
 use format_rumbos\local\config;
+use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
 use renderer_base;
 
@@ -49,6 +50,8 @@ class content extends content_base {
      *   only while Rumbos is enabled and configured.
      * - collapselist: students get the standard list behind a disclosure
      *   control; teachers in editing mode keep the core editor expanded.
+     * - heightmode, sizestyle: how tall the container is, from the options of the course and the site;
+     *   the style carries integers only, as custom properties the stylesheet turns into a clamped height.
      * - suggestediting: a teacher with editing off gets a note to turn it on.
      *   The map editor itself needs the capability and Moodle's editing mode.
      *
@@ -73,6 +76,9 @@ class content extends content_base {
         $data->suggestediting = $showrumbos && access::should_suggest_editing($context, $editing);
 
         if ($showrumbos) {
+            $size = $this->format->get_map_size();
+            $data->heightmode = $size['mode'];
+            $data->sizestyle = map_size::css_variables($size);
             $appurl = config::get_app_url();
             $data->embedurl = app_url::embed_url($appurl, config::get_host_origin());
             $PAGE->requires->js_call_amd('format_rumbos/host', 'init', [[

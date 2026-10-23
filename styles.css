@@ -1,60 +1,104 @@
 /*
  * Rumbos course format: iframe container.
  *
- * Small screens use 80dvh so a strip of normal page remains below the frame
- * to scroll with (an iframe that fills the whole viewport traps touch scroll).
- * Heights are given in vh first and upgraded to dvh where the browser supports
- * dynamic viewport units, so older browsers still get a sensible size.
+ * The height of the area comes from custom properties on the container, which the page sets from the
+ * settings of the course and of the site (so the room is reserved before the app loads):
+ *   --format-rumbos-value   a number: percent of the viewport height ("viewport" mode) or pixels ("fixed")
+ *   --format-rumbos-mobile  a number: percent of the viewport height on small screens
+ *   --format-rumbos-min     the site minimum, a length in pixels
+ *   --format-rumbos-max     the site maximum, a length in pixels
+ * They are numbers rather than lengths because a custom property that holds an unsupported unit makes the
+ * whole declaration invalid. --format-rumbos-vh is 1dvh where the browser has dynamic viewport units (so
+ * the bars of a phone browser do not hide the bottom of the area) and 1vh elsewhere.
+ *
+ * In "auto" mode the area is as tall as the proportions of the displayed level need for its width: until the
+ * app has reported them (--format-rumbos-auto-height, set by the host module) the room is reserved with a
+ * 16 / 9 box, within the same limits. Small screens use the percentage of the viewport instead, so a strip of
+ * normal page remains below the frame to scroll with (an iframe that fills the whole viewport traps touch
+ * scroll).
  */
+.format-rumbos-container {
+    --format-rumbos-value: 75;
+    --format-rumbos-mobile: 80;
+    --format-rumbos-min: 360px;
+    --format-rumbos-max: 1600px;
+    --format-rumbos-vh: 1vh;
+    --format-rumbos-ratio: 16 / 9;
+}
+
+@supports (height: 1dvh) {
+    .format-rumbos-container {
+        --format-rumbos-vh: 1dvh;
+    }
+}
+
 .format-rumbos-frame-wrap {
     position: relative;
     width: 100%;
-    height: 75vh;
-    min-height: 30rem;
+    height: clamp(var(--format-rumbos-min), calc(var(--format-rumbos-value) * var(--format-rumbos-vh)), var(--format-rumbos-max));
     overflow: hidden;
     border: 1px solid #dee2e6;
     border-radius: 0.5rem;
     background: #fff;
 }
 
+.format-rumbos-container[data-heightmode="fixed"] .format-rumbos-frame-wrap {
+    height: clamp(var(--format-rumbos-min), calc(var(--format-rumbos-value) * 1px), var(--format-rumbos-max));
+}
+
+.format-rumbos-container[data-heightmode="auto"] .format-rumbos-frame-wrap {
+    height: var(--format-rumbos-auto-height, auto);
+    min-height: var(--format-rumbos-min);
+    max-height: var(--format-rumbos-max);
+    aspect-ratio: var(--format-rumbos-ratio);
+}
+
 @media (max-width: 767.98px) {
-    .format-rumbos-frame-wrap {
-        height: 80vh;
+    .format-rumbos-container[data-heightmode] .format-rumbos-frame-wrap {
+        height: min(calc(var(--format-rumbos-mobile) * var(--format-rumbos-vh)), var(--format-rumbos-max));
         min-height: 0;
+        max-height: none;
+        aspect-ratio: auto;
+    }
+}
+
+/* The height follows the level when the app reports its proportions; not when the window is only resized. */
+.format-rumbos-frame-wrap.format-rumbos-animate {
+    transition: height 0.25s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .format-rumbos-frame-wrap.format-rumbos-animate {
+        transition: none;
     }
 }
 
 .format-rumbos-frame {
+    position: absolute;
+    inset: 0;
     display: block;
     width: 100%;
     height: 100%;
     border: 0;
 }
 
-/* Full screen overlay, toggled by the host module. */
-.format-rumbos-frame-wrap.format-rumbos-fullscreen {
+/* Full screen overlay, toggled by the host module. It never exceeds the viewport, whatever the settings say. */
+.format-rumbos-container .format-rumbos-frame-wrap.format-rumbos-fullscreen {
     position: fixed;
     inset: 0;
     z-index: 1060;
     width: 100%;
     height: 100vh;
     min-height: 0;
+    max-height: none;
+    aspect-ratio: auto;
     border: 0;
     border-radius: 0;
+    transition: none;
 }
 
 @supports (height: 1dvh) {
-    .format-rumbos-frame-wrap {
-        height: 75dvh;
-    }
-
-    @media (max-width: 767.98px) {
-        .format-rumbos-frame-wrap {
-            height: 80dvh;
-        }
-    }
-
-    .format-rumbos-frame-wrap.format-rumbos-fullscreen {
+    .format-rumbos-container .format-rumbos-frame-wrap.format-rumbos-fullscreen {
         height: 100dvh;
     }
 }
