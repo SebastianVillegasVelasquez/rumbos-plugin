@@ -213,6 +213,24 @@ JS
     }
 
     /**
+     * Checks that the Rumbos area is wider than core's limited course column of 830 pixels.
+     *
+     * @Then /^the Rumbos area should be wider than (?P<pixels>[0-9]+) pixels$/
+     * @param string $pixels
+     */
+    public function the_rumbos_area_should_be_wider_than(string $pixels): void {
+        $width = (float) $this->getSession()->evaluateScript(
+            'return document.querySelector("[data-region=rumbos-frame-wrap]").getBoundingClientRect().width;'
+        );
+        if ($width <= (int) $pixels) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'Expected the Rumbos area to be wider than ' . $pixels . 'px, it is ' . $width . 'px',
+                $this->getSession()->getDriver()
+            );
+        }
+    }
+
+    /**
      * Reads the height of the frame wrapper.
      *
      * @return float

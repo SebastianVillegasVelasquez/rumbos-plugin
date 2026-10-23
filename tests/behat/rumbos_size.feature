@@ -180,3 +180,14 @@ Feature: The size of the Rumbos area
     And the Rumbos host should be ready
     When the Rumbos app prefers an aspect ratio of 2
     Then the Rumbos area should be 600 pixels tall
+
+  Scenario: The area is not held to core's narrow course column
+    Given the following "courses" exist:
+      | fullname | shortname | format |
+      | Course 1 | C1        | rumbos |
+    And the following "course enrolments" exist:
+      | user     | course | role    |
+      | student1 | C1     | student |
+    And I change window size to "large"
+    When I am on the "Course 1" course page logged in as student1
+    Then the Rumbos area should be wider than 830 pixels

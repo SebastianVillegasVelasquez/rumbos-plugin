@@ -82,6 +82,16 @@
     border: 0;
 }
 
+/*
+ * Core limits every course page to a narrow column: course/view.php adds the body class "limitedwidth", which
+ * the Boost theme turns into a max-width of 830px on the main area. A map needs the room, so on Rumbos courses
+ * the main area takes the width the drawers leave. The rule names Boost's own selector and only removes the
+ * limit; on a theme with another structure it simply does not match and the area keeps that theme's width.
+ */
+body.format-rumbos.limitedwidth.pagelayout-course #page.drawers .main-inner {
+    max-width: none;
+}
+
 /* Full screen overlay, toggled by the host module. It never exceeds the viewport, whatever the settings say. */
 .format-rumbos-container .format-rumbos-frame-wrap.format-rumbos-fullscreen {
     position: fixed;
