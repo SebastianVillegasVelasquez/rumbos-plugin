@@ -55,4 +55,18 @@ $functions = [
         'ajax' => true,
         'loginrequired' => true,
     ],
+    'format_rumbos_start_popup_session' => [
+        'classname' => \format_rumbos\external\start_popup_session::class,
+        'description' => 'Marks the session as having an activity popup open, so its pages can drop the site chrome.',
+        'type' => 'write',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
+    'format_rumbos_end_popup_session' => [
+        'classname' => \format_rumbos\external\end_popup_session::class,
+        'description' => 'Clears the activity popup marker of the session.',
+        'type' => 'write',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
 ];
