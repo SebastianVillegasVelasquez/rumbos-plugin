@@ -162,6 +162,20 @@ keeps its normal cookies.
   cannot forge) on a page of a Rumbos course; the script also checks that the window is
   named `rumbos-popup`. Every other page is served unchanged. The same check keeps the
   Rumbos map from being rendered inside the popup.
+- **The popup marker.** Before loading the popup the host page calls
+  `format_rumbos_start_popup_session`, which stores `{courseid, expires}` in the user's own
+  Moodle session (5 minutes, extended by each matching request, cleared when the popup
+  closes). The function requires an activity the user can see in a Rumbos course. The marker
+  **can** make pages of that course, in that session, requested as a same-origin iframe, use
+  the `embedded` layout and have the configured selectors hidden. It **cannot** grant access,
+  skip a capability or login check, change what a page contains, or affect another user,
+  another course, another session, or a top-level navigation in another tab (those requests
+  carry other `Sec-Fetch-*` values and are ignored). Without the `Sec-Fetch-*` headers a
+  request only receives the stylesheet, scoped to a body class that the page script adds only
+  in the window named `rumbos-popup`. Hiding is cosmetic: it is not an access control.
+- **The hide selectors** are admin configuration validated to a safe subset (no braces, `@`,
+  `url()`, commas, comments or angle brackets; balanced brackets and quotes; bounded count and
+  length) and written as one scoped rule each, so they cannot close a rule or load anything.
 - **Links to other sites** inside the popup get `target="_blank"` and `rel="noopener"`,
   so an external page cannot take over the popup or reach the Moodle page.
 

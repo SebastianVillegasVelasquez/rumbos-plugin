@@ -207,18 +207,43 @@ used and submitted. When the user leaves (the button, the Escape key, or an acti
 "Continue" / "Exit activity" that goes to the course page) the popup closes, the course
 state is refreshed and the app gets the new progress.
 
-- The popup hides Moodle's top bar, drawers, breadcrumb and footer, only inside the
-  popup frame.
+- The popup fills the window (or the window below the site header) and the activity fills
+  the popup. Inside the popup frame only, the activity page uses the theme's `embedded`
+  layout and hides the CSS selectors you list. See [The popup without site chrome](#the-popup-without-site-chrome).
 - Links in an activity that lead to another website open in a new tab.
 - On small screens the popup fills the screen. It follows the visible viewport, so the
   on-screen keyboard does not cover it.
 - Moodle sends the `Sec-Fetch-Dest` and `Sec-Fetch-Site` headers that the page hook
   uses to recognise the popup. If a proxy strips them the activity still works, but with
-  Moodle's full header and drawers inside the popup.
+  the activity's own layout (header and drawers) inside the popup; the selectors you list
+  are still hidden.
 
 The results of testing every activity type are in [docs/MANUAL-TESTS.md](docs/MANUAL-TESTS.md)
 and the reasoning behind the design in
 [docs/DESIGN-activity-popups.md](docs/DESIGN-activity-popups.md).
+
+### The popup without site chrome
+
+A theme can print a header, a footer or a widget on every page, including the activity page inside
+the popup (with Boost Union this is usually its Additional HTML). Moodle's `embedded` layout does not
+remove those, so the plugin lets you name them. Four settings control this:
+
+| Setting | Description |
+| --- | --- |
+| Popup mode | `Automatic` (default): the activity page gets the `embedded` layout and the selectors below are hidden. `Only hide the selectors`: the activity keeps its own layout. `Off`: activity pages are not touched. |
+| CSS selectors to hide inside the popup | One selector per line (at most 30). For example the ids or classes of the government bar, the site header, the accessibility widget and the footer. Simple selectors only (no braces, `@`, `url()`, commas or comments). |
+| Popup position | `Full screen` (default) or `Below the site header`, which leaves the site's header visible above the popup. |
+| Site header selector for the popup | The header the popup sits below; used only with that position. |
+
+Everything applies only to a page framed by the popup, in the session of the user who opened
+it, while the popup is open (see [SECURITY.md](SECURITY.md)). Every other page, and the same
+activity opened in another tab, is served as before. How to find the selectors, the layout
+reasoning and the SCORM settings are in
+[docs/DESIGN-popup-full-bleed.md](docs/DESIGN-popup-full-bleed.md).
+
+**Deploying.** Upgrade the plugin (the new external functions are registered by the upgrade),
+purge all caches (the JavaScript and the stylesheet are cached), fill in the settings above,
+and run the checks in [docs/MANUAL-TESTS.md](docs/MANUAL-TESTS.md).
 
 ### Rotating the key
 

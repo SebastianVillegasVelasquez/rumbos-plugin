@@ -214,3 +214,42 @@ which needs the app to send it). The second could not be reproduced without the 
   (Classic, a child theme, a custom SCSS that changes the course page width).
 - Moodle 5.3.
 
+
+## Popup without site chrome (release 0.4.0)
+
+Design and what is verified: [DESIGN-popup-full-bleed.md](DESIGN-popup-full-bleed.md). This
+checklist is for the staging site with the real theme (Boost Union and its Additional HTML). The
+selectors setting must be filled in first (see the design page).
+
+For each activity type, open it from the map and check: **(a)** no site header, government bar,
+accessibility widget or footer, **(b)** no blank band above the content, **(c)** one scrollbar
+at most, **(d)** the activity fills the popup, **(e)** the activity works, **(f)** the progress on
+the map after closing.
+
+| Activity | Specific checks |
+| --- | --- |
+| SCORM (Rise / Storyline) | The player fills the height; its **Salir de la actividad** button closes the popup or leaves the last screen with **Back to the map** working; completion shows on the map |
+| H5P | The content fills the width and height; no double scrollbar |
+| Page, file (PDF), URL | The page fills the popup; a PDF is shown inline |
+| Quiz | Start, navigate with the navigation panel, finish; the review page closes cleanly |
+| Assignment | Upload a file with the file picker (a modal inside the frame), submit |
+| Custom certificate | Opens and downloads |
+| Forum | Post a reply with the editor |
+| Book | Next and previous chapters, the table of contents |
+
+Gating (all with the popup closed unless stated):
+
+| Check | Expected |
+| --- | --- |
+| Open the same activity URL in another tab while a popup is open | Full page, with the site chrome |
+| Close the popup, open the activity URL in a new tab | Full page, with the site chrome |
+| Wait 5 minutes with the popup open and no navigation, then go to another page in it | Chrome comes back (the marker expired) until the next popup |
+| Popup mode `off` | Popup still works, with the chrome |
+| Popup mode `css` | Activity keeps its own layout; only the selectors are hidden |
+| Position `below-site-header` | The site header stays visible above the overlay; it works scrolled down the page and on a phone |
+| A browser or proxy that strips `Sec-Fetch-*` | The selectors still hide the chrome once the page script runs; layout unchanged |
+
+Browsers: Chrome and Firefox on desktop, Safari on macOS, Chrome on Android, Safari on iOS (the
+on-screen keyboard must not cover the activity). Ask whether the government bar must stay
+visible; if so use the `below-site-header` position with the bar's selector as the site header
+selector.
