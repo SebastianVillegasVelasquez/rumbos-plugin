@@ -78,6 +78,7 @@ class RumbosHost {
      * @param {number} params.courseId
      * @param {string} params.appOrigin Origin the iframe is expected to talk from.
      * @param {string} params.mode "student" or "editor".
+     * @param {boolean} [params.canEdit] Whether the user may edit the map (the notices about an empty map are for them).
      * @param {string} params.locale BCP 47 language tag.
      * @param {number} params.timeoutMs How long to wait for embed-ready.
      * @param {string} params.wwwroot Moodle's wwwroot, the base of every URL the host may open.
@@ -85,10 +86,13 @@ class RumbosHost {
      * @param {string[]} params.newTabModules Modules whose activities open in a new tab.
      * @param {string[]} [params.pollModules] Modules whose open popup also re-reads the state on an interval.
      */
-    constructor({courseId, appOrigin, mode, locale, timeoutMs, wwwroot, popupFrameName, newTabModules, pollModules = []}) {
+    constructor({
+        courseId, appOrigin, mode, canEdit = false, locale, timeoutMs, wwwroot, popupFrameName, newTabModules, pollModules = [],
+    }) {
         this.courseId = courseId;
         this.appOrigin = appOrigin;
         this.mode = mode;
+        this.canEdit = canEdit;
         this.locale = locale;
         this.timeoutMs = timeoutMs;
         this.siteOrigin = window.location.origin;
@@ -211,6 +215,9 @@ class RumbosHost {
                 break;
             case MESSAGE.ERROR:
                 this.degrade('apperror', message.code, message.detail);
+                break;
+            case MESSAGE.NO_CONTENT:
+                this.degrade('nocontent', message.reason);
                 break;
         }
     }
@@ -582,10 +589,11 @@ class RumbosHost {
      * Gives up on the app: hides the iframe and shows the standard content.
      *
      * Students are never left on a blank page; teachers also get a notice
-     * explaining what happened.
+     * explaining what happened. A second call does nothing, so a repeated message from the app is ignored.
      *
-     * @param {string} reason "timeout", "error" (a host call failed) or "apperror" (the app reported an error)
-     * @param {string} code Error code reported by the app, for "apperror".
+     * @param {string} reason "timeout", "error" (a host call failed), "apperror" (the app reported an error)
+     *      or "nocontent" (the app has nothing to show this user)
+     * @param {string} code Error code reported by the app, for "apperror"; the reason it gave, for "nocontent".
      * @param {string} detail Untrusted text reported by the app; only ever rendered with textContent.
      */
     degrade(reason, code = '', detail = '') {
@@ -593,7 +601,7 @@ class RumbosHost {
             return;
         }
         this.degraded = true;
-        this.setState('degraded', reason === 'apperror' ? code : reason);
+        this.setState('degraded', ['apperror', 'nocontent'].includes(reason) ? code : reason);
         this.clearTimer();
         this.refresher.cancel();
         this.poller.stop();
@@ -607,11 +615,11 @@ class RumbosHost {
             this.activityList.open = true;
         }
 
-        if (this.mode === 'editor' && this.notice) {
-            const request = reason === 'apperror' ?
-                getString('fallback_apperror', 'format_rumbos', code) :
-                getString(reason === 'timeout' ? 'fallback_timeout' : 'fallback_error', 'format_rumbos');
-            request
+        // The notice about an empty map is for everyone who can edit it, whatever the editing switch says:
+        // it tells them what to do. The others are for the map editor, who was looking at the app.
+        const notified = reason === 'nocontent' ? this.canEdit : this.mode === 'editor';
+        if (notified && this.notice) {
+            this.showNotice(reason, code)
                 .then((text) => {
                     this.notice.textContent = detail ? `${text} ${detail}` : text;
                     this.notice.classList.remove(CLASSES.HIDDEN);
@@ -620,6 +628,26 @@ class RumbosHost {
                 .catch(() => {
                     this.notice.classList.remove(CLASSES.HIDDEN);
                 });
+        }
+    }
+
+    /**
+     * The text that explains to a user who can edit why the app was replaced by the standard content.
+     *
+     * @param {string} reason See degrade().
+     * @param {string} code See degrade().
+     * @returns {Promise<string>}
+     */
+    showNotice(reason, code) {
+        switch (reason) {
+            case 'apperror':
+                return getString('fallback_apperror', 'format_rumbos', code);
+            case 'nocontent':
+                return getString(code === 'empty_map' ? 'fallback_emptymap' : 'fallback_nomap', 'format_rumbos');
+            case 'timeout':
+                return getString('fallback_timeout', 'format_rumbos');
+            default:
+                return getString('fallback_error', 'format_rumbos');
         }
     }
 }

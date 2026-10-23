@@ -97,6 +97,43 @@ JS
     }
 
     /**
+     * The app tells the host it has nothing to show this user (contract v5.5).
+     *
+     * @When /^the Rumbos app reports that it has no content because "(?P<reason_string>(?:[^"]|\\")*)"$/
+     * @param string $reason Reason code, such as no_saved_map or empty_map.
+     */
+    public function the_rumbos_app_reports_that_it_has_no_content(string $reason): void {
+        $this->getSession()->executeScript(
+            'window.rumbosAppSays({type: "rumbos:no-content", reason: ' . json_encode($reason) . '});'
+        );
+        $this->wait_for_pending_js();
+    }
+
+    /**
+     * Checks that the host replaced the app with the standard content, and why.
+     *
+     * @Then /^the Rumbos host should have fallen back because "(?P<reason_string>(?:[^"]|\\")*)"$/
+     * @param string $reason The data-reason of the container.
+     */
+    public function the_rumbos_host_should_have_fallen_back(string $reason): void {
+        $state = '';
+        for ($attempt = 0; $attempt < 20; $attempt++) {
+            $state = $this->getSession()->evaluateScript(
+                '(function(c) { return c.dataset.state + ":" + (c.dataset.reason || ""); })' .
+                '(document.querySelector("[data-region=rumbos-container]"))'
+            );
+            if ($state === 'degraded:' . $reason) {
+                return;
+            }
+            $this->getSession()->wait(250);
+        }
+        throw new \Behat\Mink\Exception\ExpectationException(
+            'Expected the host to be degraded:' . $reason . ', it is ' . $state,
+            $this->getSession()->getDriver()
+        );
+    }
+
+    /**
      * Forgets the stored signing keys, so the next launch generates new ones.
      *
      * The baseline database holds keys that were encrypted at install time with an encryption
