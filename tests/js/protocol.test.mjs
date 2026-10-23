@@ -22,9 +22,11 @@
 import assert from 'node:assert/strict';
 import {describe, it} from 'node:test';
 import {
+    ASPECT_RATIO_RANGE,
     ERROR_CODES,
     MAX_DETAIL_LENGTH,
     MESSAGE,
+    NO_CONTENT_REASONS,
     POPUP_MESSAGE,
     hostFullscreen,
     hostInit,
@@ -180,6 +182,59 @@ describe('rumbos:error (contract v5.1)', () => {
     it('rejects an error from the wrong sender', () => {
         const forged = fromApp({type: MESSAGE.ERROR, v: 1, code: 'app_crashed'}, {origin: 'https://evil.example.com'});
         assert.equal(parseAppMessage(forged, expected), null);
+    });
+});
+
+describe('rumbos:no-content (contract v5.5)', () => {
+    it('accepts the two known reasons', () => {
+        assert.deepEqual(NO_CONTENT_REASONS, ['no_saved_map', 'empty_map']);
+        for (const reason of NO_CONTENT_REASONS) {
+            assert.deepEqual(
+                parseAppMessage(fromApp({type: MESSAGE.NO_CONTENT, v: 1, reason}), expected),
+                {type: MESSAGE.NO_CONTENT, reason},
+            );
+        }
+    });
+
+    it('rejects an unknown, missing or non-string reason', () => {
+        for (const reason of ['other', '', 'NO_SAVED_MAP', 7, null, undefined, {}, ['empty_map']]) {
+            assert.equal(parseAppMessage(fromApp({type: MESSAGE.NO_CONTENT, v: 1, reason}), expected), null);
+        }
+        assert.equal(parseAppMessage(fromApp({type: MESSAGE.NO_CONTENT, v: 1}), expected), null);
+    });
+
+    it('is ignored from another origin, another window or another version', () => {
+        const data = {type: MESSAGE.NO_CONTENT, v: 1, reason: 'empty_map'};
+        assert.equal(parseAppMessage(fromApp(data, {origin: 'https://evil.example.com'}), expected), null);
+        assert.equal(parseAppMessage(fromApp(data, {source: {}}), expected), null);
+        assert.equal(parseAppMessage(fromApp({...data, v: 2}), expected), null);
+    });
+
+    it('drops anything else the app adds', () => {
+        const data = {type: MESSAGE.NO_CONTENT, v: 1, reason: 'empty_map', html: '<b>x</b>'};
+        assert.deepEqual(parseAppMessage(fromApp(data), expected), {type: MESSAGE.NO_CONTENT, reason: 'empty_map'});
+    });
+});
+
+describe('rumbos:preferred-size (contract v5.5)', () => {
+    const size = (aspectRatio) => fromApp({type: MESSAGE.PREFERRED_SIZE, v: 1, aspectRatio});
+
+    it('accepts a ratio from 0.5 to 4, bounds included', () => {
+        assert.deepEqual(ASPECT_RATIO_RANGE, {min: 0.5, max: 4});
+        for (const aspectRatio of [0.5, 1, 16 / 9, 4]) {
+            assert.deepEqual(parseAppMessage(size(aspectRatio), expected), {type: MESSAGE.PREFERRED_SIZE, aspectRatio});
+        }
+    });
+
+    it('rejects a ratio outside the range or that is not a finite number', () => {
+        for (const aspectRatio of [0.49, 4.01, 0, -1, NaN, Infinity, -Infinity, '1.5', null, undefined, {}]) {
+            assert.equal(parseAppMessage(size(aspectRatio), expected), null);
+        }
+    });
+
+    it('is ignored from another origin or window', () => {
+        assert.equal(parseAppMessage({...size(1.5), origin: 'https://evil.example.com'}, expected), null);
+        assert.equal(parseAppMessage({...size(1.5), source: {}}, expected), null);
     });
 });
 

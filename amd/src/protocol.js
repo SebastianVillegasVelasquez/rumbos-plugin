@@ -14,7 +14,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.4).
+ * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.5).
  *
  * Nothing here touches the DOM or Moodle APIs, so it can be unit tested with
  * plain Node (see tests/js).
@@ -34,6 +34,8 @@ export const MESSAGE = {
     OPEN_ACTIVITY_SETTINGS: 'rumbos:open-activity-settings',
     REQUEST_FULLSCREEN: 'rumbos:request-fullscreen',
     ERROR: 'rumbos:error',
+    NO_CONTENT: 'rumbos:no-content',
+    PREFERRED_SIZE: 'rumbos:preferred-size',
     HOST_INIT: 'rumbos:host-init',
     HOST_STATE: 'rumbos:host-state',
     HOST_LAUNCH: 'rumbos:host-launch',
@@ -51,6 +53,12 @@ export const POPUP_MESSAGE = {
 
 /** Error codes the app may report (contract v5.1). */
 export const ERROR_CODES = ['launch_failed', 'token_refresh_failed', 'app_crashed', 'protocol_unsupported'];
+
+/** Reasons the app may give for having nothing to show (contract v5.5). */
+export const NO_CONTENT_REASONS = ['no_saved_map', 'empty_map'];
+
+/** Range of the aspect ratio (width / height) the app may prefer (contract v5.5). */
+export const ASPECT_RATIO_RANGE = {min: 0.5, max: 4};
 
 /** Maximum length of the untrusted error detail. */
 export const MAX_DETAIL_LENGTH = 200;
@@ -101,6 +109,10 @@ const APP_MESSAGE_PARSERS = {
     [MESSAGE.ERROR]: (data) => ERROR_CODES.includes(data.code)
         ? {type: data.type, code: data.code, detail: cleanDetail(data.detail)}
         : null,
+    [MESSAGE.NO_CONTENT]: (data) => NO_CONTENT_REASONS.includes(data.reason) ? {type: data.type, reason: data.reason} : null,
+    [MESSAGE.PREFERRED_SIZE]: (data) => Number.isFinite(data.aspectRatio) &&
+        data.aspectRatio >= ASPECT_RATIO_RANGE.min && data.aspectRatio <= ASPECT_RATIO_RANGE.max ?
+        {type: data.type, aspectRatio: data.aspectRatio} : null,
 };
 
 /**
