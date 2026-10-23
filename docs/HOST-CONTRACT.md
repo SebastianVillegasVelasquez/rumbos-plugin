@@ -2,8 +2,8 @@
 
 What the Moodle page (the host) and the Rumbos app, which runs in an iframe, say to each
 other, and what each side may rely on. The app side is implemented in the Rumbos frontend
-against this document. This is **contract v5.4**: everything from v5 to v5.3 is unchanged
-and v5.4 only adds to it.
+against this document. This is **contract v5.5**: everything from v5 to v5.4 is unchanged
+and v5.5 only adds to it.
 
 All messages are `window.postMessage` objects with `v: 1`. The host ignores any message
 that does not come from the configured app origin **and** from the iframe's own window,
@@ -21,6 +21,8 @@ would follow.
 | app to host | `rumbos:open-activity-settings` | `cmid` | **v5.4.** Open the activity's settings in a new tab. Editor mode only. |
 | app to host | `rumbos:request-fullscreen` | `on` | Turn the full screen mode on or off. |
 | app to host | `rumbos:error` | `code`, `detail` | The app failed; the host falls back to the standard course content. |
+| app to host | `rumbos:no-content` | `reason` | **v5.5.** The app has nothing to show this user; the host falls back to the standard course content. |
+| app to host | `rumbos:preferred-size` | `aspectRatio` | **v5.5.** The proportions of the level on display; the host applies them only in automatic height mode. |
 | host to app | `rumbos:host-init` | `mode`, `locale`, `courseId`, `assertion`, `state` | The answer to `embed-ready`. |
 | host to app | `rumbos:host-state` | `state` | A newer course state. |
 | host to app | `rumbos:host-launch` | `assertion` | A fresh launch assertion. |
@@ -81,6 +83,65 @@ completion dialog links to), which opens the settings form with only the "Comple
 conditions" section expanded. The app never supplies a URL, and gets no reply. If the
 browser blocks the new tab, the host shows a Moodle notification and does not navigate the
 page, so unsaved work in the map editor is not lost.
+
+### `rumbos:no-content` (v5.5)
+
+```
+app -> host: { type: "rumbos:no-content", v: 1, reason: "no_saved_map" | "empty_map" }
+```
+
+The app has nothing to show this user: no map was ever saved for the course
+(`no_saved_map`) or the saved map has no bubbles (`empty_map`). A student must never be left
+on an empty page, so the host hides the iframe and shows the standard course content.
+
+- **Students:** silently. No notice, and the list of activities opens.
+- **Users who may edit the map** (`format/rumbos:editmap`, whether or not editing is on):
+  the same, with a notice that names the reason and what to do ("There is no saved map
+  yet. Turn editing on for the course and press Save." / "The map has no bubbles yet.").
+  The capability decides, not the editing switch, because the teacher who has to save the
+  map normally has editing off when they first see the course.
+
+The message is checked like all the others (origin, source window, `v`, shape). A `reason`
+outside the two values is ignored, and so is any message after the first one that was acted
+on. The app should send it instead of its own empty screen for a student; in the map
+editor (`mode: "editor"`) it should show its "create the first level" call to action.
+The host publishes `data-state="degraded"` and `data-reason="no_saved_map"` (or
+`empty_map`) on the container, for tests.
+
+### `rumbos:preferred-size` (v5.5)
+
+```
+app -> host: { type: "rumbos:preferred-size", v: 1, aspectRatio }
+```
+
+`aspectRatio` is width divided by height, a finite number from 0.5 to 4 (bounds included;
+anything else is ignored). The app sends it when the displayed level changes.
+
+The host applies it **only when the course's height mode is "auto"**; in "viewport" and
+"fixed" it is ignored, because the course settings decide there. In "auto" the height is
+the container's width divided by the ratio, clamped to the site minimum and maximum. The
+host tracks the width with a `ResizeObserver` and keeps the proportions when the window is
+resized. A change of level is animated for 0.25 seconds, unless the user prefers reduced
+motion. Until the first message the area reserves a 16 / 9 box within the same limits, so the
+page does not jump. On small screens and in full screen the message has no effect: the
+area takes a percentage of the screen height, or the whole screen.
+
+## Size of the area
+
+How tall the area is comes from the course options, then the site defaults, then the
+built-in values (`auto`, 80 percent on small screens). The app does not choose it, except
+through `rumbos:preferred-size` in automatic mode.
+
+| Setting (site) / option (course, prefixed `rumbos_`) | Values | Meaning |
+| --- | --- | --- |
+| `heightmode` | `auto`, `viewport`, `fixed` (empty in a course: the site default) | How the height is decided. |
+| `heightvalue` | 40 to 100 for `viewport` (percent of the screen height), 360 to 1600 for `fixed` (pixels); 0 or empty: the default | The height. Not used with `auto`. |
+| `mobileheight` | 50 to 100 (percent of the screen height); 0 or empty: the default | Height on screens narrower than 768 px. |
+| `minheight`, `maxheight` (site only) | 200 to 1000 and 400 to 4000 (pixels) | Limits no course can exceed on a computer screen. |
+
+Full screen ignores all of this and is exactly the viewport. The course options are
+ordinary format options: they are in the course settings form and in backups, and they hold
+no ids.
 
 ## Full screen
 
@@ -148,5 +209,6 @@ Rules:
 - `amd/src/protocol.js` parses and builds messages (tested in `tests/js/protocol.test.mjs`).
 - `amd/src/refresher.js` is the single-flight, throttled reader (`tests/js/refresher.test.mjs`).
 - `amd/src/host.js` wires them to the page.
+- `classes/local/map_size.php` resolves the height settings; `styles.css` turns them into the layout.
 - `classes/local/course_state.php` computes the state; `classes/external/get_course_state.php`
   and `get_activity_settings_url.php` are the two AJAX functions the host calls for this.

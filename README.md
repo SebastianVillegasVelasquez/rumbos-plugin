@@ -9,7 +9,7 @@ holds no map data and no game logic.
 | | |
 | --- | --- |
 | Component | `format_rumbos` |
-| Release | 0.1.3 (alpha) |
+| Release | 0.3.0 (alpha) |
 | Moodle | 5.2 to 5.3 |
 | PHP | 8.3 or later |
 | Licence | GPL-3.0-or-later |
@@ -121,9 +121,14 @@ This writes `dist/format_rumbos-<release>.zip`. The archive has a single top-lev
 folder named `rumbos` and contains only the files that belong to the plugin.
 
 Then, as an administrator, open **Site administration > Plugins > Install plugins**,
-upload the ZIP, and follow the prompts to complete the upgrade. Every release that adds a web
-service function needs that upgrade, and a cache purge afterwards: the steps, and what older
-builds of the Rumbos app should expect, are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+upload the ZIP, and follow the prompts to complete the upgrade. **Run the upgrade and purge
+the caches** (Site administration > Development > Purge caches, or `php admin/cli/purge_caches.php`):
+release 0.3.0 adds site settings and course options, and the new layout is in `styles.css`, which Moodle
+serves from its cache. Every release that adds a web
+service function needs that upgrade too. The steps, and what older
+builds of the Rumbos app should expect (they never send `rumbos:no-content` or
+`rumbos:preferred-size`, so they keep working: no fallback for an empty map, and automatic mode keeps the
+reserved 16 / 9 box), are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ### Manually
 
@@ -153,6 +158,10 @@ Open **Site administration > Plugins > Course formats > Rumbos**.
 | Rumbos app URL | HTTPS address of the Rumbos app, for example `https://rumbos.example.com`. The value is stored as an origin plus an optional path with no trailing slash. Anything that is not HTTPS is rejected, as are credentials, query strings and fragments. The URL must not be on the same origin as Moodle. |
 | Audience | Value of the `aud` claim. It must match the value configured in the Rumbos service. Default `rumbos`. |
 | Modules that open in a new tab | Comma-separated module names (default `bigbluebuttonbn,lti`) whose activities open in a new tab instead of the popup, because video conferences and external tools usually refuse to run inside a frame. Leave it empty to open everything in the popup. |
+| Height of the Rumbos area | Default for every course: `auto` (the app's proportions decide, within the limits), a percentage of the screen height, or a fixed height in pixels. See [Size of the area](#size-of-the-area). |
+| Height | The percentage (40 to 100) or the pixels (360 to 1600) of the mode above; 0 for the built-in value (75 percent, 700 pixels). |
+| Height on small screens | Percentage of the screen height (50 to 100, default 80) on screens narrower than 768 px. |
+| Minimum and maximum height | Pixels (200 to 1000, default 360; 400 to 4000, default 1600). No course can go outside them on a computer screen. |
 | Registration | Read-only panel with what the Rumbos service needs to know about this site: issuer, host origin, audience, key id, public key and its fingerprint, a registration command, and a diagnostic. See [Registering the site](#registering-the-site-in-the-rumbos-service). |
 
 To use the format, a teacher selects **Rumbos** as the course format in the course
@@ -160,6 +169,34 @@ settings.
 
 The capability `format/rumbos:editmap` decides who is an editor in the app. By default
 it is granted to the editing teacher and manager roles.
+
+### Size of the area
+
+Every Rumbos course can choose its own mode and height in **Course settings**
+(**Height of the Rumbos area**, **Height**, **Height on small screens**), or leave them on
+the site default. The precedence is the course, then the site default, then the built-in
+values. The options are ordinary course format options, so they appear in the normal course
+form and are **backed up and restored with the course** (a duplicate keeps them).
+
+- **Automatic** (the built-in mode): the app reports the proportions of the displayed level
+  (`rumbos:preferred-size`) and the height follows them for the width available, within the
+  site minimum and maximum. Before the app answers, a 16 / 9 box is reserved, so the page
+  does not jump.
+- **Percentage of the screen height** and **fixed height** give every level the same height.
+- On small screens the area takes the "height on small screens" percentage in every mode,
+  leaving a strip of the normal page below it to scroll with.
+- **Full screen** is always exactly the screen, whatever the settings say.
+
+A value outside the range of its mode is refused by the course form and, if it was written
+some other way, ignored when read (the next level of the precedence applies).
+
+**Width.** In the Boost theme Moodle limits every course page to a column of 830 px: the
+core page adds the body class `limitedwidth`, which Boost turns into a maximum width of the
+main area. On Rumbos courses the plugin removes only that limit, so the map has the width
+the drawers leave (checked on Moodle 5.2.4 with Boost). It names Boost's own selector, so on
+another theme it does nothing and the theme's width applies. What still depends on the
+theme: a theme or a custom SCSS that sets its own width for the course page, and the page
+header and the navigation tabs, which Boost keeps at 830 px.
 
 ### Activity popups
 
@@ -344,7 +381,7 @@ report a vulnerability.
   uses it** (an open Moodle dialog keeps it). The **Back to the map** button always works.
 - **The Moodle site must not strip `Sec-Fetch-*` headers** for the popup to look tidy
   (see [Activity popups](#activity-popups)).
-- Course-level options are not available in this release.
+- The height options are the only course-level options; the map itself is not stored in Moodle.
 
 ## Development
 

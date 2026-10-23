@@ -170,3 +170,47 @@ from a script with no click, as in the Chrome session above, is refused and leav
 - **Keyboard and screen readers.** Tab reaching the exit control from the app frame, and the dialog
   announcement, were not tried.
 - **Firefox, Safari and Edge on desktop.**
+
+## Students, empty maps and size (release 0.3.0)
+
+Moodle 5.2.4 (moodle-docker, PostgreSQL), real students enrolled by manual enrolment, requests made
+from clean cookie jars with curl, and one student session in Chrome on Windows 11 (viewport
+1536 x 735). The app at `https://rumbos.invalid` does not exist, so the iframe never loads and the
+"saved" and "never saved" maps could not be observed; the app's part was played by the stand-in of the
+Behat steps.
+
+### Why students seemed to see nothing
+
+| Scenario | Container | `iframe` | State function (AJAX) | Notes |
+| --- | --- | --- | --- | --- |
+| S1 course with a visible activity, real student | yes | yes | ok | the page itself is correct |
+| S2 map never saved | not observable | not observable | ok | needs the real app; see below |
+| S3 section 0 empty, no activities, real student | yes | yes | ok | the container does not depend on the sections |
+| S4 every activity hidden, real student | yes | yes | ok | same |
+| S5 app unreachable | yes, then replaced | removed after the timeout | ok | standard content shown; teachers get the notice |
+| S6 manager **not enrolled**, switched to Student | **no** (before the fix) | **no** | **refused, "Edit the Rumbos map"** | `access::can_use()` was false |
+| S6 manager enrolled, switched to Student | yes | yes | ok | enrolment kept it working |
+
+Findings: the container is rendered by the format's own template above the standard content, whatever
+section 0 holds, whether there are activities, and whether editing is on; "not inside the General block"
+is not a cause. Nothing in `format.php` or the templates reads the sections or the editing mode. The
+likely causes are two: a manager testing with "Switch role" (fixed), and a course whose map was never
+saved, where the app has nothing to draw and the host had no way to know (fixed by `rumbos:no-content`,
+which needs the app to send it). The second could not be reproduced without the real app.
+
+### Size
+
+| Check | Result |
+| --- | --- |
+| Reserved room before the app loads (auto, student, 1536 px window) | 441 px tall for a 784 px wide area (16 / 9), present before any script |
+| Boost course page width | `limitedwidth` is added by `course/view.php`; main area 830 px. With the plugin rule the area went from 784 to 1126 px wide |
+| Behat (`rumbos_size.feature`, Chrome on Linux) | fixed, percentage, site default, course over site, site maximum and minimum, small screen percentage, course form saving and refusing, automatic mode following the app's ratio, ignored in other modes, wider than 830 px |
+| Backup and restore (PHPUnit) | a duplicate keeps the three options and is independent of its source |
+
+### Not verified
+
+- The real Rumbos app: nothing here shows what it sends for an unsaved or empty map.
+- Firefox, Safari and Edge; real phones; the height transition by eye; a theme other than Boost
+  (Classic, a child theme, a custom SCSS that changes the course page width).
+- Moodle 5.3.
+

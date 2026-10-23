@@ -55,6 +55,20 @@ changes with the purge, so it is usually not needed.
 | --- | --- | --- |
 | `pollmodules` | `scorm,h5pactivity` | Modules whose open popup also reads the course progress every 15 seconds while the tab is visible. Empty turns it off. Each read queries the whole course (see [COMPLETION-STATES.md](COMPLETION-STATES.md#what-a-read-costs)). |
 
+## Release 0.3.0: students, empty maps and size
+
+- **Run the upgrade (step 2) and purge the caches (step 3).** The release adds site settings
+  (`heightmode`, `heightvalue`, `mobileheight`, `minheight`, `maxheight`) and course options
+  (`rumbos_heightmode`, `rumbos_heightvalue`, `rumbos_mobileheight`). The upgrade lists the new settings.
+  The layout is in `styles.css`, which Moodle serves from the theme cache, so without the purge the old
+  fixed height stays.
+- **Older builds of the Rumbos app** never send `rumbos:no-content` or `rumbos:preferred-size`. They keep
+  working: a student of a course without a saved map still sees the app's own empty screen (there is no
+  fallback until the app sends the message), and in automatic mode the area stays at the reserved 16 / 9
+  box. To keep the old look until the app is updated, choose a fixed height in the site settings.
+- **Testing as a student:** use a real enrolled student, or "Switch role to... Student". A manager who is
+  not enrolled used to lose the map when switching role; that is fixed in this release.
+
 ## Several web servers
 
 Nothing to configure: the state function drops the user's cached completion before every read, so it
