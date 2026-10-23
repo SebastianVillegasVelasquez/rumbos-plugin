@@ -217,4 +217,35 @@ final class external_functions_test extends \advanced_testcase {
         $this->expectException(\moodle_exception::class);
         get_launch_assertion::execute($course->id);
     }
+
+    /**
+     * A manager who is not enrolled and switched to Student reads the state and gets an assertion as a student.
+     */
+    public function test_a_switched_role_manager_who_is_not_enrolled_is_served_as_a_student(): void {
+        global $DB;
+
+        [$course] = $this->setup_course();
+        $manager = $this->getDataGenerator()->create_user();
+        role_assign(
+            (int) $DB->get_field('role', 'id', ['shortname' => 'manager'], MUST_EXIST),
+            $manager->id,
+            \context_system::instance()->id
+        );
+        $this->setUser($manager);
+        $context = \core\context\course::instance($course->id);
+        role_switch((int) $DB->get_field('role', 'id', ['shortname' => 'student'], MUST_EXIST), $context);
+
+        $state = external_api::clean_returnvalue(
+            get_course_state::execute_returns(),
+            get_course_state::execute($course->id)
+        );
+        $this->assertSame((int) $course->id, $state['courseId']);
+
+        $result = external_api::clean_returnvalue(
+            get_launch_assertion::execute_returns(),
+            get_launch_assertion::execute($course->id)
+        );
+        $claims = JWT::decode($result['assertion'], new Key(key_manager::get_public_key(), 'RS256'));
+        $this->assertSame('student', $claims->role);
+    }
 }

@@ -28,7 +28,12 @@ use core\context\course as context_course;
 class access {
     /**
      * Whether a user is a real participant of the course for Rumbos purposes:
-     * actively enrolled, or allowed to edit the map. Guests never qualify.
+     * actively enrolled, allowed to edit the map, or a user who switched to
+     * another role to see the course as that role sees it. Guests never qualify.
+     *
+     * The last case matters because a manager who is not enrolled and switches to
+     * "Student" holds neither enrolment nor the edit capability any more, yet is
+     * looking at the course page and must get exactly what a student gets.
      *
      * @param context_course $context
      * @param int|null $userid Defaults to the current user.
@@ -42,7 +47,8 @@ class access {
             return false;
         }
         return is_enrolled($context, $userid, '', true)
-            || has_capability('format/rumbos:editmap', $context, $userid);
+            || has_capability('format/rumbos:editmap', $context, $userid)
+            || ($userid === (int) $USER->id && is_role_switched($context->instanceid));
     }
 
     /**
