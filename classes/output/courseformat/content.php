@@ -91,6 +91,9 @@ class content extends content_base {
                 'timeoutMs' => config::get_app_timeout_ms(),
                 'wwwroot' => $CFG->wwwroot,
                 'popupFrameName' => popup::FRAME_NAME,
+                'popupHeaderSelector' => popup::get_position() === popup::POSITION_BELOW_HEADER
+                    ? popup::get_header_selector() : '',
+                'popupSession' => popup::get_mode() !== popup::MODE_OFF,
                 'newTabModules' => popup::get_newtab_modules(),
                 'pollModules' => popup::get_poll_modules(),
             ]]);

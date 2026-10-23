@@ -108,8 +108,10 @@ export default class ActivityPopup {
      * @param {string} title Activity title (plain text).
      * @param {?HTMLElement} returnFocus Where the focus goes back to on close.
      * @param {HTMLElement} [mount] Where to put the dialog; the page body by default.
+     * @param {Object} [options]
+     * @param {string} [options.headerSelector] The site header to leave visible above the dialog; empty for the whole window.
      */
-    open(url, title, returnFocus, mount = document.body) {
+    open(url, title, returnFocus, mount = document.body, {headerSelector = ''} = {}) {
         if (this.isOpen) {
             return;
         }
@@ -131,7 +133,7 @@ export default class ActivityPopup {
         heading.textContent = title;
         this.backButton = document.createElement('button');
         this.backButton.type = 'button';
-        this.backButton.className = 'btn btn-primary';
+        this.backButton.className = 'btn btn-primary btn-sm';
         this.backButton.dataset.action = 'rumbos-popup-close';
         this.backButton.textContent = this.backLabel;
         this.backButton.addEventListener('click', () => this.onClose());
@@ -153,6 +155,7 @@ export default class ActivityPopup {
         root.append(before, bar, frame, after);
 
         mount.append(root);
+        this.placeBelow(root, headerSelector);
         this.makeBackgroundInert(root);
         document.body.classList.add(CLASSES.BODY_OPEN);
         this.root = root;
@@ -189,6 +192,34 @@ export default class ActivityPopup {
             this.returnFocus.focus({preventScroll: true});
         }
         this.returnFocus = null;
+    }
+
+    /**
+     * Starts the dialog below the site header, when one is configured and visible.
+     *
+     * The page is scrolled to the top first so the header is where it can be seen above the dialog.
+     *
+     * @param {HTMLElement} root The dialog.
+     * @param {string} selector
+     */
+    placeBelow(root, selector) {
+        if (!selector) {
+            return;
+        }
+        let header = null;
+        try {
+            header = document.querySelector(selector);
+        } catch (error) {
+            return;
+        }
+        if (!header) {
+            return;
+        }
+        window.scrollTo(0, 0);
+        const bottom = Math.round(header.getBoundingClientRect().bottom);
+        if (bottom > 0 && bottom < window.innerHeight / 2) {
+            root.style.setProperty('--format-rumbos-popup-top', `${bottom}px`);
+        }
     }
 
     /**

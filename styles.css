@@ -159,14 +159,16 @@ body.format-rumbos-fullscreen-open {
 }
 
 /*
- * Activity popup: a dialog over the map that frames the Moodle activity page.
- * It is full screen on small screens and a large sheet on wide ones. Its height
- * follows the visible viewport (--format-rumbos-popup-height is set by the host
- * module from visualViewport), so the on-screen keyboard does not cover it.
+ * Activity popup: an overlay over the map that frames the Moodle activity page.
+ * It fills the window (or the window below the site header, when the host sets
+ * --format-rumbos-popup-top) with a slim bar on top and the activity filling the
+ * rest. Its height follows the visible viewport (--format-rumbos-popup-height is
+ * set by the host module from visualViewport), so the on-screen keyboard does
+ * not cover it.
  */
 .format-rumbos-popup {
     position: fixed;
-    inset: 0;
+    inset: var(--format-rumbos-popup-top, 0px) 0 0 0;
     z-index: 1070;
     display: flex;
     flex-direction: column;
@@ -174,18 +176,9 @@ body.format-rumbos-fullscreen-open {
     overscroll-behavior: contain;
 }
 
-@media (min-width: 768px) {
-    .format-rumbos-popup {
-        inset: 2vh 3vw;
-        border-radius: 0.5rem;
-        box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
-        overflow: hidden;
-    }
-}
-
 @media (max-width: 767.98px) {
     .format-rumbos-popup {
-        height: var(--format-rumbos-popup-height, 100vh);
+        height: calc(var(--format-rumbos-popup-height, 100vh) - var(--format-rumbos-popup-top, 0px));
         bottom: auto;
     }
 }
@@ -196,7 +189,7 @@ body.format-rumbos-fullscreen-open {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.5rem 0.75rem;
+    padding: 0.25rem 0.75rem;
     border-bottom: 1px solid #dee2e6;
 }
 
@@ -209,7 +202,7 @@ body.format-rumbos-fullscreen-open {
     min-width: 0;
     margin: 0;
     overflow: hidden;
-    font-size: 1.1rem;
+    font-size: 1rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -247,4 +240,23 @@ body.format-rumbos-popup-page #page-footer {
 body.format-rumbos-popup-page #page.drawers {
     margin: 0;
     padding: 0;
+}
+
+/*
+ * The page itself takes no room of its own inside the popup: no margin or padding
+ * left over from the fixed top bar or from the page layout, so the activity starts
+ * at the top edge. What else to hide (a header or footer the theme prints from its
+ * additional HTML) comes from the "CSS selectors to hide inside the popup" setting.
+ */
+body.format-rumbos-popup-page {
+    margin: 0;
+    padding-top: 0;
+}
+
+body.format-rumbos-popup-page #page,
+body.format-rumbos-popup-page #page-content,
+body.format-rumbos-popup-page #region-main-box,
+body.format-rumbos-popup-page .embedded-main {
+    margin-top: 0;
+    padding-top: 0;
 }

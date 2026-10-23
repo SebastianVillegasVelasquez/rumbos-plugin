@@ -93,10 +93,12 @@ class RumbosHost {
      * @param {string} params.popupFrameName Name of the activity popup frame.
      * @param {string[]} params.newTabModules Modules whose activities open in a new tab.
      * @param {string[]} [params.pollModules] Modules whose open popup also re-reads the state on an interval.
+     * @param {string} [params.popupHeaderSelector] The site header the popup sits below, or empty for the whole window.
+     * @param {boolean} [params.popupSession] Whether to mark the session for the popup (the activity pages drop the site chrome).
      */
     constructor({
         courseId, appOrigin, mode, size = {mode: 'viewport', min: 0, max: Infinity}, canEdit = false, locale, timeoutMs,
-        wwwroot, popupFrameName, newTabModules, pollModules = [],
+        wwwroot, popupFrameName, newTabModules, pollModules = [], popupHeaderSelector = '', popupSession = true,
     }) {
         this.courseId = courseId;
         this.appOrigin = appOrigin;
@@ -112,6 +114,9 @@ class RumbosHost {
         this.popupFrameName = popupFrameName;
         this.newTabModules = newTabModules;
         this.pollModules = pollModules;
+        this.popupHeaderSelector = popupHeaderSelector;
+        this.popupSession = popupSession;
+        this.popupPending = false;
 
         this.state = null;
         this.degraded = false;
@@ -339,7 +344,7 @@ class RumbosHost {
      * @param {number} cmid
      */
     openActivity(cmid) {
-        if (this.popup?.isOpen) {
+        if (this.popup?.isOpen || this.popupPending) {
             return;
         }
         const target = resolveActivityTarget(this.state, cmid, {
@@ -358,11 +363,7 @@ class RumbosHost {
             }
             return;
         }
-        this.openPopup(target);
-        if (this.pollModules.includes(target.modname)) {
-            // A package reporting inside its own frame loads no page, so nothing else would notice it.
-            this.poller.start();
-        }
+        this.openPopup({...target, cmid});
     }
 
     /**
@@ -390,20 +391,50 @@ class RumbosHost {
     }
 
     /**
-     * Opens the activity popup and tells the app an overlay is above it.
+     * Marks the session as having a popup open, then shows the popup.
      *
-     * @param {{url: string, title: string}} target
+     * The marker is what lets the activity page drop the site chrome; it has to be stored before the
+     * frame requests the page. If it cannot be stored the popup still opens, only with the chrome.
+     *
+     * @param {{url: string, title: string, modname: string, cmid: number}} target
      */
-    openPopup({url, title}) {
+    async openPopup(target) {
         if (!this.popup) {
             this.popup = this.createPopup();
         }
         this.overlayToken += 1;
+        const token = this.overlayToken;
+        if (this.popupSession) {
+            this.popupPending = true;
+            try {
+                await Ajax.call([{methodname: 'format_rumbos_start_popup_session', args: {cmid: target.cmid}}])[0];
+            } catch (error) {
+                Log.debug(`format_rumbos/host: ${error?.message ?? error}`);
+            }
+            this.popupPending = false;
+        }
+        if (token === this.overlayToken) {
+            this.showPopup(target);
+        }
+    }
+
+    /**
+     * Shows the popup and tells the app an overlay is above it.
+     *
+     * @param {{url: string, title: string, modname: string}} target
+     */
+    showPopup({url, title, modname}) {
         // Anything outside the element that is in the browser's full screen is not shown, so the popup goes
         // inside it. Opening an activity then does not end the full screen, and neither does closing it.
         const inNativeFullscreen = document.fullscreenElement && document.fullscreenElement === this.frameWrap;
-        this.popup.open(url, title, this.frame, inNativeFullscreen ? this.frameWrap : document.body);
+        this.popup.open(url, title, this.frame, inNativeFullscreen ? this.frameWrap : document.body, {
+            headerSelector: inNativeFullscreen ? '' : this.popupHeaderSelector,
+        });
         this.send(hostOverlay(true));
+        if (this.pollModules.includes(modname)) {
+            // A package reporting inside its own frame loads no page, so nothing else would notice it.
+            this.poller.start();
+        }
     }
 
     /**
@@ -443,6 +474,10 @@ class RumbosHost {
             return;
         }
         this.popup.close();
+        if (this.popupSession) {
+            Ajax.call([{methodname: 'format_rumbos_end_popup_session', args: {}}])[0]
+                .catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`));
+        }
         this.poller.stop();
         // Nothing is read on a timer while no overlay is open; the close has its own read below.
         this.refresher.cancel();
