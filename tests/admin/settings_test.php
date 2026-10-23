@@ -224,4 +224,67 @@ zoom, lti "));
         $this->assertStringContainsString('rotatekey.php?reset=1', $html);
         $this->assertStringContainsString('BEGIN PUBLIC KEY', $html);
     }
+
+    /**
+     * The site limits and the mobile height accept their own ranges only.
+     */
+    public function test_height_settings_accept_their_own_range_only(): void {
+        $this->setAdminUser();
+        $min = new setting_height('format_rumbos/minheight', 'Min', '', 360, \format_rumbos\local\map_size::SITE_MIN_RANGE);
+
+        $this->assertSame('', $min->write_setting('200'));
+        $this->assertSame('', $min->write_setting(' 1000 '));
+        $this->assertSame('1000', get_config('format_rumbos', 'minheight'));
+
+        foreach (['199', '1001', '', 'abc', '3.5', '0', '-5'] as $bad) {
+            $this->assertNotSame('', $min->write_setting($bad), "'$bad' is refused");
+        }
+        $this->assertSame('1000', get_config('format_rumbos', 'minheight'), 'a refused value is not stored');
+    }
+
+    /**
+     * The site height accepts 0 for the built-in value, and the range of the mode submitted with it.
+     */
+    public function test_the_site_height_is_checked_against_the_submitted_mode(): void {
+        $this->setAdminUser();
+        $height = new setting_height(
+            'format_rumbos/heightvalue',
+            'Height',
+            '',
+            0,
+            \format_rumbos\local\map_size::VIEWPORT_RANGE,
+            true,
+            'heightmode'
+        );
+
+        $this->assertSame('', $height->write_setting('0'), 'the built-in value');
+
+        $_POST['s_format_rumbos_heightmode'] = 'fixed';
+        $_REQUEST['s_format_rumbos_heightmode'] = 'fixed';
+        $this->assertSame('', $height->write_setting('900'));
+        $this->assertNotSame('', $height->write_setting('75'), 'a percentage is not a height in pixels');
+
+        $_POST['s_format_rumbos_heightmode'] = 'viewport';
+        $_REQUEST['s_format_rumbos_heightmode'] = 'viewport';
+        $this->assertSame('', $height->write_setting('75'));
+        $this->assertNotSame('', $height->write_setting('900'), 'pixels are not a percentage');
+        $this->assertSame('75', get_config('format_rumbos', 'heightvalue'));
+    }
+
+    /**
+     * The settings page offers the height settings under the names the course options mirror.
+     */
+    public function test_the_settings_page_lists_the_height_settings(): void {
+        global $CFG;
+
+        $this->setAdminUser();
+        require_once($CFG->libdir . '/adminlib.php');
+        $page = admin_get_root(true, true)->locate('formatsetting' . 'rumbos');
+
+        $this->assertNotNull($page);
+        $names = array_keys((array) $page->settings);
+        foreach (['heightmode', 'heightvalue', 'mobileheight', 'minheight', 'maxheight'] as $name) {
+            $this->assertContains('format_rumbos' . $name, $names);
+        }
+    }
 }

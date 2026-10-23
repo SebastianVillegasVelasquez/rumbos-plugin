@@ -25,8 +25,10 @@
 defined('MOODLE_INTERNAL') || die();
 
 use format_rumbos\admin\setting_appurl;
+use format_rumbos\admin\setting_height;
 use format_rumbos\admin\setting_newtabmodules;
 use format_rumbos\admin\setting_registration;
+use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
 
 // The rotation confirmation page lives outside the settings page but inside the admin tree.
@@ -71,6 +73,60 @@ if ($ADMIN->fulltree) {
         get_string('pollmodules', 'format_rumbos'),
         get_string('pollmodules_desc', 'format_rumbos'),
         popup::DEFAULT_POLL_MODULES
+    ));
+
+    $settings->add(new admin_setting_heading(
+        'format_rumbos/sizeheading',
+        get_string('sizeheading', 'format_rumbos'),
+        get_string('sizeheading_desc', 'format_rumbos')
+    ));
+
+    $settings->add(new admin_setting_configselect(
+        'format_rumbos/heightmode',
+        new lang_string('heightmode', 'format_rumbos'),
+        new lang_string('heightmode_desc', 'format_rumbos'),
+        map_size::MODE_AUTO,
+        [
+            map_size::MODE_AUTO => get_string('heightmode_auto', 'format_rumbos'),
+            map_size::MODE_VIEWPORT => get_string('heightmode_viewport', 'format_rumbos'),
+            map_size::MODE_FIXED => get_string('heightmode_fixed', 'format_rumbos'),
+        ]
+    ));
+
+    $setting = new setting_height(
+        'format_rumbos/heightvalue',
+        get_string('heightvalue', 'format_rumbos'),
+        get_string('heightvalue_desc', 'format_rumbos'),
+        0,
+        map_size::VIEWPORT_RANGE,
+        true,
+        'heightmode'
+    );
+    $settings->add($setting);
+    $settings->hide_if('format_rumbos/heightvalue', 'format_rumbos/heightmode', 'eq', map_size::MODE_AUTO);
+
+    $settings->add(new setting_height(
+        'format_rumbos/mobileheight',
+        get_string('mobileheight', 'format_rumbos'),
+        get_string('mobileheight_desc', 'format_rumbos'),
+        map_size::DEFAULT_MOBILE,
+        map_size::MOBILE_RANGE
+    ));
+
+    $settings->add(new setting_height(
+        'format_rumbos/minheight',
+        get_string('minheight', 'format_rumbos'),
+        get_string('minheight_desc', 'format_rumbos'),
+        map_size::DEFAULT_MIN,
+        map_size::SITE_MIN_RANGE
+    ));
+
+    $settings->add(new setting_height(
+        'format_rumbos/maxheight',
+        get_string('maxheight', 'format_rumbos'),
+        get_string('maxheight_desc', 'format_rumbos'),
+        map_size::DEFAULT_MAX,
+        map_size::SITE_MAX_RANGE
     ));
 
     $settings->add(new setting_registration(
