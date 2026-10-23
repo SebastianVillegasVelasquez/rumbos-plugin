@@ -170,6 +170,49 @@ JS
     }
 
     /**
+     * The app tells the host the proportions of the level on display (contract v5.5).
+     *
+     * @When /^the Rumbos app prefers an aspect ratio of (?P<ratio>[0-9.]+)$/
+     * @param string $ratio Width divided by height.
+     */
+    public function the_rumbos_app_prefers_an_aspect_ratio(string $ratio): void {
+        $this->getSession()->executeScript(
+            'window.rumbosAppSays({type: "rumbos:preferred-size", aspectRatio: ' . (float) $ratio . '});'
+        );
+        $this->wait_for_pending_js();
+        // The height changes with a short transition.
+        $this->getSession()->wait(1000);
+    }
+
+    /**
+     * Checks that the area is as tall as its width and an aspect ratio give, within the site limits.
+     *
+     * @Then /^the Rumbos area should follow an aspect ratio of (?P<ratio>[0-9.]+)$/
+     * @param string $ratio Width divided by height.
+     */
+    public function the_rumbos_area_should_follow_an_aspect_ratio(string $ratio): void {
+        [$width, $min, $max] = $this->getSession()->evaluateScript(<<<'JS'
+            return (function() {
+                var container = document.querySelector('[data-region=rumbos-container]');
+                var style = getComputedStyle(container);
+                return [container.getBoundingClientRect().width,
+                    parseFloat(style.getPropertyValue('--format-rumbos-min')),
+                    parseFloat(style.getPropertyValue('--format-rumbos-max'))];
+            })();
+JS
+        );
+        $expected = max($min, min($max, $width / (float) $ratio));
+        $height = $this->rumbos_area_height();
+        if (abs($height - $expected) > 2) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'Expected the Rumbos area to be ' . round($expected) . 'px tall (width ' . round($width) . ', ratio ' . $ratio .
+                ', limits ' . $min . '-' . $max . '), it is ' . $height . 'px',
+                $this->getSession()->getDriver()
+            );
+        }
+    }
+
+    /**
      * Reads the height of the frame wrapper.
      *
      * @return float

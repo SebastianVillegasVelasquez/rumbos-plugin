@@ -61,7 +61,14 @@ const CLASSES = {
     FULLSCREEN: 'format-rumbos-fullscreen',
     BODY_FULLSCREEN: 'format-rumbos-fullscreen-open',
     HIDDEN: 'd-none',
+    ANIMATE: 'format-rumbos-animate',
 };
+
+/** Custom property the stylesheet reads for the height of the area in automatic mode (see styles.css). */
+const AUTO_HEIGHT_PROPERTY = '--format-rumbos-auto-height';
+
+/** The width below which the area takes a percentage of the screen height instead (the stylesheet's breakpoint). */
+const SMALL_SCREEN_QUERY = '(max-width: 767.98px)';
 
 /** A burst of navigations in the activity popup is refreshed once, this long after the last one (ms). */
 const NAVIGATION_DEBOUNCE_MS = 400;
@@ -78,6 +85,7 @@ class RumbosHost {
      * @param {number} params.courseId
      * @param {string} params.appOrigin Origin the iframe is expected to talk from.
      * @param {string} params.mode "student" or "editor".
+     * @param {{mode: string, min: number, max: number}} [params.size] Height mode of the area and the site limits (px).
      * @param {boolean} [params.canEdit] Whether the user may edit the map (the notices about an empty map are for them).
      * @param {string} params.locale BCP 47 language tag.
      * @param {number} params.timeoutMs How long to wait for embed-ready.
@@ -87,12 +95,16 @@ class RumbosHost {
      * @param {string[]} [params.pollModules] Modules whose open popup also re-reads the state on an interval.
      */
     constructor({
-        courseId, appOrigin, mode, canEdit = false, locale, timeoutMs, wwwroot, popupFrameName, newTabModules, pollModules = [],
+        courseId, appOrigin, mode, size = {mode: 'viewport', min: 0, max: Infinity}, canEdit = false, locale, timeoutMs,
+        wwwroot, popupFrameName, newTabModules, pollModules = [],
     }) {
         this.courseId = courseId;
         this.appOrigin = appOrigin;
         this.mode = mode;
         this.canEdit = canEdit;
+        this.size = size;
+        this.aspectRatio = null;
+        this.resizeObserver = null;
         this.locale = locale;
         this.timeoutMs = timeoutMs;
         this.siteOrigin = window.location.origin;
@@ -164,6 +176,7 @@ class RumbosHost {
         this.exitButton?.addEventListener('click', () => this.setFullscreen(false));
         document.addEventListener('fullscreenchange', () => this.onNativeFullscreenChange());
         this.timer = window.setTimeout(() => this.degrade('timeout'), this.timeoutMs);
+        this.watchWidth();
 
         // The iframe is in the page HTML, so it can finish loading and send embed-ready
         // before this module is ready to listen, and that message would be lost for good.
@@ -215,6 +228,9 @@ class RumbosHost {
                 break;
             case MESSAGE.ERROR:
                 this.degrade('apperror', message.code, message.detail);
+                break;
+            case MESSAGE.PREFERRED_SIZE:
+                this.setPreferredSize(message.aspectRatio);
                 break;
             case MESSAGE.NO_CONTENT:
                 this.degrade('nocontent', message.reason);
@@ -453,6 +469,69 @@ class RumbosHost {
     }
 
     /**
+     * Follows the width of the container, so that in automatic mode the height keeps the proportions of the level.
+     *
+     * The stylesheet ignores the height set here on small screens and in full screen, so nothing is undone when
+     * those start or end.
+     */
+    watchWidth() {
+        if (this.size.mode !== 'auto' || typeof ResizeObserver === 'undefined') {
+            return;
+        }
+        this.lastWidth = this.container.getBoundingClientRect().width;
+        this.resizeObserver = new ResizeObserver(() => {
+            // Setting the height also resizes the container: only a change of width needs a new height.
+            const width = this.container.getBoundingClientRect().width;
+            if (width !== this.lastWidth) {
+                this.lastWidth = width;
+                this.updateAutoHeight(false);
+            }
+        });
+        this.resizeObserver.observe(this.container);
+    }
+
+    /**
+     * The app says which proportions the level on display has (contract v5.5).
+     *
+     * It only matters in automatic mode; in any other mode the course settings decide and it is ignored.
+     *
+     * @param {number} aspectRatio Width divided by height, already validated.
+     */
+    setPreferredSize(aspectRatio) {
+        if (this.size.mode !== 'auto' || this.degraded || aspectRatio === this.aspectRatio) {
+            return;
+        }
+        this.aspectRatio = aspectRatio;
+        this.updateAutoHeight(true);
+    }
+
+    /**
+     * Sets the height of the area from its width and the proportions of the level, within the site limits.
+     *
+     * @param {boolean} animate Whether the change is a different level (animated) or only a resize (immediate).
+     */
+    updateAutoHeight(animate) {
+        if (!this.aspectRatio || !this.frameWrap) {
+            return;
+        }
+        const width = this.container.getBoundingClientRect().width;
+        const target = Math.round(Math.min(this.size.max, Math.max(this.size.min, width / this.aspectRatio)));
+        const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const visible = !window.matchMedia(SMALL_SCREEN_QUERY).matches && !this.fullscreen;
+        if (animate && visible && !reducedMotion) {
+            if (!this.container.style.getPropertyValue(AUTO_HEIGHT_PROPERTY)) {
+                // The reserved box has no height to animate from: start where it is.
+                this.container.style.setProperty(AUTO_HEIGHT_PROPERTY, `${this.frameWrap.getBoundingClientRect().height}px`);
+                this.frameWrap.getBoundingClientRect();
+            }
+            this.frameWrap.classList.add(CLASSES.ANIMATE);
+        } else {
+            this.frameWrap.classList.remove(CLASSES.ANIMATE);
+        }
+        this.container.style.setProperty(AUTO_HEIGHT_PROPERTY, `${target}px`);
+    }
+
+    /**
      * Toggles the full screen mode and, where the browser allows it, also the browser's own full screen.
      *
      * The mode is a CSS overlay that always works (iPhone Safari has no Fullscreen API for arbitrary
@@ -605,6 +684,7 @@ class RumbosHost {
         this.clearTimer();
         this.refresher.cancel();
         this.poller.stop();
+        this.resizeObserver?.disconnect();
         this.setFullscreen(false);
         window.removeEventListener('message', this.onMessage);
 

@@ -85,6 +85,7 @@ class content extends content_base {
                 'courseId' => (int) $courseid,
                 'appOrigin' => app_url::origin($appurl),
                 'mode' => access::map_mode($context, $editing),
+                'size' => ['mode' => $size['mode'], 'min' => $size['min'], 'max' => $size['max']],
                 'canEdit' => has_capability('format/rumbos:editmap', $context),
                 'locale' => str_replace('_', '-', current_language()),
                 'timeoutMs' => config::get_app_timeout_ms(),

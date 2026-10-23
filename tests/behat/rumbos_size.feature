@@ -133,3 +133,50 @@ Feature: The size of the Rumbos area
       | rumbos_heightvalue        | 100                    |
     And I press "Save and display"
     Then I should see "Enter a height in pixels from 360 to 1600"
+
+  Scenario: In automatic mode the height follows the proportions the app reports
+    Given the following "courses" exist:
+      | fullname | shortname | format | rumbos_heightmode |
+      | Course 1 | C1        | rumbos | auto              |
+    And the following "course enrolments" exist:
+      | user     | course | role    |
+      | student1 | C1     | student |
+    And the Rumbos signing keys are generated afresh
+    And I am on the "Course 1" course page logged in as student1
+    And the Rumbos app announces that it is ready
+    And the Rumbos host should be ready
+    When the Rumbos app prefers an aspect ratio of 1.5
+    Then the Rumbos area should follow an aspect ratio of 1.5
+    And the Rumbos app prefers an aspect ratio of 2.5
+    And the Rumbos area should follow an aspect ratio of 2.5
+
+  Scenario: In automatic mode the site limits bound the height
+    Given the following config values are set as admin:
+      | config    | value | plugin        |
+      | maxheight | 450   | format_rumbos |
+    And the following "courses" exist:
+      | fullname | shortname | format | rumbos_heightmode |
+      | Course 1 | C1        | rumbos | auto              |
+    And the following "course enrolments" exist:
+      | user     | course | role    |
+      | student1 | C1     | student |
+    And the Rumbos signing keys are generated afresh
+    And I am on the "Course 1" course page logged in as student1
+    And the Rumbos app announces that it is ready
+    And the Rumbos host should be ready
+    When the Rumbos app prefers an aspect ratio of 0.5
+    Then the Rumbos area should be 450 pixels tall
+
+  Scenario: A mode other than automatic ignores the proportions the app reports
+    Given the following "courses" exist:
+      | fullname | shortname | format | rumbos_heightmode | rumbos_heightvalue |
+      | Course 1 | C1        | rumbos | fixed             | 600                |
+    And the following "course enrolments" exist:
+      | user     | course | role    |
+      | student1 | C1     | student |
+    And the Rumbos signing keys are generated afresh
+    And I am on the "Course 1" course page logged in as student1
+    And the Rumbos app announces that it is ready
+    And the Rumbos host should be ready
+    When the Rumbos app prefers an aspect ratio of 2
+    Then the Rumbos area should be 600 pixels tall
