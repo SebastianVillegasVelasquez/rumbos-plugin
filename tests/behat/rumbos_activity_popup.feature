@@ -37,7 +37,7 @@ Feature: Activity popups over the Rumbos map
   Scenario: The popup frames the activity page itself
     When the Rumbos app asks to open the activity "Page 1"
     And I switch to "rumbos-popup" iframe
-    Then "body.pagelayout-embedded.format-rumbos-popup-page" "css_element" should exist
+    Then "body.format-rumbos-popup-page" "css_element" should exist
     And I should see "A page body text"
     And I switch to the main frame
 
