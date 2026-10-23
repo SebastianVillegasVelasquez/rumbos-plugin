@@ -80,6 +80,30 @@ const cleanDetail = (detail) => {
 };
 
 /**
+ * Whether a value is a positive integer course module id.
+ *
+ * @param {*} cmid
+ * @returns {boolean}
+ */
+const isCmid = (cmid) => Number.isSafeInteger(cmid) && cmid > 0;
+
+/**
+ * What to keep of each message type the app may send, or null when its fields are not well formed.
+ * Fields the app adds beyond these are dropped.
+ */
+const APP_MESSAGE_PARSERS = {
+    [MESSAGE.EMBED_READY]: (data) => ({type: data.type}),
+    [MESSAGE.REQUEST_STATE]: (data) => ({type: data.type}),
+    [MESSAGE.REQUEST_LAUNCH]: (data) => ({type: data.type}),
+    [MESSAGE.OPEN_ACTIVITY]: (data) => isCmid(data.cmid) ? {type: data.type, cmid: data.cmid} : null,
+    [MESSAGE.OPEN_ACTIVITY_SETTINGS]: (data) => isCmid(data.cmid) ? {type: data.type, cmid: data.cmid} : null,
+    [MESSAGE.REQUEST_FULLSCREEN]: (data) => typeof data.on === 'boolean' ? {type: data.type, on: data.on} : null,
+    [MESSAGE.ERROR]: (data) => ERROR_CODES.includes(data.code)
+        ? {type: data.type, code: data.code, detail: cleanDetail(data.detail)}
+        : null,
+};
+
+/**
  * Validates a message event coming from the app.
  *
  * The event is accepted only when it comes from the expected origin AND from
@@ -88,7 +112,7 @@ const cleanDetail = (detail) => {
  *
  * @param {{origin: string, source: *, data: *}} event The message event.
  * @param {{appOrigin: string, frameWindow: *}} expected Expected sender.
- * @returns {?{type: string, cmid: (number|undefined), on: (boolean|undefined)}} Clean message, or null.
+ * @returns {?{type: string}} Clean message (type plus its validated fields), or null.
  */
 export const parseAppMessage = (event, {appOrigin, frameWindow}) => {
     if (!event || !frameWindow || event.origin !== appOrigin || event.source !== frameWindow) {
@@ -98,24 +122,8 @@ export const parseAppMessage = (event, {appOrigin, frameWindow}) => {
     if (!isPlainObject(data) || data.v !== PROTOCOL_VERSION || typeof data.type !== 'string') {
         return null;
     }
-
-    switch (data.type) {
-        case MESSAGE.EMBED_READY:
-        case MESSAGE.REQUEST_STATE:
-        case MESSAGE.REQUEST_LAUNCH:
-            return {type: data.type};
-        case MESSAGE.OPEN_ACTIVITY:
-        case MESSAGE.OPEN_ACTIVITY_SETTINGS:
-            return Number.isSafeInteger(data.cmid) && data.cmid > 0 ? {type: data.type, cmid: data.cmid} : null;
-        case MESSAGE.REQUEST_FULLSCREEN:
-            return typeof data.on === 'boolean' ? {type: data.type, on: data.on} : null;
-        case MESSAGE.ERROR:
-            return ERROR_CODES.includes(data.code)
-                ? {type: data.type, code: data.code, detail: cleanDetail(data.detail)}
-                : null;
-        default:
-            return null;
-    }
+    // Own keys only: a type such as "constructor" must not find a parser on the prototype.
+    return Object.hasOwn(APP_MESSAGE_PARSERS, data.type) ? APP_MESSAGE_PARSERS[data.type](data) : null;
 };
 
 /**
