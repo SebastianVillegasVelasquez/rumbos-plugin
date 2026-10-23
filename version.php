@@ -29,4 +29,4 @@ $plugin->version = 2026102303;
 $plugin->requires = 2026042000; // Moodle 5.2.0.
 $plugin->supported = [502, 503]; // Branch numbers, inclusive range.
 $plugin->maturity = MATURITY_ALPHA;
-$plugin->release = '0.3.1';
+$plugin->release = '0.4.0';
