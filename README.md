@@ -9,7 +9,7 @@ holds no map data and no game logic.
 | | |
 | --- | --- |
 | Component | `format_rumbos` |
-| Release | 0.3.0 (alpha) |
+| Release | 0.3.1 (alpha) |
 | Moodle | 5.2 to 5.3 |
 | PHP | 8.3 or later |
 | Licence | GPL-3.0-or-later |
@@ -123,7 +123,7 @@ folder named `rumbos` and contains only the files that belong to the plugin.
 Then, as an administrator, open **Site administration > Plugins > Install plugins**,
 upload the ZIP, and follow the prompts to complete the upgrade. **Run the upgrade and purge
 the caches** (Site administration > Development > Purge caches, or `php admin/cli/purge_caches.php`):
-release 0.3.0 adds site settings and course options, and the new layout is in `styles.css`, which Moodle
+release 0.3.0 and later add site settings and course options, and the new layout is in `styles.css`, which Moodle
 serves from its cache. Every release that adds a web
 service function needs that upgrade too. The steps, and what older
 builds of the Rumbos app should expect (they never send `rumbos:no-content` or
