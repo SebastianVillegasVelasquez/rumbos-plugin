@@ -58,7 +58,10 @@ final class content_test extends \advanced_testcase {
     private function render(\stdClass $course, \stdClass $user, bool $editing = false): \DOMXPath {
         global $PAGE, $USER;
 
-        $this->setUser($user);
+        if ((int) $USER->id !== (int) $user->id) {
+            // Setting the same user again would drop a role switch made by the test.
+            $this->setUser($user);
+        }
         $PAGE = new \moodle_page();
         $PAGE->set_context(\core\context\course::instance($course->id));
         $PAGE->set_course($course);
@@ -251,5 +254,47 @@ final class content_test extends \advanced_testcase {
         $outsider = $this->getDataGenerator()->create_user();
 
         $this->assertNull($this->iframe($this->render($course, $outsider)));
+    }
+
+    /**
+     * A student gets the container whatever the sections hold: no activities, or only hidden ones.
+     */
+    public function test_a_student_gets_the_container_whatever_the_sections_hold(): void {
+        [$course, $student] = $this->setup_course();
+
+        $empty = $this->render($course, $student);
+        $this->assertNotNull($this->iframe($empty), 'a course without activities');
+        $this->assertSame(1, $empty->query('//*[@data-region="rumbos-container"]')->length);
+
+        $this->getDataGenerator()->create_module('page', ['course' => $course->id, 'visible' => 0]);
+        $hidden = $this->render($course, $student);
+        $this->assertNotNull($this->iframe($hidden), 'a course whose only activity is hidden from students');
+        $this->assertSame(1, $hidden->query('//*[@data-region="rumbos-container"]')->length);
+        $this->assertSame(1, $hidden->query('//details[@id="format-rumbos-list"]')->length, 'and the list stays reachable');
+    }
+
+    /**
+     * A manager who is not enrolled and switched to Student gets the container, with the student's controls.
+     */
+    public function test_a_role_switched_manager_gets_the_container_like_a_student(): void {
+        global $DB;
+        [$course] = $this->setup_course();
+        $manager = $this->getDataGenerator()->create_user();
+        role_assign(
+            (int) $DB->get_field('role', 'id', ['shortname' => 'manager'], MUST_EXIST),
+            $manager->id,
+            \context_system::instance()->id
+        );
+        $this->setUser($manager);
+        role_switch(
+            (int) $DB->get_field('role', 'id', ['shortname' => 'student'], MUST_EXIST),
+            \core\context\course::instance($course->id)
+        );
+
+        $xpath = $this->render($course, $manager);
+
+        $this->assertNotNull($this->iframe($xpath));
+        $this->assertSame(1, $xpath->query('//details[@id="format-rumbos-list"]')->length);
+        $this->assertSame(0, $xpath->query('//*[@data-region="rumbos-edit-note"]')->length);
     }
 }
