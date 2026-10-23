@@ -28,6 +28,7 @@ use format_rumbos\admin\setting_appurl;
 use format_rumbos\admin\setting_height;
 use format_rumbos\admin\setting_newtabmodules;
 use format_rumbos\admin\setting_registration;
+use format_rumbos\admin\setting_selectors;
 use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
 
@@ -74,6 +75,43 @@ if ($ADMIN->fulltree) {
         get_string('pollmodules_desc', 'format_rumbos'),
         popup::DEFAULT_POLL_MODULES
     ));
+
+    $settings->add(new admin_setting_configselect(
+        'format_rumbos/popupmode',
+        new lang_string('popupmode', 'format_rumbos'),
+        new lang_string('popupmode_desc', 'format_rumbos'),
+        popup::MODE_AUTO,
+        [
+            popup::MODE_AUTO => get_string('popupmode_auto', 'format_rumbos'),
+            popup::MODE_CSS => get_string('popupmode_css', 'format_rumbos'),
+            popup::MODE_OFF => get_string('popupmode_off', 'format_rumbos'),
+        ]
+    ));
+
+    $settings->add(new setting_selectors(
+        'format_rumbos/popuphideselectors',
+        get_string('popuphideselectors', 'format_rumbos'),
+        get_string('popuphideselectors_desc', 'format_rumbos', popup::MAX_SELECTORS)
+    ));
+
+    $settings->add(new admin_setting_configselect(
+        'format_rumbos/popupposition',
+        new lang_string('popupposition', 'format_rumbos'),
+        new lang_string('popupposition_desc', 'format_rumbos'),
+        popup::POSITION_FULLSCREEN,
+        [
+            popup::POSITION_FULLSCREEN => get_string('popupposition_fullscreen', 'format_rumbos'),
+            popup::POSITION_BELOW_HEADER => get_string('popupposition_below', 'format_rumbos'),
+        ]
+    ));
+
+    $settings->add(new setting_selectors(
+        'format_rumbos/popupheaderselector',
+        get_string('popupheaderselector', 'format_rumbos'),
+        get_string('popupheaderselector_desc', 'format_rumbos'),
+        1
+    ));
+    $settings->hide_if('format_rumbos/popupheaderselector', 'format_rumbos/popupposition', 'eq', popup::POSITION_FULLSCREEN);
 
     $settings->add(new admin_setting_heading(
         'format_rumbos/sizeheading',
