@@ -122,4 +122,49 @@ final class restore_test extends \advanced_testcase {
         $this->assertSame($newid, $claims->course);
         $this->assertNotSame((int) $course->id, $claims->course);
     }
+
+    /**
+     * The size options of the course travel with a backup: a duplicate keeps them, and keeps using the site fallbacks.
+     */
+    public function test_the_size_options_survive_a_backup_and_restore(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course(['format' => 'rumbos']);
+        course_get_format($course)->update_course_format_options([
+            'rumbos_heightmode' => 'viewport',
+            'rumbos_heightvalue' => 85,
+            'rumbos_mobileheight' => 65,
+        ]);
+        $other = $this->getDataGenerator()->create_course(['format' => 'rumbos']);
+
+        $newid = $this->duplicate($course);
+
+        $this->assertSame(
+            ['rumbos_heightmode' => 'viewport', 'rumbos_heightvalue' => 85, 'rumbos_mobileheight' => 65],
+            course_get_format($newid)->get_format_options()
+        );
+        $size = course_get_format($newid)->get_map_size();
+        $this->assertSame(['viewport', 85, 65], [$size['mode'], $size['value'], $size['mobile']]);
+
+        // The copy is independent: changing it leaves the original and any other course alone.
+        course_get_format($newid)->update_course_format_options(['rumbos_heightmode' => 'fixed', 'rumbos_heightvalue' => 500]);
+        $this->assertSame('viewport', course_get_format($course)->get_format_options()['rumbos_heightmode']);
+        $this->assertSame('', course_get_format($other)->get_format_options()['rumbos_heightmode']);
+    }
+
+    /**
+     * A course that left everything on "site default" is restored the same way, so the site's own values apply.
+     */
+    public function test_a_course_on_the_site_default_is_restored_on_the_site_default(): void {
+        $this->resetAfterTest();
+        $this->setAdminUser();
+        $course = $this->getDataGenerator()->create_course(['format' => 'rumbos']);
+
+        $newid = $this->duplicate($course);
+        set_config('heightmode', 'fixed', 'format_rumbos');
+        set_config('heightvalue', 640, 'format_rumbos');
+
+        $size = course_get_format($newid)->get_map_size();
+        $this->assertSame(['fixed', 640], [$size['mode'], $size['value']]);
+    }
 }
