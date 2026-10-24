@@ -271,6 +271,31 @@ JS
     }
 
     /**
+     * The app asks the host to open a SCORM activity of the course.
+     *
+     * @When /^the Rumbos app asks to open the SCORM activity "(?P<name_string>(?:[^"]|\\")*)"$/
+     * @param string $name Activity name.
+     */
+    public function the_rumbos_app_asks_to_open_the_scorm_activity(string $name): void {
+        global $DB;
+
+        $cmid = $DB->get_field_sql(
+            "SELECT cm.id
+               FROM {course_modules} cm
+               JOIN {modules} m ON m.id = cm.module AND m.name = 'scorm'
+               JOIN {scorm} s ON s.id = cm.instance
+              WHERE s.name = :name",
+            ['name' => $name],
+            MUST_EXIST
+        );
+        $this->getSession()->wait(2000);
+        $this->getSession()->executeScript(
+            'window.rumbosAppSays({type: "rumbos:open-activity", cmid: ' . (int) $cmid . '});'
+        );
+        $this->wait_for_pending_js();
+    }
+
+    /**
      * The app asks the host to open the settings page of an activity (contract v5.4).
      *
      * @When /^the Rumbos app asks to open the settings of the activity "(?P<name_string>(?:[^"]|\\")*)"$/
@@ -456,6 +481,57 @@ JS
             '.dataset.courseid;'
         );
         $this->wait_for_pending_js();
+    }
+
+    /**
+     * Counts the commits the SCORM player's API adapter in the popup receives, from now on.
+     *
+     * The count lives in the host page, so it survives the popup frame being removed.
+     *
+     * @When /^I watch the SCORM player in the Rumbos popup$/
+     */
+    public function i_watch_the_scorm_player_in_the_rumbos_popup(): void {
+        $script = <<<'JS'
+            (function() {
+                var frame = document.querySelector('iframe[name="rumbos-popup"]');
+                var api = frame && frame.contentWindow.API;
+                if (!api) {
+                    return false;
+                }
+                window.rumbosCommits = 0;
+                var commit = api.LMSCommit;
+                api.LMSCommit = function(param) {
+                    window.rumbosCommits++;
+                    return commit.call(api, param);
+                };
+                return true;
+            })()
+JS;
+        for ($attempt = 0; $attempt < 60; $attempt++) {
+            if ($this->getSession()->evaluateScript($script)) {
+                return;
+            }
+            $this->getSession()->wait(250);
+        }
+        throw new \Behat\Mink\Exception\ExpectationException(
+            'The SCORM player did not start in the popup within 15 seconds',
+            $this->getSession()->getDriver()
+        );
+    }
+
+    /**
+     * Checks that the player's adapter was asked to commit before the popup went away.
+     *
+     * @Then /^the SCORM player in the Rumbos popup should have been told to commit$/
+     */
+    public function the_scorm_player_should_have_been_told_to_commit(): void {
+        $commits = (int) $this->getSession()->evaluateScript('window.rumbosCommits');
+        if ($commits < 1) {
+            throw new \Behat\Mink\Exception\ExpectationException(
+                'The SCORM adapter received no commit before the popup closed',
+                $this->getSession()->getDriver()
+            );
+        }
     }
 
     /**
