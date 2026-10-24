@@ -248,8 +248,11 @@ describe('message builders', () => {
     it('build host-init with every field of the contract', () => {
         const state = {schemaVersion: 1};
         assert.deepEqual(
-            hostInit({mode: 'editor', locale: 'es', courseId: 2, assertion: 'jws', state}),
-            {type: 'rumbos:host-init', v: 1, mode: 'editor', locale: 'es', courseId: 2, assertion: 'jws', state},
+            hostInit({mode: 'editor', locale: 'es', courseId: 2, courseName: 'Ruta 1', assertion: 'jws', state}),
+            {
+                type: 'rumbos:host-init', v: 1, mode: 'editor', locale: 'es', courseId: 2, courseName: 'Ruta 1',
+                assertion: 'jws', state,
+            },
         );
     });
 

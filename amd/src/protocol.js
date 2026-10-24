@@ -14,7 +14,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.5).
+ * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.6).
  *
  * Nothing here touches the DOM or Moodle APIs, so it can be unit tested with
  * plain Node (see tests/js).
@@ -141,15 +141,16 @@ export const parseAppMessage = (event, {appOrigin, frameWindow}) => {
 /**
  * The host-init message.
  *
- * @param {{mode: string, locale: string, courseId: number, assertion: string, state: Object}} init
+ * @param {{mode: string, locale: string, courseId: number, courseName: string, assertion: string, state: Object}} init
  * @returns {Object}
  */
-export const hostInit = ({mode, locale, courseId, assertion, state}) => ({
+export const hostInit = ({mode, locale, courseId, courseName, assertion, state}) => ({
     type: MESSAGE.HOST_INIT,
     v: PROTOCOL_VERSION,
     mode,
     locale,
     courseId,
+    courseName,
     assertion,
     state,
 });

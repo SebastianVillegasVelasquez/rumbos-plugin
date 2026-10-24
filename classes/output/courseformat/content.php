@@ -21,6 +21,7 @@ use core_courseformat\output\local\content as content_base;
 use format_rumbos\local\access;
 use format_rumbos\local\app_url;
 use format_rumbos\local\config;
+use format_rumbos\local\course_name;
 use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
 use renderer_base;
@@ -83,6 +84,7 @@ class content extends content_base {
             $data->embedurl = app_url::embed_url($appurl, config::get_host_origin());
             $PAGE->requires->js_call_amd('format_rumbos/host', 'init', [[
                 'courseId' => (int) $courseid,
+                'courseName' => course_name::for_host($this->format->get_course()->fullname, $context),
                 'appOrigin' => app_url::origin($appurl),
                 'mode' => access::map_mode($context, $editing),
                 'size' => ['mode' => $size['mode'], 'min' => $size['min'], 'max' => $size['max']],

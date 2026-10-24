@@ -83,6 +83,7 @@ class RumbosHost {
     /**
      * @param {Object} params
      * @param {number} params.courseId
+     * @param {string} [params.courseName] The course full name as plain text, for the app's welcome screen.
      * @param {string} params.appOrigin Origin the iframe is expected to talk from.
      * @param {string} params.mode "student" or "editor".
      * @param {{mode: string, min: number, max: number}} [params.size] Height mode of the area and the site limits (px).
@@ -97,10 +98,11 @@ class RumbosHost {
      * @param {boolean} [params.popupSession] Whether to mark the session for the popup (the activity pages drop the site chrome).
      */
     constructor({
-        courseId, appOrigin, mode, size = {mode: 'viewport', min: 0, max: Infinity}, canEdit = false, locale, timeoutMs,
-        wwwroot, popupFrameName, newTabModules, pollModules = [], popupHeaderSelector = '', popupSession = true,
+        courseId, courseName = '', appOrigin, mode, size = {mode: 'viewport', min: 0, max: Infinity}, canEdit = false,
+        locale, timeoutMs, wwwroot, popupFrameName, newTabModules, pollModules = [], popupHeaderSelector = '', popupSession = true,
     }) {
         this.courseId = courseId;
+        this.courseName = courseName;
         this.appOrigin = appOrigin;
         this.mode = mode;
         this.canEdit = canEdit;
@@ -256,6 +258,7 @@ class RumbosHost {
                     mode: this.mode,
                     locale: this.locale,
                     courseId: this.courseId,
+                    courseName: this.courseName,
                     assertion,
                     state,
                 }));
