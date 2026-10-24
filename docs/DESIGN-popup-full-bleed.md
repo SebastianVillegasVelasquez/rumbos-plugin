@@ -94,10 +94,77 @@ Recommended SCORM settings for the popup (the package's own page decides the res
   starts at once.
 - **Student skip content structure page / Display attempt status / Show navigation**: leave the
   navigation off for a Rise or Storyline package, which brings its own.
-- A package's own **Salir de la actividad** button navigates the frame to the course page or
-  closes the window. Navigating to the course page closes the popup (the host already does this
-  on `isCourseViewUrl`); `window.close()` in a frame does nothing, so a package that only calls
-  it leaves the user on its last screen with **Back to the map** still working.
+- **Salir de la actividad** is not the package's. It is Moodle's own "Exit activity" button, from
+  the `mod_scorm/player_exitbar` template that `mod/scorm/player.php` prints above the player
+  (Spanish language pack string `exitactivity`). Its link goes to the course page, so in the popup
+  it did what **Back to the map** does. The popup hides that row (see below). **TERMINAR CURSO**
+  is not in this plugin (templates, `en` and `es` language files and JavaScript were searched). Moodle's
+  SCORM player has only an optional navigation button "Exit course" (`mod_scorm` string `exit`, shown
+  when the package's navigation is on), whose Spanish text could not be checked because the Spanish
+  language pack is not installed in the development site. A Rise or Storyline export draws its own
+  controls inside the package frame, so this one is read as the package's and is left alone. It was
+  not seen in a real package here (see "Not verified").
+
+## Header: one row
+
+The popup header is one slim row: the activity title on the left and **Back to the map** on the
+right, and nothing else (`popup.js`, unchanged). The second row came from the activity page inside
+the frame, not from the popup: Moodle's SCORM player prints a `d-flex flex-row-reverse mb-2` row with
+the **Exit activity** link before its `#scormpage` element. `styles.css` hides that row under the
+popup body class with `div:has(+ #scormpage) { display: none !important }` (the row has no class or
+id of its own, and `!important` is needed because Bootstrap's `d-flex` is `!important`). It needs
+`:has()`, supported by current Chrome, Edge, Safari and Firefox. The player outside the popup is
+untouched, and a package that draws its own exit control keeps it.
+
+## Leaving a SCORM activity
+
+What the player does, from Moodle 5.2 core (`mod/scorm/datamodels/scorm_12.js`, `scorm_13.js`,
+`request.js`, `module.js`):
+
+- The API adapter (`window.API` for SCORM 1.2, `window.API_1484_11` for 2004) lives in the player
+  page, the same document the popup frames. It keeps the package's values in memory and stores them
+  with a **synchronous** request on `LMSCommit` / `Commit`, and on `LMSFinish` / `Terminate`.
+- The adapter has **no handler of its own for the page going away**. Only the package's unload code
+  can save what it has not committed. When a package does that during page dismissal, `request.js`
+  switches to `navigator.sendBeacon` (Chrome refuses synchronous requests there), which is queued
+  by the browser and survives the frame being destroyed.
+- `LMSFinish` marks a SCO whose status is still `not attempted` as **completed**. Closing early
+  must never do that, so the host does not finish the SCO.
+
+Sequence of **Back to the map** and Escape for a SCORM activity (`safe_exit.js`, `host.js`):
+
+1. The host calls the adapter's commit (`LMSCommit("")` or `Commit("")`) on the frame's window.
+   The request is synchronous, so its answer is the confirmation.
+2. A result of `true`, or error 301 (the package never started or already finished, so its data is
+   already stored) counts as saved. A frame that is not on a player page (the table of contents,
+   an unreadable window) has nothing to save.
+3. A refusal, an exception or the 4 second limit is logged (`console.warn`,
+   `format_rumbos/host: the activity did not confirm the save before closing (<reason>)`) and the popup
+   closes anyway. The user is never left on a dialog that will not close.
+4. The popup closes and the state is refreshed as before. Other modules close immediately.
+
+The limit cannot interrupt the synchronous request itself, only what surrounds it, so a server that
+never answers would still block the page until the browser gives up. It is a guard, not a measured
+property.
+
+### What was found in the running site
+
+Moodle 5.2.4, Chrome, a synthetic SCORM 1.2 package (not a Rise or Storyline export), student user.
+The package keeps a counter in `lesson_location` and `suspend_data` and can optionally save on
+`pagehide`, as some authoring tools do. Results are in [MANUAL-TESTS.md](MANUAL-TESTS.md#scorm-exit).
+
+| Package saves on `pagehide`? | Before (frame removed) | After (commit first) |
+| --- | --- | --- |
+| Yes | Progress kept (the beacon went through) | Kept |
+| No | **Lost**: counter 3 or 4 on screen, the database still had the older values | Kept (Back and Escape) |
+
+H5P and quizzes (read from core, not exercised here): H5P activities save their state every
+`savestatefreq` seconds (60 by default) and post it with `sendBeacon` when the page goes away
+(`h5p/amd/src/repository.js`), so closing keeps it where the site enables save state. A quiz attempt in
+progress stays in progress and resumes; answers on the current page are kept only up to the last
+autosave (`quiz/autosaveperiod`, 60 seconds by default), so closing with the popup can lose the answers
+typed since. That is the same as leaving the attempt page in any other way, and closing a quiz
+immediately is not changed here.
 
 ## Verification status
 

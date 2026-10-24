@@ -228,7 +228,7 @@ the map after closing.
 
 | Activity | Specific checks |
 | --- | --- |
-| SCORM (Rise / Storyline) | The player fills the height; its **Salir de la actividad** button closes the popup or leaves the last screen with **Back to the map** working; completion shows on the map |
+| SCORM (Rise / Storyline) | The player fills the height; there is **no second row** with Moodle's **Exit activity** / **Salir de la actividad** under the header; **Back to the map** and Escape keep the progress (see [SCORM exit](#scorm-exit)); completion shows on the map |
 | H5P | The content fills the width and height; no double scrollbar |
 | Page, file (PDF), URL | The page fills the popup; a PDF is shown inline |
 | Quiz | Start, navigate with the navigation panel, finish; the review page closes cleanly |
@@ -253,3 +253,41 @@ Browsers: Chrome and Firefox on desktop, Safari on macOS, Chrome on Android, Saf
 on-screen keyboard must not cover the activity). Ask whether the government bar must stay
 visible; if so use the `below-site-header` position with the bar's selector as the site header
 selector.
+
+## SCORM exit
+
+Checked on the development site (Moodle 5.2.4, PostgreSQL, PHP 8.3, Chrome), logged in as a student, with
+the Rumbos app played by the same stand-in window the Behat steps use. The package is a
+**synthetic SCORM 1.2 package written for this test, not a Rise or Storyline export**: one SCO that keeps a
+counter in `cmi.core.lesson_location` and `cmi.suspend_data`, with a button that sets them without
+committing, and a switch for "also save on `pagehide`" (what some authoring tools do). What was stored
+was read from `scorm_scoes_value` after each close, and the position was read again by reopening.
+
+| Close with | Package saves on `pagehide` | Before the change (frame removed) | After (commit first) |
+| --- | --- | --- | --- |
+| Back to the map, 5 advances | yes | stored `p5`, `unload-n=5` | not repeated (same path as the row below) |
+| Back to the map, 4 advances | no | **nothing stored**, not even the position | stored `p4`, `n=4` |
+| Moodle's own exit link (hidden since this change), 4 advances | no | **nothing stored** | not applicable: the link is hidden; the host does not intercept it |
+| Escape, 3 advances | no | not repeated (same code path as Back before the change) | stored `p3`, `n=3` |
+| Reopen after Escape | | | counter 3, position `p3`, suspend `n=3`, status incomplete |
+| Adapter refuses the commit (forced) | | | popup closed in 134 ms, one `console.warn` with the reason `refused` |
+| Package called its own Finish, then Back | | | status `completed` kept; no warning (error 301 is treated as already saved) |
+
+Also seen: the second row (**Exit activity**) was visible before the CSS fix and hidden after (computed
+style `display: none`); the first CSS version did not hide it because Bootstrap's `d-flex` is `!important`.
+The header is one row with the title and **Back to the map**.
+
+Automated: Behat `rumbos_scorm_exit.feature` (Moodle's `singlescobasic` package) checks that no
+**Exit activity** text is shown in the popup and that Back and Escape make the adapter receive a commit
+before the popup is gone; `tests/js/safe_exit.test.mjs` covers the adapter outcomes.
+
+### Not verified
+
+- A real Rise or Storyline export. Their save timing (on every slide, on a timer, on unload) decides
+  how much the commit adds; the synthetic package only shows that values set and not committed are
+  saved by the new close and lost by the old one.
+- **TERMINAR CURSO**: not in a package here, so its origin is inferred (not this plugin, not found in
+  Moodle's English strings). Check it in the real package, and that it still works in the popup.
+- SCORM 2004 in a browser (the 2004 adapter path is unit tested with a fake adapter only).
+- H5P and quiz were read from core, not exercised (see the design note).
+- Firefox, Safari and phones; whether `:has()` is available in the browsers the site must support.

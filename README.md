@@ -207,6 +207,15 @@ used and submitted. When the user leaves (the button, the Escape key, or an acti
 "Continue" / "Exit activity" that goes to the course page) the popup closes, the course
 state is refreshed and the app gets the new progress.
 
+- The header is one slim row: the activity title and **Back to the map**. Moodle's SCORM player
+  prints its own **Exit activity** button in a row of its own; inside the popup that row is hidden,
+  because it only repeated the way back. A button that belongs to a SCORM package itself (for
+  example **TERMINAR CURSO** in a Rise or Storyline course) is the package's and is left alone.
+- **Back to the map** and Escape save a SCORM package's progress before closing: the host
+  tells the player's API adapter to commit what the package has set, waits for the answer (at most
+  4 seconds) and closes. If the commit is refused or times out the popup still closes and the
+  reason is logged to the browser console. Other modules close at once. See
+  [docs/DESIGN-popup-full-bleed.md](docs/DESIGN-popup-full-bleed.md#leaving-a-scorm-activity).
 - The popup fills the window (or the window below the site header) and the activity fills
   the popup. Inside the popup frame only, the activity page uses the theme's `embedded`
   layout and hides the CSS selectors you list. See [The popup without site chrome](#the-popup-without-site-chrome).
