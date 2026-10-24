@@ -2,8 +2,8 @@
 
 What the Moodle page (the host) and the Rumbos app, which runs in an iframe, say to each
 other, and what each side may rely on. The app side is implemented in the Rumbos frontend
-against this document. This is **contract v5.5**: everything from v5 to v5.4 is unchanged
-and v5.5 only adds to it.
+against this document. This is **contract v5.6**: everything from v5 to v5.5 is unchanged
+and v5.6 only adds to it.
 
 All messages are `window.postMessage` objects with `v: 1`. The host ignores any message
 that does not come from the configured app origin **and** from the iframe's own window,
@@ -23,11 +23,20 @@ would follow.
 | app to host | `rumbos:error` | `code`, `detail` | The app failed; the host falls back to the standard course content. |
 | app to host | `rumbos:no-content` | `reason` | **v5.5.** The app has nothing to show this user; the host falls back to the standard course content. |
 | app to host | `rumbos:preferred-size` | `aspectRatio` | **v5.5.** The proportions of the level on display; the host applies them only in automatic height mode. |
-| host to app | `rumbos:host-init` | `mode`, `locale`, `courseId`, `assertion`, `state` | The answer to `embed-ready`. |
+| host to app | `rumbos:host-init` | `mode`, `locale`, `courseId`, `courseName`, `assertion`, `state` | The answer to `embed-ready`. `courseName` is new in v5.6. |
 | host to app | `rumbos:host-state` | `state` | A newer course state. |
 | host to app | `rumbos:host-launch` | `assertion` | A fresh launch assertion. |
 | host to app | `rumbos:host-fullscreen` | `on` | The full screen mode **as it is now**. |
 | host to app | `rumbos:host-overlay` | `open` | An overlay (the activity popup) is above the map or has gone. |
+
+### `courseName` in `rumbos:host-init` (v5.6)
+
+`courseName` is the course full name as the user sees it, as **plain text**: the site's string
+filters have run (a multi-language name arrives in the user's language), every tag is gone,
+entities are decoded, runs of whitespace are one space, and it is cut at **200 characters**. It is
+never HTML, but it can contain `<`, `>` or `&` as ordinary characters, so the app must render it
+as text (`textContent`), never as markup. It can be an empty string only if the course has no name.
+It is sent once, with `host-init`; a later rename shows after the page is reloaded.
 
 ### CourseState
 
