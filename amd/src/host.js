@@ -33,8 +33,10 @@ import {getString, getStrings} from 'core/str';
 import ActivityPopup from 'format_rumbos/popup';
 import {createPoller} from 'format_rumbos/poller';
 import {createRefresher} from 'format_rumbos/refresher';
+import {exitScorm} from 'format_rumbos/safe_exit';
 import {
     MESSAGE,
+    POPUP_MESSAGE,
     hostFullscreen,
     hostInit,
     hostLaunch,
@@ -75,6 +77,9 @@ const NAVIGATION_DEBOUNCE_MS = 400;
 
 /** Minimum time between two refreshes caused by the activity popup navigating (ms). */
 const NAVIGATION_REFRESH_MS = 2000;
+
+/** Modules whose popup commits what the package reported before it closes (see safe_exit.js). */
+const SAFE_EXIT_MODULES = ['scorm'];
 
 /** How often an open popup of a module that reports without navigating re-reads the state (ms). */
 const POLL_INTERVAL_MS = 15000;
@@ -119,6 +124,8 @@ class RumbosHost {
         this.popupHeaderSelector = popupHeaderSelector;
         this.popupSession = popupSession;
         this.popupPending = false;
+        this.openModname = '';
+        this.closing = false;
 
         this.state = null;
         this.degraded = false;
@@ -201,7 +208,12 @@ class RumbosHost {
         if (this.popup?.isOpen) {
             const popupMessage = parsePopupMessage(event, {siteOrigin: this.siteOrigin, frameWindow: this.popup.frameWindow});
             if (popupMessage) {
-                this.closePopup();
+                // Escape is the user leaving the activity; "leave" is the frame already gone from it.
+                if (popupMessage === POPUP_MESSAGE.ESCAPE) {
+                    this.requestClose();
+                } else {
+                    this.closePopup();
+                }
                 return;
             }
         }
@@ -430,6 +442,7 @@ class RumbosHost {
         // Anything outside the element that is in the browser's full screen is not shown, so the popup goes
         // inside it. Opening an activity then does not end the full screen, and neither does closing it.
         const inNativeFullscreen = document.fullscreenElement && document.fullscreenElement === this.frameWrap;
+        this.openModname = modname;
         this.popup.open(url, title, this.frame, inNativeFullscreen ? this.frameWrap : document.body, {
             headerSelector: inNativeFullscreen ? '' : this.popupHeaderSelector,
         });
@@ -448,7 +461,7 @@ class RumbosHost {
             frameName: this.popupFrameName,
             backLabel: this.strings.back,
             frameTitle: (title) => this.strings.frameTitle.replace('{$a}', () => title),
-            onClose: () => this.closePopup(),
+            onClose: () => this.requestClose(),
             onLoad: () => this.onPopupLoad(),
         });
     }
@@ -467,6 +480,39 @@ class RumbosHost {
             return;
         }
         this.refresher.schedule();
+    }
+
+    /**
+     * The user asked to leave: save what the activity holds first, where that is needed, then close.
+     *
+     * For a SCORM package the player's adapter is told to store the package's values (see safe_exit.js).
+     * Whatever happens, the popup closes: a failure is logged, never shown as a stuck dialog.
+     *
+     * @returns {Promise}
+     */
+    async requestClose() {
+        if (!this.popup?.isOpen || this.closing) {
+            return;
+        }
+        if (!SAFE_EXIT_MODULES.includes(this.openModname)) {
+            this.closePopup();
+            return;
+        }
+        this.closing = true;
+        const token = this.overlayToken;
+        try {
+            const result = await exitScorm(this.popup.frameWindow);
+            if (!result.ok) {
+                Log.warn(`format_rumbos/host: the activity did not confirm the save before closing (${result.reason})`);
+            }
+        } catch (error) {
+            Log.warn(`format_rumbos/host: leaving the activity failed (${error?.message ?? error})`);
+        }
+        this.closing = false;
+        // The frame may have left the activity while the commit ran, which already closed the popup.
+        if (token === this.overlayToken) {
+            this.closePopup();
+        }
     }
 
     /**
