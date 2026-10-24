@@ -245,10 +245,11 @@ body.format-rumbos-popup-page #page.drawers {
 /*
  * Moodle's SCORM player prints its own "Exit activity" button in a row of its own above the player (the
  * mod_scorm/player_exitbar template, with no class or id to match). In the popup it only repeats the way back to
- * the map, so the row goes. The row is the element just before the player's #scormpage.
+ * the map, so the row goes. The row is the element just before the player's #scormpage. It is a Bootstrap
+ * "d-flex" row, whose display is !important, so this rule has to be too.
  */
 body.format-rumbos-popup-page div:has(+ #scormpage) {
-    display: none;
+    display: none !important;
 }
 
 /*
