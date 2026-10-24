@@ -243,6 +243,15 @@ body.format-rumbos-popup-page #page.drawers {
 }
 
 /*
+ * Moodle's SCORM player prints its own "Exit activity" button in a row of its own above the player (the
+ * mod_scorm/player_exitbar template, with no class or id to match). In the popup it only repeats the way back to
+ * the map, so the row goes. The row is the element just before the player's #scormpage.
+ */
+body.format-rumbos-popup-page div:has(+ #scormpage) {
+    display: none;
+}
+
+/*
  * The page itself takes no room of its own inside the popup: no margin or padding
  * left over from the fixed top bar or from the page layout, so the activity starts
  * at the top edge. What else to hide (a header or footer the theme prints from its
