@@ -25,6 +25,10 @@
     While the map is full screen the exit button owns the top-right 64 x 64 CSS pixels
     of the viewport, above the app (see "Full screen" in the README).
 
+    The allow attribute delegates two permissions to the app, so that the video player it nests in a second iframe
+    can go full screen and play after a click. Every iframe in the chain must delegate them, and this is the first
+    link (see "The video's full screen button does nothing" in the README). Nothing else is delegated.
+
     The sandbox allows only what the app needs:
       - allow-scripts: the app is a JavaScript application.
       - allow-same-origin: without it the document has an opaque origin, so
@@ -82,7 +86,8 @@
                 src="{{embedurl}}"
                 title="{{#str}} frametitle, format_rumbos {{/str}}"
                 referrerpolicy="no-referrer"
-                allow="fullscreen"
+                allow="fullscreen; autoplay"
+                allowfullscreen
                 sandbox="allow-scripts allow-same-origin allow-forms"
                 loading="eager"></iframe>
     </div>
