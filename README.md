@@ -340,8 +340,10 @@ and it must not send `X-Frame-Options: DENY` or `SAMEORIGIN`. If you operate the
 backend, `python -m app.scripts.tenants frame-ancestors` prints the header value for
 every registered site.
 
-The iframe is sandboxed with `allow-scripts allow-same-origin allow-forms` and sends no
-referrer. The app needs the forms because its editor is built on them. It cannot navigate
+The iframe is sandboxed with `allow-scripts allow-same-origin allow-forms`, sends no
+referrer, and delegates two browser features to the app with `allow="fullscreen; autoplay"`
+(plus the legacy `allowfullscreen`), so that the video player the app nests can go full
+screen and play. See "The video's full screen button does nothing" below. The app needs the forms because its editor is built on them. It cannot navigate
 the Moodle page, open pop-ups, show modal dialogs or download files. The page takes care
 of opening activities.
 
@@ -362,6 +364,32 @@ the element `[data-region="rumbos-container"]`:
 `frame-ancestors`, `X-Frame-Options` or `frame-src` means one of the two policies
 above. Also check that the app URL is reachable from the user's browser and that its
 certificate is valid.
+
+**The video's full screen button does nothing, or the video will not start by itself.**
+The welcome video sits in a second iframe inside the app, so the browser grants
+`fullscreen` and `autoplay` only if every iframe in the chain delegates them and no
+`Permissions-Policy` header forbids them. This plugin sets the first link
+(`allow="fullscreen; autoplay"` on the Rumbos iframe); the app must set the second on its
+video iframe. Check, in this order:
+
+1. The Rumbos iframe: in the developer tools, the element `[data-region="rumbos-frame"]`
+   must have `allow="fullscreen; autoplay"`. If it does not, an old copy of the plugin
+   or a cached template is in use: upgrade, then purge the caches.
+2. The video iframe inside the app has its own `allow` that includes `fullscreen`
+   (and `autoplay`).
+3. No `Permissions-Policy` (or the older `Feature-Policy`) response header removes the
+   feature. It must be absent on the Moodle page and on the app's `/embed` page, and
+   on the video provider's page. Neither Moodle nor this plugin sends one, but a reverse
+   proxy, CDN or security module often adds a default such as
+   `Permissions-Policy: fullscreen=()` or `autoplay=()`. Allow the feature there:
+   `fullscreen=(self "https://rumbos.example.com")`, or remove the header.
+4. In the console of the video frame (choose the frame in the console's context
+   selector), `document.permissionsPolicy.allowsFeature('fullscreen')` and
+   `allowsFeature('autoplay')` must both return `true`. `false` means a link in the
+   chain or a header is blocking it.
+
+Chrome reports a blocked request in the console as
+`Permissions policy violation: fullscreen is not allowed in this document.`
 
 **Launches are rejected after rotating the key.** The Rumbos service still has the old
 public key. Add the current one as described under [Rotating the key](#rotating-the-key).

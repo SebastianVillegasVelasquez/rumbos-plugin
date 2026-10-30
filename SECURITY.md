@@ -74,7 +74,9 @@ log it.
 ## The iframe
 
 The app runs in an iframe with `sandbox="allow-scripts allow-same-origin allow-forms"`,
-no referrer, and `allow="fullscreen"`.
+no referrer, and `allow="fullscreen; autoplay"` with `allowfullscreen`. The two delegated
+features let the video player the app nests go full screen and play; nothing else
+(camera, microphone, geolocation, payment) is delegated.
 
 **What the app cannot do.** Navigate or script the Moodle page, read Moodle's cookies
 or DOM, open pop-ups, show modal dialogs, or download files. The plugin refuses to render

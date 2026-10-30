@@ -291,3 +291,23 @@ before the popup is gone; `tests/js/safe_exit.test.mjs` covers the adapter outco
 - SCORM 2004 in a browser (the 2004 adapter path is unit tested with a fake adapter only).
 - H5P and quiz were read from core, not exercised (see the design note).
 - Firefox, Safari and phones; whether `:has()` is available in the browsers the site must support.
+
+## Delegating fullscreen and autoplay to the video player
+
+Moodle 5.2.4, Chrome on Windows 11 driven through an extension. The plugin's own rendered
+iframe was kept (attributes untouched) and only its `src` pointed at a plain-http stand-in
+app (a different origin from Moodle) that nests a stand-in player on a third origin. The
+app URL setting needs https, and the browser would not accept the self-signed certificates
+needed for that, so the real https path (and with it the host's origin-checked messages) was not run.
+
+| Case | `allowsFeature('fullscreen')` / `('autoplay')` in the player | Unmuted `play()` with no gesture |
+| --- | --- | --- |
+| `allow="fullscreen; autoplay"` + `allowfullscreen` (now) | true / true | allowed |
+| The same, host CSS overlay classes applied by hand | true / true | allowed |
+| `allow="fullscreen"` only (before) | true / **false** | `NotAllowedError` |
+| The now value, but the app's response sends `Permissions-Policy: fullscreen=(), autoplay=()` | false / false | `NotAllowedError` |
+
+Not observed: the real browser full screen. In this automated window `requestFullscreen()`
+fails with `TypeError: not granted` **even on a top-level page with no iframes**, so it says
+nothing about the attributes. The popup open and closed was not exercised either, because it
+needs the app's messages. Firefox and Safari were not run.
