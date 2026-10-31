@@ -120,6 +120,7 @@ $string['resetkeys_confirm'] = 'Regenerate the signing key pair AND the secret u
 $string['rotatekey'] = 'Rotate key';
 $string['rotatekey_confirm'] = 'Generate a new signing key pair? The current public key stops working immediately and Rumbos will reject launches from this site until the new public key is registered in the backend.';
 $string['rumbos:editmap'] = 'Edit the Rumbos map';
+$string['rumbos:viewstats'] = 'View completion statistics';
 $string['rumbos_heightmode'] = 'Height of the Rumbos area';
 $string['rumbos_heightmode_help'] = 'Use the site default, or choose for this course: automatic (the area follows the proportions of the displayed level), a percentage of the screen height, or a fixed height in pixels. The minimum and maximum height set by the site always apply.';
 $string['rumbos_heightvalue'] = 'Height';

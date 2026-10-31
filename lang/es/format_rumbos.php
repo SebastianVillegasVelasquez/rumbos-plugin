@@ -120,6 +120,7 @@ $string['resetkeys_confirm'] = '¿Regenerar el par de claves de firma Y el secre
 $string['rotatekey'] = 'Rotar clave';
 $string['rotatekey_confirm'] = '¿Generar un nuevo par de claves de firma? La clave pública actual deja de funcionar de inmediato y Rumbos rechazará los accesos de este sitio hasta que registre la nueva clave pública en el backend.';
 $string['rumbos:editmap'] = 'Editar el mapa de Rumbos';
+$string['rumbos:viewstats'] = 'Ver estadísticas de finalización';
 $string['rumbos_heightmode'] = 'Altura del área de Rumbos';
 $string['rumbos_heightmode_help'] = 'Usa el valor predeterminado del sitio, o elige uno para este curso: automática (el área sigue las proporciones del nivel que se muestra), un porcentaje de la altura de la pantalla, o una altura fija en píxeles. El mínimo y el máximo de altura que fija el sitio se aplican siempre.';
 $string['rumbos_heightvalue'] = 'Altura';
