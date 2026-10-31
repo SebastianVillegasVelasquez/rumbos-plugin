@@ -108,7 +108,7 @@ class course_stats {
             && !has_capability('moodle/site:accessallgroups', $context, $userid);
         $groups = [];
         foreach (groups_get_all_groups($course->id, $restricted ? $userid : 0, 0, 'g.id, g.name') as $group) {
-            $groups[(int) $group->id] = format_string($group->name, true, ['context' => $context]);
+            $groups[(int) $group->id] = format_string($group->name, true, ['context' => $context, 'escape' => false]);
         }
         return [$groups, $restricted];
     }
