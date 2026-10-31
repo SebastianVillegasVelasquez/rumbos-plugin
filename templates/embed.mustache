@@ -38,8 +38,12 @@
         never run. It gives the app nothing it does not already have with
         scripts: a form can only navigate the iframe itself, because top
         navigation and popups stay blocked.
-    Everything else stays blocked: no popups, modals, downloads, top navigation
-    or pointer lock. The app does not need popups in this mode, because it
+      - allow-downloads: the app's "Export" button saves a file the app generated
+        itself (a blob link with the download attribute), and the sandbox refuses
+        the download without this token. It lets the frame start downloads only;
+        it gives it no access to the Moodle page, its cookies or its navigation.
+    Everything else stays blocked: no popups, modals, top navigation or pointer
+    lock. The app does not need popups in this mode, because it
     asks the host to open an activity and the host does it, from its own state.
 
     Example context (json):
@@ -83,7 +87,7 @@
                 title="{{#str}} frametitle, format_rumbos {{/str}}"
                 referrerpolicy="no-referrer"
                 allow="fullscreen"
-                sandbox="allow-scripts allow-same-origin allow-forms"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
                 loading="eager"></iframe>
     </div>
 </div>

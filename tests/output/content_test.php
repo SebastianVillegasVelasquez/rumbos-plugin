@@ -110,21 +110,25 @@ final class content_test extends \advanced_testcase {
         $this->assertSame('no-referrer', $iframe->getAttribute('referrerpolicy'));
         $this->assertSame('fullscreen', $iframe->getAttribute('allow'));
         $this->assertSame('eager', $iframe->getAttribute('loading'));
-        $this->assertSame('allow-scripts allow-same-origin allow-forms', $iframe->getAttribute('sandbox'));
+        $this->assertSame('allow-scripts allow-same-origin allow-forms allow-downloads', $iframe->getAttribute('sandbox'));
     }
 
     /**
      * The iframe is never given more sandbox permissions than needed.
      *
-     * Forms are allowed because the app's editor is built on them; popups, modals,
-     * downloads and top navigation stay blocked.
+     * Forms are allowed because the app's editor is built on them, and downloads because its Export
+     * button saves a generated file; popups, modals, top navigation and pointer lock stay blocked.
      */
     public function test_sandbox_does_not_allow_dangerous_tokens(): void {
         [$course, $student] = $this->setup_course();
 
         $sandbox = $this->iframe($this->render($course, $student))->getAttribute('sandbox');
 
-        foreach (['allow-top-navigation', 'allow-popups', 'allow-modals', 'allow-downloads', 'allow-pointer-lock'] as $token) {
+        $this->assertEqualsCanonicalizing(
+            ['allow-scripts', 'allow-same-origin', 'allow-forms', 'allow-downloads'],
+            preg_split('/\s+/', trim($sandbox))
+        );
+        foreach (['allow-top-navigation', 'allow-popups', 'allow-modals', 'allow-pointer-lock'] as $token) {
             $this->assertStringNotContainsString($token, $sandbox);
         }
     }
