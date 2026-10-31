@@ -29,6 +29,7 @@ $string['appurl_desc'] = 'HTTPS address of the Rumbos app, for example https://r
 $string['audience'] = 'Audience';
 $string['audience_desc'] = 'Value of the aud claim in launch assertions. The Rumbos backend must be configured with the same value.';
 $string['backtomap'] = 'Back to the map';
+$string['cachedef_coursestats'] = 'Completion counts per course and group (aggregates only, no user data)';
 $string['containerlabel'] = 'Rumbos course map';
 $string['copied'] = 'Copied';
 $string['copyvalue'] = 'Copy';

@@ -29,6 +29,7 @@ $string['appurl_desc'] = 'Dirección HTTPS de la aplicación Rumbos, por ejemplo
 $string['audience'] = 'Audiencia';
 $string['audience_desc'] = 'Valor del claim aud en las aserciones de lanzamiento. El backend de Rumbos debe estar configurado con el mismo valor.';
 $string['backtomap'] = 'Volver al mapa';
+$string['cachedef_coursestats'] = 'Conteos de finalización por curso y grupo (solo agregados, sin datos de usuarios)';
 $string['containerlabel'] = 'Mapa del curso Rumbos';
 $string['copied'] = 'Copiado';
 $string['copyvalue'] = 'Copiar';
