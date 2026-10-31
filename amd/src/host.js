@@ -34,6 +34,7 @@ import ActivityPopup from 'format_rumbos/popup';
 import {createPoller} from 'format_rumbos/poller';
 import {createRefresher} from 'format_rumbos/refresher';
 import {exitScorm} from 'format_rumbos/safe_exit';
+import {createStatsGate} from 'format_rumbos/stats_gate';
 import {
     MESSAGE,
     POPUP_MESSAGE,
@@ -41,6 +42,8 @@ import {
     hostInit,
     hostLaunch,
     hostOverlay,
+    hostStats,
+    hostStatsError,
     hasActivity,
     hostState,
     isCourseViewUrl,
@@ -80,6 +83,9 @@ const NAVIGATION_REFRESH_MS = 2000;
 
 /** Modules whose popup commits what the package reported before it closes (see safe_exit.js). */
 const SAFE_EXIT_MODULES = ['scorm'];
+
+/** A statistics answer is reused for this long; a request for the same group in that time gets it again (ms). */
+const STATS_MIN_INTERVAL_MS = 2000;
 
 /** How often an open popup of a module that reports without navigating re-reads the state (ms). */
 const POLL_INTERVAL_MS = 15000;
@@ -145,6 +151,9 @@ class RumbosHost {
             debounceMs: NAVIGATION_DEBOUNCE_MS,
             minIntervalMs: NAVIGATION_REFRESH_MS,
         });
+
+        // The app's statistics requests: one call per group at a time, and a repeat soon after reuses the answer.
+        this.statsGate = createStatsGate({fetch: (groupId) => this.fetchStats(groupId), minIntervalMs: STATS_MIN_INTERVAL_MS});
 
         // The same single-flight reader, so a poll that meets a navigation refresh joins it.
         this.poller = createPoller({
@@ -245,6 +254,9 @@ class RumbosHost {
                 this.setFullscreen(message.on, false);
                 this.send(hostFullscreen(this.fullscreen));
                 break;
+            case MESSAGE.REQUEST_STATS:
+                this.answerStats(message.groupId);
+                break;
             case MESSAGE.ERROR:
                 this.degrade('apperror', message.code, message.detail);
                 break;
@@ -255,6 +267,35 @@ class RumbosHost {
                 this.degrade('nocontent', message.reason);
                 break;
         }
+    }
+
+    /**
+     * Answers a request for the completion counts, in editor mode only.
+     *
+     * The numbers come from the server, which checks the capability again and returns aggregates only. They go
+     * to the app and nowhere else: they are not part of host-init or host-state, not logged and not kept.
+     *
+     * @param {number} groupId 0 for everyone the user may see.
+     */
+    answerStats(groupId) {
+        if (this.mode !== 'editor') {
+            this.send(hostStatsError('capability'));
+            return;
+        }
+        this.statsGate.request(groupId).then((reply) => {
+            this.send(reply.error ? hostStatsError(reply.error) : hostStats(reply.stats));
+            return true;
+        }).catch(() => this.send(hostStatsError('unavailable')));
+    }
+
+    /**
+     * Reads the completion counts of a group.
+     *
+     * @param {number} groupId
+     * @returns {Promise<Object>}
+     */
+    fetchStats(groupId) {
+        return Ajax.call([{methodname: 'format_rumbos_get_course_stats', args: {courseid: this.courseId, groupid: groupId}}])[0];
     }
 
     /**
