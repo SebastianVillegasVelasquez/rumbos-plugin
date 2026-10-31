@@ -291,3 +291,54 @@ before the popup is gone; `tests/js/safe_exit.test.mjs` covers the adapter outco
 - SCORM 2004 in a browser (the 2004 adapter path is unit tested with a fake adapter only).
 - H5P and quiz were read from core, not exercised (see the design note).
 - Firefox, Safari and phones; whether `:has()` is available in the browsers the site must support.
+
+## Completion statistics and downloads
+
+Moodle 5.2.4, Chrome on Windows 11 driven through an extension, PostgreSQL 17. The course is the dev
+course with `dev/demo-stats.php`: 40 demo students (16 in Demo A, 20 in Demo B, 4 in none, plus 2
+older students), 11 activities with a completion condition and group mode "separate groups". The
+Rumbos app was not available over https (see the limits below), so the host's own messages were driven
+the way earlier tests did it: a hidden same-origin window stands in for the iframe's window and the
+message events carry the app's origin.
+
+**Teachers**, calling `format_rumbos_get_course_stats` as each user on the live database (a script run
+inside the container, not the browser):
+
+| Teacher | Group setup | "All" (group 0) | Demo A | Demo B |
+| --- | --- | --- | --- | --- |
+| Editing teacher (has `accessallgroups`) | separate groups | groups `Demo A, Demo B`, 42 tracked | 16 tracked | 20 tracked |
+| Non-editing teacher in Demo A, viewstats allowed by a role override | separate groups | groups `Demo A`, 16 tracked (their group) | 16 tracked | refused: `invalidparameter` |
+| Non-editing teacher in no group, same override | separate groups | no groups, 0 tracked, suppressed | refused | refused |
+| Student | separate groups | refused: `nopermissions` | refused | refused |
+
+Also covered by PHPUnit: a course without group mode (no restriction), suspended and deleted users,
+every completion state, the minimum cohort, the cache and refresh, and that neither the response nor the
+cache holds any name, e-mail or id.
+
+**The bridge**, in the browser as the administrator on the course page:
+
+| Case | Result |
+| --- | --- |
+| Editing off (student mode), `request-stats` | `host-stats { error: "capability" }` |
+| Editing on, `request-stats` with no group | counts for everyone, 12 activities, the contract's fields and nothing else |
+| `groupId` of Demo A | 16 tracked, `groupId` echoed |
+| `groupId` that does not exist | `host-stats { error: "unavailable" }` |
+| `groupId: "1"` (a string) | ignored, no reply |
+| Three requests for one group together | three replies, one server call |
+| `embed-ready` | `host-init` has no statistics in it |
+
+**Downloads.** The plugin's real iframe, with its real `sandbox` attribute, was pointed at a stand-in page
+(plain http, another origin) whose Export button clicks a blob link with the `download` attribute.
+
+| Case | Result |
+| --- | --- |
+| `allow-downloads` present, popup closed, no overlay | The payload was written to the Downloads folder (as Chrome's temporary file, which it did not rename in this automated window) |
+| Same, with the host's full screen overlay on | The same |
+| `allow-downloads` removed (control) | Nothing was written |
+
+**Not verified.** (1) The map's own Export and Import with the real Rumbos app: the app URL setting
+needs https and the browser would not accept a self-signed certificate. (2) The **file chooser** for
+the import: the control is in a cross-origin frame the extension cannot read, and a native picker
+cannot be driven. The sandbox has no token that governs file inputs, but this was not observed. (3) The
+**activity popup open** during a download. (4) The download in Firefox and Safari. (5) A teacher
+granted `viewstats` through a *site* role rather than a course override, and a course with groupings.

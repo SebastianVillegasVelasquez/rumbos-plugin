@@ -162,6 +162,7 @@ Open **Site administration > Plugins > Course formats > Rumbos**.
 | Height | The percentage (40 to 100) or the pixels (360 to 1600) of the mode above; 0 for the built-in value (75 percent, 700 pixels). |
 | Height on small screens | Percentage of the screen height (50 to 100, default 80) on screens narrower than 768 px. |
 | Minimum and maximum height | Pixels (200 to 1000, default 360; 400 to 4000, default 1600). No course can go outside them on a computer screen. |
+| Minimum students to show statistics | Default 5, at least 1. The teacher's completion counts are given only when at least this many students are tracked in the course or group being looked at. See [Completion statistics](#completion-statistics-for-teachers). |
 | Registration | Read-only panel with what the Rumbos service needs to know about this site: issuer, host origin, audience, key id, public key and its fingerprint, a registration command, and a diagnostic. See [Registering the site](#registering-the-site-in-the-rumbos-service). |
 
 To use the format, a teacher selects **Rumbos** as the course format in the course
@@ -169,6 +170,36 @@ settings.
 
 The capability `format/rumbos:editmap` decides who is an editor in the app. By default
 it is granted to the editing teacher and manager roles.
+
+### Completion statistics for teachers
+
+In editor mode the app can show how many students completed each activity (a heat map). The
+numbers are computed in Moodle as **aggregates**, handed to the iframe through the page and
+never sent to the Rumbos service; they contain no user id, name or per-user row, and the plugin
+stores nothing: no table, no log entry. See the contract in
+[docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md#completion-statistics-v57).
+
+- **Capability `format/rumbos:viewstats`**, in the course: editing teacher and manager by default.
+  Grant it to another role (for example the non-editing teacher) in the course or site
+  permissions. It is checked on the server for every request.
+- **Who is counted:** the students Moodle's own completion reports track: actively enrolled
+  (suspended enrolments, disabled enrolment methods and users outside their dates are left out),
+  holding `moodle/course:isincompletionreports`, and not deleted. Teachers are not counted.
+- **Groups.** In a course that uses groups, a user without `moodle/site:accessallgroups` sees only
+  the groups they belong to, and "all" means those groups together; one who belongs to none sees
+  nothing. In a course without group mode every group can be chosen, as in the core reports.
+- **Minimum cohort.** Below the setting **Minimum students to show statistics** (default 5) no
+  count at all is given, so a number can never point at one or two people.
+- **Cache.** Results are cached per course and group (Moodle cache `coursestats`, an application
+  cache) for **5 minutes**, so a heat map costs one aggregate query per 5 minutes however many
+  teachers look. The numbers can be up to that old. Changing the minimum is effective at once;
+  changing an activity's completion rules can take up to 5 minutes to show. The cache can be
+  purged at **Site administration > Development > Purge caches** (the *Completion counts per
+  course and group* entry).
+- **Forcing a refresh.** The AJAX function `format_rumbos_get_course_stats` has a `refresh`
+  parameter that recomputes instead of using the cache, for holders of the capability, and at
+  most once every 30 seconds per course and group. The page does not send it yet: the contract
+  has no field for it, so a teacher waits out the 5 minutes or an administrator purges the cache.
 
 ### Size of the area
 
@@ -340,9 +371,10 @@ and it must not send `X-Frame-Options: DENY` or `SAMEORIGIN`. If you operate the
 backend, `python -m app.scripts.tenants frame-ancestors` prints the header value for
 every registered site.
 
-The iframe is sandboxed with `allow-scripts allow-same-origin allow-forms` and sends no
-referrer. The app needs the forms because its editor is built on them. It cannot navigate
-the Moodle page, open pop-ups, show modal dialogs or download files. The page takes care
+The iframe is sandboxed with `allow-scripts allow-same-origin allow-forms allow-downloads` and sends no
+referrer. The app needs the forms because its editor is built on them, and the downloads for the
+map Export button, which saves a file the app generates itself. It cannot navigate
+the Moodle page, open pop-ups or show modal dialogs. The page takes care
 of opening activities.
 
 ## Troubleshooting
@@ -394,7 +426,9 @@ run such commands as that user from then on, for example
 The plugin stores no personal data in Moodle. When a user opens a Rumbos course page,
 the Rumbos service receives the pseudonymous id, the course id and the role, and the
 user's browser connects to it directly, so it also sees the network address and
-browser details of that request. This is declared through Moodle's privacy API.
+browser details of that request. This is declared through Moodle's privacy API. The completion
+counts for teachers are aggregates held only in a short-lived cache and handed to the browser;
+they are not personal data and are not sent to the service.
 Requests to export or delete data held by the service go to its operator. See
 [docs/LIFECYCLE.md](docs/LIFECYCLE.md) for what happens on install, uninstall and
 course deletion, and [SECURITY.md](SECURITY.md) for the threat model and how to
@@ -423,6 +457,14 @@ The repository contains the plugin at its root. Moodle itself is not included.
 
 - `dev/` holds a moodle-docker setup that mounts this repository as the plugin. Start
   with `dev/setup.sh`.
+- `dev/demo-stats.php` fills a course of the **local** dev site with demo students for the
+  teacher heat map: 40 students (`--students=N`) who cannot log in, in the groups Demo A and
+  Demo B, with varied completion states. It refuses to run unless the site address is
+  localhost, running it again changes nothing, and `dev/` is not in the release ZIP:
+  `mdc exec -T -u www-data webserver php public/course/format/rumbos/dev/demo-stats.php --courseid=4`.
+- `RUMBOS_PERF=1` turns on the statistics performance check (1,000 students, 30 activities),
+  which is skipped otherwise because building the course takes about half a minute:
+  `mdc exec -T -e RUMBOS_PERF=1 webserver vendor/bin/phpunit public/course/format/rumbos/tests/local/course_stats_performance_test.php`.
 - `pnpm test` runs the JavaScript protocol tests with plain Node. PHPUnit and Behat
   run inside the moodle-docker container.
 - The compiled JavaScript in `amd/build` is committed. Rebuild it after changing

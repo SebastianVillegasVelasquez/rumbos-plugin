@@ -31,6 +31,10 @@ use core_privacy\local\request\userlist;
  * directly to load the embedded app. Only that disclosure is declared here:
  * there is nothing to export or delete locally.
  *
+ * The completion statistics for teachers are aggregates (counts per activity, never a user id) held for
+ * a few minutes in a Moodle application cache and handed to the browser. They are not personal data, are
+ * not sent to the Rumbos service, and need no declaration.
+ *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later

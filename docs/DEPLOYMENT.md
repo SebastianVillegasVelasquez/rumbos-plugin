@@ -55,6 +55,21 @@ changes with the purge, so it is usually not needed.
 | --- | --- | --- |
 | `pollmodules` | `scorm,h5pactivity` | Modules whose open popup also reads the course progress every 15 seconds while the tab is visible. Empty turns it off. Each read queries the whole course (see [COMPLETION-STATES.md](COMPLETION-STATES.md#what-a-read-costs)). |
 
+## Completion statistics and downloads (contract v5.7)
+
+- **Run the upgrade (step 2) and purge the caches (step 3).** The upgrade installs the capability
+  `format/rumbos:viewstats` (editing teacher and manager by default), the setting
+  `mincohort` ("Minimum students to show statistics", default 5), the cache definition
+  `coursestats` and the AJAX function `format_rumbos_get_course_stats`. The purge is needed for
+  the new JavaScript and the changed template.
+- **Nothing is created in the database**: no table and no stored statistic.
+- The iframe's sandbox gains `allow-downloads`. If a proxy or a page cache keeps old HTML, the
+  app's Export button stays blocked until it is purged.
+- **Older builds of the Rumbos app** never send `rumbos:request-stats`; nothing changes for them.
+- To give another role access to the numbers, allow `format/rumbos:viewstats` for it in the course
+  or site permissions. A teacher who is not in any group of a course that uses groups, and lacks
+  `moodle/site:accessallgroups`, sees nothing by design.
+
 ## Release 0.3.0: students, empty maps and size
 
 - **Run the upgrade (step 2) and purge the caches (step 3).** The release adds site settings

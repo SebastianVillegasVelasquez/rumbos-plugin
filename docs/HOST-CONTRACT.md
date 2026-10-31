@@ -2,8 +2,8 @@
 
 What the Moodle page (the host) and the Rumbos app, which runs in an iframe, say to each
 other, and what each side may rely on. The app side is implemented in the Rumbos frontend
-against this document. This is **contract v5.6**: everything from v5 to v5.5 is unchanged
-and v5.6 only adds to it.
+against this document. This is **contract v5.7**: everything from v5 to v5.6 is unchanged
+and v5.7 only adds to it.
 
 All messages are `window.postMessage` objects with `v: 1`. The host ignores any message
 that does not come from the configured app origin **and** from the iframe's own window,
@@ -20,6 +20,7 @@ would follow.
 | app to host | `rumbos:open-activity` | `cmid` | Open the activity in a popup or a new tab. |
 | app to host | `rumbos:open-activity-settings` | `cmid` | **v5.4.** Open the activity's settings in a new tab. Editor mode only. |
 | app to host | `rumbos:request-fullscreen` | `on` | Turn the full screen mode on or off. |
+| app to host | `rumbos:request-stats` | `groupId?` | **v5.7.** Ask for the completion counts per activity, for the whole course (`0` or absent) or one group. Editor mode only. |
 | app to host | `rumbos:error` | `code`, `detail` | The app failed; the host falls back to the standard course content. |
 | app to host | `rumbos:no-content` | `reason` | **v5.5.** The app has nothing to show this user; the host falls back to the standard course content. |
 | app to host | `rumbos:preferred-size` | `aspectRatio` | **v5.5.** The proportions of the level on display; the host applies them only in automatic height mode. |
@@ -27,7 +28,48 @@ would follow.
 | host to app | `rumbos:host-state` | `state` | A newer course state. |
 | host to app | `rumbos:host-launch` | `assertion` | A fresh launch assertion. |
 | host to app | `rumbos:host-fullscreen` | `on` | The full screen mode **as it is now**. |
+| host to app | `rumbos:host-stats` | `stats` or `error` | **v5.7.** The answer to `request-stats`: the counts, or `error` (`capability` or `unavailable`). Never sent unasked. |
 | host to app | `rumbos:host-overlay` | `open` | An overlay (the activity popup) is above the map or has gone. |
+
+### Completion statistics (v5.7)
+
+The teacher heat map. The numbers are computed **inside Moodle as aggregates** and go to the iframe
+only; the Rumbos backend never receives them, and no user id, name or per-user row is in them.
+
+```
+app -> host: { type: "rumbos:request-stats", v: 1, groupId?: int }        // editor mode only
+host -> app: { type: "rumbos:host-stats", v: 1, stats: CourseStats }
+           | { type: "rumbos:host-stats", v: 1, error: "capability" | "unavailable" }
+CourseStats = { schemaVersion: 1, generatedAt, courseId, groupId: int (0 = all accessible),
+                groups: [{ id, name }], tracked: int, minCohort: int, suppressed: boolean,
+                activities: [{ cmid, completionTracked: boolean, complete: int, failed: int }] }
+```
+
+- **Editor mode only.** In any other mode the host answers `error: "capability"`. Asking is also
+  checked on the server: the user needs `format/rumbos:viewstats` in the course, and the answer is
+  `error: "capability"` if they lack it.
+- **`groupId`** is `0` (or absent) for everyone the user may see, or the id of one of `groups`. A
+  user who lacks `moodle/site:accessallgroups` in a course that uses groups gets only their own
+  groups, and "everyone" means those groups together. A group outside what the user may see, or a
+  request that fails for any other reason, is answered `error: "unavailable"`. A request whose
+  `groupId` is not a non-negative integer is ignored like any malformed message.
+- **Who is counted** (`tracked`): the students Moodle's completion reports track: actively enrolled
+  (not suspended, enrolment method enabled, inside its dates), holding the capability
+  `moodle/course:isincompletionreports`, not deleted.
+- **`complete`** counts the states complete and complete with pass; **`failed`** counts complete with
+  fail. The state that hides a failure from the student counts as neither, as the map shows it as
+  unfinished. Anything not complete is the rest of `tracked`: **percentages are the app's to compute.**
+- **`activities`** are the activities the map lists that the user can see. `completionTracked: false`
+  (no completion condition, or completion off in the course) comes with zeros.
+- **Suppression.** When `tracked` is below `minCohort` (the admin setting, default 5) `suppressed` is
+  `true`, **`activities` is omitted** and `tracked` is `0`: no count of any kind is sent.
+- **`generatedAt`** is when the numbers were computed, not when they were sent: results are cached on the
+  server for 5 minutes per course and group, so a number can be that old.
+- **Rate.** The host makes one call per group at a time and answers a repeat within 2 seconds with the
+  previous answer, so a request loop costs nothing. The app should ask when the heat map is turned on
+  and when the group changes, not on a timer.
+- **Never in `host-init` or `host-state`.** Statistics are sent only as the answer to a request. The
+  host does not log the numbers or keep them beyond that 2-second window.
 
 ### `courseName` in `rumbos:host-init` (v5.6)
 
@@ -216,6 +258,8 @@ Rules:
 ## Where this is implemented
 
 - `amd/src/protocol.js` parses and builds messages (tested in `tests/js/protocol.test.mjs`).
+- `amd/src/stats_gate.js` limits the statistics requests (`tests/js/stats_gate.test.mjs`).
+- `classes/local/course_stats.php` computes the counts and `classes/external/get_course_stats.php` is the AJAX function.
 - `amd/src/refresher.js` is the single-flight, throttled reader (`tests/js/refresher.test.mjs`).
 - `amd/src/host.js` wires them to the page.
 - `classes/local/map_size.php` resolves the height settings; `styles.css` turns them into the layout.

@@ -73,7 +73,7 @@ log it.
 
 ## The iframe
 
-The app runs in an iframe with `sandbox="allow-scripts allow-same-origin allow-forms"`,
+The app runs in an iframe with `sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"`,
 no referrer, and `allow="fullscreen"`.
 
 **What the app cannot do.** Navigate or script the Moodle page, read Moodle's cookies
@@ -119,6 +119,33 @@ inside the frame.
 
 The Moodle administrator therefore decides which service receives this data. Point the
 plugin only at a service you trust.
+
+`allow-downloads` is granted so the map's Export button can save a file that the app generates
+itself. It lets the frame start downloads and nothing else: no access to the Moodle page, its
+cookies or its navigation. A hostile app could offer the user a file to save, as any website can;
+the browser's own download protections apply to it.
+
+## Completion statistics
+
+The teacher heat map gets, through the page, how many tracked students completed or failed each
+activity. The design keeps this to aggregates:
+
+- The function `format_rumbos_get_course_stats` takes no user id and returns no user id, name or
+  per-user row; the response has a fixed set of fields, and a test checks that no name, e-mail or
+  id of any enrolled user appears in the response or in the cache.
+- It requires `format/rumbos:viewstats` in the course and checks it on every call; the host also
+  answers a request outside editor mode with an error. A user who may see only some groups gets
+  only those, and asking for another group is refused.
+- Below the **minimum cohort** (default 5) no count is computed or sent, so small groups cannot be
+  used to learn about individuals.
+- The numbers go to the iframe with `postMessage` to the app's origin and are never part of the
+  assertion, `host-init` or `host-state`; the backend does not receive them. Nothing is stored in
+  the database or logged by the plugin. The result sits in a Moodle application cache for 5
+  minutes.
+- Residual risk: a teacher who may see two groups can ask for each and for "all" and compare, which
+  they could already do in the core completion report. The app also learns the numbers it asks
+  for, which is the point; a hostile app could ask repeatedly, and the host answers at most one
+  server call per group every 2 seconds.
 
 ## Opening an activity's settings
 
