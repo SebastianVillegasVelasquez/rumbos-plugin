@@ -24,6 +24,9 @@ namespace format_rumbos\local;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class config {
+    /** @var int Default of the minimum cohort setting. */
+    public const DEFAULT_MIN_COHORT = 5;
+
     /**
      * Master switch. When off the format renders the standard content only.
      *
@@ -92,5 +95,17 @@ class config {
     public static function get_app_timeout_ms(): int {
         $timeout = (int) get_config('format_rumbos', 'timeoutms');
         return $timeout > 0 ? min($timeout, 300000) : 8000;
+    }
+
+    /**
+     * Fewest tracked students a statistic may describe before it is shown.
+     *
+     * Below this number the counts of an activity could point at one or two people, so the host sends none.
+     *
+     * @return int At least 1.
+     */
+    public static function get_min_cohort(): int {
+        $value = get_config('format_rumbos', 'mincohort');
+        return $value === false || $value === '' ? self::DEFAULT_MIN_COHORT : max(1, (int) $value);
     }
 }

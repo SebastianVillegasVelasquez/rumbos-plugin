@@ -29,6 +29,7 @@ use format_rumbos\admin\setting_height;
 use format_rumbos\admin\setting_newtabmodules;
 use format_rumbos\admin\setting_registration;
 use format_rumbos\admin\setting_selectors;
+use format_rumbos\local\config;
 use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
 
@@ -165,6 +166,15 @@ if ($ADMIN->fulltree) {
         get_string('maxheight_desc', 'format_rumbos'),
         map_size::DEFAULT_MAX,
         map_size::SITE_MAX_RANGE
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'format_rumbos/mincohort',
+        new lang_string('mincohort', 'format_rumbos'),
+        new lang_string('mincohort_desc', 'format_rumbos'),
+        config::DEFAULT_MIN_COHORT,
+        PARAM_INT,
+        4
     ));
 
     $settings->add(new setting_registration(
