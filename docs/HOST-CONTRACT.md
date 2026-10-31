@@ -205,6 +205,29 @@ The mode is a CSS overlay that covers the viewport, so it works everywhere, incl
 iPhone Safari. Where the browser has the Fullscreen API the host also asks it for the
 browser's own full screen; a refusal changes nothing the app can see.
 
+### Delegated browser features (the video player)
+
+The app shows its welcome video in an iframe of its own, so the page nests three documents:
+Moodle, the app, the player. The browser lets the player enter full screen or play without a
+click on it only when **every iframe in the chain delegates the feature** and no
+`Permissions-Policy` response header forbids it.
+
+| Link | Who sets it | Value |
+| --- | --- | --- |
+| The Rumbos iframe in the Moodle page | The plugin (`templates/embed.mustache`) | `allow="fullscreen; autoplay"` and `allowfullscreen` |
+| The video iframe in the app | The app | Must include `fullscreen` (and `autoplay` for autoplay) |
+| Response headers of the Moodle page, the app's `/embed` and the player's page | Moodle, the app, the video provider, and any proxy or CDN in front of them | No `Permissions-Policy` or `Feature-Policy` that removes `fullscreen` or `autoplay` |
+
+The plugin delegates only these two features. The sandbox is unchanged, and fullscreen and
+autoplay are not sandbox flags. The plugin and stock Moodle 5.2 send no `Permissions-Policy`
+or `Feature-Policy` header (Moodle sends `X-Frame-Options: sameorigin` on its own pages,
+which is unrelated). A site administrator or a proxy must therefore not add a policy such as
+`fullscreen=()` or `autoplay=()`, or one that omits the app's origin. This host's CSS full
+screen overlay and the activity popup do not change the delegation: the overlay is a CSS
+class on the wrapper and the popup is a sibling of the Rumbos iframe, not an ancestor.
+
+Troubleshooting is in the README, under "The video's full screen button does nothing".
+
 ### Reserved area
 
 While the mode is on (`host-fullscreen { on: true }`) the host owns the **top-right 64 x 64

@@ -108,7 +108,8 @@ final class content_test extends \advanced_testcase {
         );
         $this->assertNotSame('', trim($iframe->getAttribute('title')));
         $this->assertSame('no-referrer', $iframe->getAttribute('referrerpolicy'));
-        $this->assertSame('fullscreen', $iframe->getAttribute('allow'));
+        $this->assertSame('fullscreen; autoplay', $iframe->getAttribute('allow'));
+        $this->assertTrue($iframe->hasAttribute('allowfullscreen'));
         $this->assertSame('eager', $iframe->getAttribute('loading'));
         $this->assertSame('allow-scripts allow-same-origin allow-forms allow-downloads', $iframe->getAttribute('sandbox'));
     }
