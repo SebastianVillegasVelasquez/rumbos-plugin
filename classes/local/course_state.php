@@ -157,7 +157,7 @@ class course_state {
      * @param cm_info $cm
      * @return bool
      */
-    private static function is_relevant(cm_info $cm): bool {
+    public static function is_relevant(cm_info $cm): bool {
         if ($cm->deletioninprogress || $cm->modname === 'label' || !$cm->url) {
             return false;
         }

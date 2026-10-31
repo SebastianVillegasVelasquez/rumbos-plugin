@@ -32,6 +32,8 @@ import {
     hostInit,
     hostLaunch,
     hostOverlay,
+    hostStats,
+    hostStatsError,
     hasActivity,
     hostState,
     isCourseViewUrl,
@@ -81,6 +83,30 @@ describe('parseAppMessage', () => {
             parseAppMessage(fromApp({type: MESSAGE.REQUEST_FULLSCREEN, v: 1, on: true}), expected),
             {type: MESSAGE.REQUEST_FULLSCREEN, on: true},
         );
+    });
+
+    it('accepts request-stats (contract v5.7) with no group, or a group id of zero or more', () => {
+        assert.deepEqual(
+            parseAppMessage(fromApp({type: MESSAGE.REQUEST_STATS, v: 1}), expected),
+            {type: MESSAGE.REQUEST_STATS, groupId: 0},
+        );
+        for (const groupId of [0, 3, 120]) {
+            assert.deepEqual(
+                parseAppMessage(fromApp({type: MESSAGE.REQUEST_STATS, v: 1, groupId}), expected),
+                {type: MESSAGE.REQUEST_STATS, groupId},
+            );
+        }
+    });
+
+    it('rejects request-stats with a group id that is not a non-negative integer', () => {
+        for (const groupId of [-1, 1.5, '3', null, NaN, Infinity, {}, [], true]) {
+            assert.equal(parseAppMessage(fromApp({type: MESSAGE.REQUEST_STATS, v: 1, groupId}), expected), null);
+        }
+    });
+
+    it('drops anything else the app adds to request-stats, such as a user id', () => {
+        const message = {type: MESSAGE.REQUEST_STATS, v: 1, groupId: 2, userId: 7, refresh: true};
+        assert.deepEqual(parseAppMessage(fromApp(message), expected), {type: MESSAGE.REQUEST_STATS, groupId: 2});
     });
 
     it('rejects a different origin even if the source matches', () => {
@@ -254,6 +280,13 @@ describe('message builders', () => {
                 assertion: 'jws', state,
             },
         );
+    });
+
+    it('builds host-stats with the counts, or with an error and nothing else', () => {
+        const stats = {schemaVersion: 1, tracked: 8};
+        assert.deepEqual(hostStats(stats), {type: 'rumbos:host-stats', v: 1, stats});
+        assert.deepEqual(hostStatsError('capability'), {type: 'rumbos:host-stats', v: 1, error: 'capability'});
+        assert.deepEqual(Object.keys(hostStatsError('unavailable')), ['type', 'v', 'error']);
     });
 
     it('build host-fullscreen with the exact boolean', () => {

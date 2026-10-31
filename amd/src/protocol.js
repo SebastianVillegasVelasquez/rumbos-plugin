@@ -33,6 +33,7 @@ export const MESSAGE = {
     OPEN_ACTIVITY: 'rumbos:open-activity',
     OPEN_ACTIVITY_SETTINGS: 'rumbos:open-activity-settings',
     REQUEST_FULLSCREEN: 'rumbos:request-fullscreen',
+    REQUEST_STATS: 'rumbos:request-stats',
     ERROR: 'rumbos:error',
     NO_CONTENT: 'rumbos:no-content',
     PREFERRED_SIZE: 'rumbos:preferred-size',
@@ -40,6 +41,7 @@ export const MESSAGE = {
     HOST_STATE: 'rumbos:host-state',
     HOST_LAUNCH: 'rumbos:host-launch',
     HOST_FULLSCREEN: 'rumbos:host-fullscreen',
+    HOST_STATS: 'rumbos:host-stats',
     HOST_OVERLAY: 'rumbos:host-overlay',
 };
 
@@ -56,6 +58,9 @@ export const ERROR_CODES = ['launch_failed', 'token_refresh_failed', 'app_crashe
 
 /** Reasons the app may give for having nothing to show (contract v5.5). */
 export const NO_CONTENT_REASONS = ['no_saved_map', 'empty_map'];
+
+/** Errors the host may answer a statistics request with (contract v5.7). */
+export const STATS_ERRORS = ['capability', 'unavailable'];
 
 /** Range of the aspect ratio (width / height) the app may prefer (contract v5.5). */
 export const ASPECT_RATIO_RANGE = {min: 0.5, max: 4};
@@ -96,6 +101,14 @@ const cleanDetail = (detail) => {
 const isCmid = (cmid) => Number.isSafeInteger(cmid) && cmid > 0;
 
 /**
+ * Whether a value is a group id: zero (everyone) or a positive integer.
+ *
+ * @param {*} groupId
+ * @returns {boolean}
+ */
+const isGroupId = (groupId) => Number.isSafeInteger(groupId) && groupId >= 0;
+
+/**
  * What to keep of each message type the app may send, or null when its fields are not well formed.
  * Fields the app adds beyond these are dropped.
  */
@@ -106,6 +119,10 @@ const APP_MESSAGE_PARSERS = {
     [MESSAGE.OPEN_ACTIVITY]: (data) => isCmid(data.cmid) ? {type: data.type, cmid: data.cmid} : null,
     [MESSAGE.OPEN_ACTIVITY_SETTINGS]: (data) => isCmid(data.cmid) ? {type: data.type, cmid: data.cmid} : null,
     [MESSAGE.REQUEST_FULLSCREEN]: (data) => typeof data.on === 'boolean' ? {type: data.type, on: data.on} : null,
+    [MESSAGE.REQUEST_STATS]: (data) => {
+        const groupId = data.groupId ?? 0;
+        return data.groupId !== null && isGroupId(groupId) ? {type: data.type, groupId} : null;
+    },
     [MESSAGE.ERROR]: (data) => ERROR_CODES.includes(data.code)
         ? {type: data.type, code: data.code, detail: cleanDetail(data.detail)}
         : null,
@@ -178,6 +195,22 @@ export const hostLaunch = (assertion) => ({type: MESSAGE.HOST_LAUNCH, v: PROTOCO
  * @returns {Object}
  */
 export const hostFullscreen = (on) => ({type: MESSAGE.HOST_FULLSCREEN, v: PROTOCOL_VERSION, on});
+
+/**
+ * The host-stats message with the aggregated completion counts the app asked for.
+ *
+ * @param {Object} stats CourseStats: counts only, never who.
+ * @returns {Object}
+ */
+export const hostStats = (stats) => ({type: MESSAGE.HOST_STATS, v: PROTOCOL_VERSION, stats});
+
+/**
+ * The host-stats message when there are no counts to give.
+ *
+ * @param {string} error One of STATS_ERRORS.
+ * @returns {Object}
+ */
+export const hostStatsError = (error) => ({type: MESSAGE.HOST_STATS, v: PROTOCOL_VERSION, error});
 
 /**
  * The host-overlay message: the host opened or closed an overlay above the app.

@@ -34,4 +34,14 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+
+    // Whether the user may see how many students completed each activity (counts only, never who).
+    'format/rumbos:viewstats' => [
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [
+            'editingteacher' => CAP_ALLOW,
+            'manager' => CAP_ALLOW,
+        ],
+    ],
 ];

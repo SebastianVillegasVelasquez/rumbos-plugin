@@ -33,6 +33,14 @@ $functions = [
         'ajax' => true,
         'loginrequired' => true,
     ],
+    'format_rumbos_get_course_stats' => [
+        'classname' => \format_rumbos\external\get_course_stats::class,
+        'description' => 'Returns how many tracked students completed each activity, for map editors. Aggregates only.',
+        'type' => 'read',
+        'ajax' => true,
+        'loginrequired' => true,
+        'capabilities' => 'format/rumbos:viewstats',
+    ],
     'format_rumbos_get_activity_settings_url' => [
         'classname' => \format_rumbos\external\get_activity_settings_url::class,
         'description' => 'Returns the address of the settings page of an activity, for map editors who may manage it.',
