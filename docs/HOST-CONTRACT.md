@@ -127,6 +127,17 @@ QuizResult = { attempts: int, finishedAttempts: int, inProgress: boolean, percen
   not in editor mode with `error: "readonly"` without asking Moodle, and Moodle needs `format/rumbos:editmap`.
   After a write or a reset the refreshed `host-flow-progress` is sent.
 
+**Normative decisions for every implementation of this contract** (the app and the backend included):
+
+1. `completedAt` is a **string**: ISO 8601 in UTC with the `Z` suffix (`2026-11-11T10:00:00Z`).
+2. `stepKey` is accepted by the host as `[A-Za-z0-9_-]{1,16}`, a superset of the backend's pattern. A step key outside it is
+   ignored without a reply.
+3. `revision` is accepted as an integer from 0 to 1,000,000.
+4. When the grade is hidden from the student, `percent` and `passedThreshold` are `null`.
+5. `not_found` is also the answer for an activity that exists but is hidden from the user.
+6. `inProgress` can remain `true` after the quiz's time limit has passed, until Moodle submits the attempt (cron or the next
+   view of the quiz). The app must not read it as proof that the student is still working.
+
 What the activity overlay supports for the entry quiz is in [MANUAL-TESTS.md](MANUAL-TESTS.md#welcome-flow-progress-and-quiz-results-release-060).
 
 ### `courseName` in `rumbos:host-init` (v5.6)
