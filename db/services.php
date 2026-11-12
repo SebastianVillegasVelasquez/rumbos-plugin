@@ -98,4 +98,11 @@ $functions = [
         'ajax' => true,
         'loginrequired' => true,
     ],
+    'format_rumbos_get_quiz_result' => [
+        'classname' => \format_rumbos\external\get_quiz_result::class,
+        'description' => 'Returns the current user\'s own result in a quiz, never more than Moodle shows them.',
+        'type' => 'read',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
 ];
