@@ -210,6 +210,25 @@ final class format_options_test extends \advanced_testcase {
     }
 
     /**
+     * A course that never saved the option (a course made before the option existed) reads the default 80
+     * through the format options API, both from the format and from the helper.
+     */
+    public function test_a_course_that_never_saved_the_threshold_reads_the_default(): void {
+        global $DB;
+        $format = $this->course_format();
+        $courseid = $format->get_courseid();
+
+        $DB->delete_records('course_format_options', ['courseid' => $courseid, 'format' => 'rumbos']);
+        course_get_format($courseid)->get_format_options();
+        \core_courseformat\base::reset_course_cache($courseid);
+        $format = course_get_format($courseid);
+
+        $this->assertSame([], $DB->get_records('course_format_options', ['courseid' => $courseid, 'format' => 'rumbos']));
+        $this->assertEquals(80, $format->get_format_options()['rumbos_quizthreshold']);
+        $this->assertSame(80, flow_config::get_quiz_threshold($courseid));
+    }
+
+    /**
      * A threshold written through the API that is out of range is read as the default.
      */
     public function test_a_bad_stored_threshold_is_read_as_the_default(): void {
