@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="course/format/rumbos/db" VERSION="20261111" COMMENT="XMLDB file for the Rumbos course format"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="format_rumbos_flow" COMMENT="Which step of a Rumbos welcome flow each user completed, and how">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The course the flow belongs to"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The user who completed the step"/>
+        <FIELD NAME="mapid" TYPE="char" LENGTH="36" NOTNULL="true" SEQUENCE="false" COMMENT="The Rumbos map UUID, opaque to Moodle"/>
+        <FIELD NAME="stepkey" TYPE="char" LENGTH="16" NOTNULL="true" SEQUENCE="false" COMMENT="The step of the flow"/>
+        <FIELD NAME="revision" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The revision of the step that was completed"/>
+        <FIELD NAME="method" TYPE="char" LENGTH="12" NOTNULL="true" SEQUENCE="false" COMMENT="completed, fallback or unavailable"/>
+        <FIELD NAME="timecompleted" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the step was completed"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="coursemapuserstep" TYPE="unique" FIELDS="courseid, userid, mapid, stepkey"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="courseuser" UNIQUE="false" FIELDS="courseid, userid"/>
+      </INDEXES>
+    </TABLE>
+  </TABLES>
+</XMLDB>

@@ -34,4 +34,14 @@ $definitions = [
         'staticacceleration' => false,
         'ttl' => 300,
     ],
+
+    // How many flow writes each user made in the current minute: a count per user and minute, nothing else.
+    // The ttl is twice the window of the flow_rate_limit class, so a finished window is dropped soon after.
+    'flowrate' => [
+        'mode' => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true,
+        'staticacceleration' => false,
+        'ttl' => 120,
+    ],
 ];

@@ -2,8 +2,8 @@
 
 What the Moodle page (the host) and the Rumbos app, which runs in an iframe, say to each
 other, and what each side may rely on. The app side is implemented in the Rumbos frontend
-against this document. This is **contract v5.7**: everything from v5 to v5.6 is unchanged
-and v5.7 only adds to it.
+against this document. This is **contract v5.8**: everything from v5 to v5.7 is unchanged
+and v5.8 only adds to it.
 
 All messages are `window.postMessage` objects with `v: 1`. The host ignores any message
 that does not come from the configured app origin **and** from the iframe's own window,
@@ -21,6 +21,10 @@ would follow.
 | app to host | `rumbos:open-activity-settings` | `cmid` | **v5.4.** Open the activity's settings in a new tab. Editor mode only. |
 | app to host | `rumbos:request-fullscreen` | `on` | Turn the full screen mode on or off. |
 | app to host | `rumbos:request-stats` | `groupId?` | **v5.7.** Ask for the completion counts per activity, for the whole course (`0` or absent) or one group. Editor mode only. |
+| app to host | `rumbos:request-flow-progress` | `mapId` | **v5.8.** Ask for the user's progress through the welcome flow of a map. |
+| app to host | `rumbos:flow-step-done` | `mapId`, `stepKey`, `revision`, `method` | **v5.8.** Record that the user completed a step. |
+| app to host | `rumbos:request-quiz-result` | `cmid` | **v5.8.** Ask for the user's own result in a quiz. |
+| app to host | `rumbos:flow-reset` | `mapId` | **v5.8.** Editor mode only: reset the user's own progress on the map, for testing. |
 | app to host | `rumbos:error` | `code`, `detail` | The app failed; the host falls back to the standard course content. |
 | app to host | `rumbos:no-content` | `reason` | **v5.5.** The app has nothing to show this user; the host falls back to the standard course content. |
 | app to host | `rumbos:preferred-size` | `aspectRatio` | **v5.5.** The proportions of the level on display; the host applies them only in automatic height mode. |
@@ -29,6 +33,8 @@ would follow.
 | host to app | `rumbos:host-launch` | `assertion` | A fresh launch assertion. |
 | host to app | `rumbos:host-fullscreen` | `on` | The full screen mode **as it is now**. |
 | host to app | `rumbos:host-stats` | `stats` or `error` | **v5.7.** The answer to `request-stats`: the counts, or `error` (`capability` or `unavailable`). Never sent unasked. |
+| host to app | `rumbos:host-flow-progress` | `items`, `persistent`, `config` or `error` | **v5.8.** The answer to `request-flow-progress`, `flow-step-done` and `flow-reset`. Never sent unasked. |
+| host to app | `rumbos:host-quiz-result` | `result` or `error` | **v5.8.** The answer to `request-quiz-result`. Never sent unasked. |
 | host to app | `rumbos:host-overlay` | `open` | An overlay (the activity popup) is above the map or has gone. |
 
 ### Completion statistics (v5.7)
@@ -70,6 +76,69 @@ CourseStats = { schemaVersion: 1, generatedAt, courseId, groupId: int (0 = all a
   and when the group changes, not on a timer.
 - **Never in `host-init` or `host-state`.** Statistics are sent only as the answer to a request. The
   host does not log the numbers or keep them beyond that 2-second window.
+
+### Welcome flow progress and quiz results (v5.8)
+
+The app has a mandatory, multi-step welcome flow. Its **definition** lives in the Rumbos backend. **Who completed
+which step lives in Moodle**, in the table `format_rumbos_flow`; no student data reaches the backend. The entry quiz
+is a normal Moodle quiz taken in the activity overlay (`open-activity { cmid }`).
+
+```
+app -> host: { type: "rumbos:request-flow-progress", v: 1, mapId }
+host -> app: { type: "rumbos:host-flow-progress", v: 1, mapId, items: [{ stepKey, revision, method, completedAt }],
+               persistent: boolean, config: { quizThreshold: int } }
+             | { type: "rumbos:host-flow-progress", v: 1, mapId, error: "readonly" | "unavailable" }
+app -> host: { type: "rumbos:flow-step-done", v: 1, mapId, stepKey, revision, method: "completed" | "fallback" | "unavailable" }
+             // answered with a refreshed host-flow-progress (or the error form)
+app -> host: { type: "rumbos:request-quiz-result", v: 1, cmid }
+host -> app: { type: "rumbos:host-quiz-result", v: 1, cmid, result: QuizResult }
+             | { type: "rumbos:host-quiz-result", v: 1, cmid, error: "not_found" | "unavailable" | "capability" }
+app -> host: { type: "rumbos:flow-reset", v: 1, mapId }     // editor mode only
+QuizResult = { attempts: int, finishedAttempts: int, inProgress: boolean, percent: number|null,
+               pendingGrading: boolean, passedThreshold: boolean|null }
+```
+
+- **Whose data.** Everything is about the **current user**; there is no user id in any message. The host
+  asks Moodle through external functions that check access again, and the answer goes to the app and nowhere else.
+  It is **never part of `host-init` or `host-state`**, and the host does **not** push a result when the activity
+  overlay closes or reloads: the app asks again (`request-quiz-result`). `host-overlay` is unchanged.
+- **Validation (host side, same as the server).** `mapId` is a UUID (opaque to Moodle, stored in lower case);
+  `stepKey` is 1 to 16 characters of letters, digits, `_` and `-`; `revision` is an integer from 0 to 1,000,000;
+  `method` is one of the three; `cmid` is a positive integer. A message that fails is ignored without a reply.
+- **`persistent`** is `false` when progress cannot be stored: a guest, somebody who used "log in as", or a user who
+  takes no part in the course. The app then treats the flow as non-persistent. A write from such a user is answered
+  `error: "readonly"`. Rate limit (30 writes a minute per user), the cap of 500 rows per user and course, and any failure
+  are answered `error: "unavailable"`.
+- **Writes are idempotent.** The same step and revision again keeps the earliest completion; a higher revision
+  replaces the row; a lower one is ignored. The host sends writes one at a time, in the order received.
+- **`completedAt`** is ISO 8601 in UTC, for example `2026-11-11T10:00:00Z`.
+- **`config.quizThreshold`** comes from the course format option "Entry quiz result threshold (%)" (0 to 100,
+  default 80). 0 means no branching on the result.
+- **`percent`** is the quiz grade from the gradebook (so the grading method and teacher overrides apply), `null`
+  when the student may not see it: the course hides grades, the user may not view grades, the grade (or the item)
+  is hidden or hidden until a date, the quiz's review options do not show marks for every finished attempt, the quiz
+  is ungraded, or there is no finished attempt. **`passedThreshold`** is `null` when the threshold is 0, `percent` is
+  `null`, or grading is pending, else `percent >= quizThreshold`. `finishedAttempts` counts only attempts in the
+  finished state (not abandoned ones, not previews); `inProgress` is true for an open or overdue attempt;
+  `pendingGrading` is true when a finished attempt still needs manual grading (or is submitted and not yet graded).
+- **Errors of `request-quiz-result`.** `not_found`: no such quiz in this course, or the user cannot see it.
+  `capability`: the user may not view the quiz. `unavailable`: anything else.
+- **`flow-reset`** resets the **current user's own** progress on that map, for testing. The host answers a page that is
+  not in editor mode with `error: "readonly"` without asking Moodle, and Moodle needs `format/rumbos:editmap`.
+  After a write or a reset the refreshed `host-flow-progress` is sent.
+
+**Normative decisions for every implementation of this contract** (the app and the backend included):
+
+1. `completedAt` is a **string**: ISO 8601 in UTC with the `Z` suffix (`2026-11-11T10:00:00Z`).
+2. `stepKey` is accepted by the host as `[A-Za-z0-9_-]{1,16}`, a superset of the backend's pattern. A step key outside it is
+   ignored without a reply.
+3. `revision` is accepted as an integer from 0 to 1,000,000.
+4. When the grade is hidden from the student, `percent` and `passedThreshold` are `null`.
+5. `not_found` is also the answer for an activity that exists but is hidden from the user.
+6. `inProgress` can remain `true` after the quiz's time limit has passed, until Moodle submits the attempt (cron or the next
+   view of the quiz). The app must not read it as proof that the student is still working.
+
+What the activity overlay supports for the entry quiz is in [MANUAL-TESTS.md](MANUAL-TESTS.md#welcome-flow-progress-and-quiz-results-release-060).
 
 ### `courseName` in `rumbos:host-init` (v5.6)
 
@@ -282,6 +351,8 @@ Rules:
 
 - `amd/src/protocol.js` parses and builds messages (tested in `tests/js/protocol.test.mjs`).
 - `amd/src/stats_gate.js` limits the statistics requests (`tests/js/stats_gate.test.mjs`).
+- `amd/src/flow_calls.js` joins flow reads and orders flow writes (`tests/js/flow_calls.test.mjs`); the flow messages are tested in `tests/js/protocol_flow.test.mjs`.
+- `classes/local/flow_progress.php` stores the rows, `quiz_result.php` computes the quiz result, and `classes/external/get_flow_progress.php`, `set_flow_step_done.php`, `reset_flow_progress.php` and `get_quiz_result.php` are the AJAX functions.
 - `classes/local/course_stats.php` computes the counts and `classes/external/get_course_stats.php` is the AJAX function.
 - `amd/src/refresher.js` is the single-flight, throttled reader (`tests/js/refresher.test.mjs`).
 - `amd/src/host.js` wires them to the page.

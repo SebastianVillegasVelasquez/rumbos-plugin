@@ -77,4 +77,32 @@ $functions = [
         'ajax' => true,
         'loginrequired' => true,
     ],
+    'format_rumbos_get_flow_progress' => [
+        'classname' => \format_rumbos\external\get_flow_progress::class,
+        'description' => 'Returns which steps of a welcome flow the current user completed, and whether that can be stored.',
+        'type' => 'read',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
+    'format_rumbos_set_flow_step_done' => [
+        'classname' => \format_rumbos\external\set_flow_step_done::class,
+        'description' => 'Records that the current user completed a step of a welcome flow.',
+        'type' => 'write',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
+    'format_rumbos_reset_flow_progress' => [
+        'classname' => \format_rumbos\external\reset_flow_progress::class,
+        'description' => 'Resets the welcome-flow progress of the current user, or of another user when the caller may reset it.',
+        'type' => 'write',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
+    'format_rumbos_get_quiz_result' => [
+        'classname' => \format_rumbos\external\get_quiz_result::class,
+        'description' => 'Returns the current user\'s own result in a quiz, never more than Moodle shows them.',
+        'type' => 'read',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
 ];

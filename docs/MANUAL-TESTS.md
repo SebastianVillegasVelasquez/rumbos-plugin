@@ -362,3 +362,65 @@ Not observed: the real browser full screen. In this automated window `requestFul
 fails with `TypeError: not granted` **even on a top-level page with no iframes**, so it says
 nothing about the attributes. The popup open and closed was not exercised either, because it
 needs the app's messages. Firefox and Safari were not run.
+
+## Welcome flow progress and quiz results (release 0.6.0)
+
+Moodle 5.2.4, Chrome on Windows 11 driven through an extension, PostgreSQL 17. Course "wf" with five quizzes (plain,
+password, time limit 5 minutes, "secure window", hidden grade), `student1` and `teacher1` (local test accounts). The Rumbos
+app was not reachable: the app URL needs https and the browser would not accept a self-signed certificate, so the host
+was driven the way earlier tests did it (a hidden same-origin window stood in for the iframe's window and the message events
+carried the app's origin). The fake app server and the seed script were kept outside the repository.
+
+| Case | Result |
+| --- | --- |
+| Student, `request-flow-progress` | `persistent: true`, `quizThreshold: 80`, items as stored |
+| `flow-step-done` twice (same step and revision, second says `fallback`) | Both answered with the refreshed progress; one row, `completed`, earliest time |
+| Step key `bad key!` | Ignored, no reply |
+| `flow-reset` while the page is in student mode | `host-flow-progress { error: "readonly" }`, nothing deleted |
+| `request-quiz-result` for a quiz with no attempts, a hidden-grade quiz, an unknown cmid | zeros and nulls; zeros and nulls; `not_found` |
+| `embed-ready` | `host-init` has no progress or quiz data |
+| Attempt in progress | `inProgress: true`, `attempts: 1`, `finishedAttempts: 0` |
+| Finish the attempt in the overlay, close it | The host sends only `host-state` and `host-overlay { open: false }`; the app asks again and gets `finishedAttempts: 1`, `percent: 100`, `passedThreshold: true` |
+| Quiz with a password | The password form appears inside the overlay and the attempt starts there |
+| Quiz with a time limit (5 minutes) | Works in the overlay; see the next section |
+| Quiz with "Full screen popup with some JavaScript security" | The "Attempt quiz" button calls `window.open` (a separate window); the overlay stays on the view page. **Not supported inside the overlay.** |
+| Privacy | Context found for the user, rows deleted by `delete_data_for_user` on the live site; export, user-list and course deletes by PHPUnit |
+| Upgrade | Table dropped and version set back to 0.5.1: the upgrade step recreates the table and both indexes |
+
+PHPUnit covers the access control and every guard (guest, "log in as", user outside the course, hidden item, hidden grade,
+hidden until a date, review options, course hiding grades, no grade view capability, no attempts, in progress, abandoned,
+preview, pending manual grading, the four grading methods), the row cap, the idempotence, the rate limit, the
+reset capabilities and that no answer holds data about other users.
+
+**To run the matrix by hand:** a student (progress persists, quiz result appears), a teacher in editor mode (reset works),
+a guest (`persistent: false`, writes answered `readonly`), "Log in as" a student (same), a quiz whose grade is hidden
+(`percent` and `passedThreshold` are `null`), a quiz with a password (works in the overlay), the secure window quiz
+(opens a separate window).
+
+**Not verified.** (1) The real Rumbos app and a real iframe: all messages were injected. (2) The privacy **export**
+on the live site (the writer only runs under PHPUnit in a plain CLI script); (3) the expiry of an attempt with Moodle's
+cron running (the dev site has no cron); (4) Behat; (5) Moodle 5.3 and MariaDB (only 5.2.4 with PostgreSQL ran).
+
+### A time-limited attempt in the overlay
+
+Quiz with a 5 minute limit and "Open attempts are submitted automatically" (the default). The student starts the attempt in
+the overlay, closes the overlay halfway, comes back, closes it again and the limit passes with the overlay closed. The page
+was not otherwise touched. `inProgress` and `finishedAttempts` are what `request-quiz-result` answered at each moment.
+
+| Moment (seconds after the attempt started) | What happened | `attempts` | `finishedAttempts` | `inProgress` |
+| --- | --- | --- | --- | --- |
+| 0 | Attempt started in the overlay, the timer shows 0:04:56 | 1 | 0 | true |
+| 29 | Overlay closed halfway | 1 | 0 | true |
+| 38 | Overlay opened again, "Continue your attempt", the timer shows 0:04:18 (it did **not** stop while the overlay was closed) | 1 | 0 | true |
+| 107 and 365 | Overlay closed; at 365 s the limit had passed 65 s earlier | 1 | 0 | **true** |
+| about 400 | The overlay opens the quiz page | 1 | 1 | false |
+
+- **The attempt is not delivered by itself.** Moodle submits an expired attempt when something processes it: the scheduled
+  task `mod_quiz\task\update_overdue_attempts` (cron), or anyone opening the quiz or the attempt page. The database was polled
+  every 30 seconds and the attempt stayed `inprogress` for 84 seconds after the limit, until the overlay opened the quiz page;
+  at that moment it became `finished`, with the finish time set to the **end of the time limit** (not to the time of the view),
+  a grade of 0 and `percent: 0`, `passedThreshold: false`. The dev site has no cron, so how soon the task does it on a real site
+  was not measured; it runs every minute by default.
+- **Consequence for the app.** After the limit, `inProgress` can stay `true` until Moodle processes the attempt. The app must
+  not treat `inProgress: true` as proof that the student is still working: open the quiz again (which finishes it) and ask
+  again.

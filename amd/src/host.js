@@ -34,14 +34,19 @@ import ActivityPopup from 'format_rumbos/popup';
 import {createPoller} from 'format_rumbos/poller';
 import {createRefresher} from 'format_rumbos/refresher';
 import {exitScorm} from 'format_rumbos/safe_exit';
-import {createStatsGate} from 'format_rumbos/stats_gate';
+import {createStatsGate, statsErrorKind} from 'format_rumbos/stats_gate';
+import {createFlight, createSerialQueue} from 'format_rumbos/flow_calls';
 import {
     MESSAGE,
     POPUP_MESSAGE,
+    hostFlowProgress,
+    hostFlowProgressError,
     hostFullscreen,
     hostInit,
     hostLaunch,
     hostOverlay,
+    hostQuizResult,
+    hostQuizResultError,
     hostStats,
     hostStatsError,
     hasActivity,
@@ -155,6 +160,12 @@ class RumbosHost {
         // The app's statistics requests: one call per group at a time, and a repeat soon after reuses the answer.
         this.statsGate = createStatsGate({fetch: (groupId) => this.fetchStats(groupId), minIntervalMs: STATS_MIN_INTERVAL_MS});
 
+        // The welcome flow: reads join the one in flight, never reuse an answer, and writes go one at a time in order.
+        // Moodle checks everything again; this only keeps a chatty app from piling up requests.
+        this.flowReads = createFlight({fetch: (mapId) => this.callFlow('get_flow_progress', {mapid: mapId})});
+        this.quizReads = createFlight({fetch: (cmid) => this.callQuiz(cmid)});
+        this.flowWrites = createSerialQueue();
+
         // The same single-flight reader, so a poll that meets a navigation refresh joins it.
         this.poller = createPoller({
             tick: () => this.refresher.load().catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`)),
@@ -257,6 +268,23 @@ class RumbosHost {
             case MESSAGE.REQUEST_STATS:
                 this.answerStats(message.groupId);
                 break;
+            case MESSAGE.REQUEST_FLOW_PROGRESS:
+                this.answerFlowProgress(message.mapId);
+                break;
+            case MESSAGE.FLOW_STEP_DONE:
+                this.answerFlowWrite(message.mapId, 'set_flow_step_done', {
+                    mapid: message.mapId,
+                    stepkey: message.stepKey,
+                    revision: message.revision,
+                    method: message.method,
+                });
+                break;
+            case MESSAGE.FLOW_RESET:
+                this.answerFlowReset(message.mapId);
+                break;
+            case MESSAGE.REQUEST_QUIZ_RESULT:
+                this.answerQuizResult(message.cmid);
+                break;
             case MESSAGE.ERROR:
                 this.degrade('apperror', message.code, message.detail);
                 break;
@@ -296,6 +324,104 @@ class RumbosHost {
      */
     fetchStats(groupId) {
         return Ajax.call([{methodname: 'format_rumbos_get_course_stats', args: {courseid: this.courseId, groupid: groupId}}])[0];
+    }
+
+    /**
+     * Calls one of the welcome-flow functions for this course.
+     *
+     * @param {string} name The function without the component prefix.
+     * @param {Object} args The arguments besides the course.
+     * @returns {Promise<Object>}
+     */
+    callFlow(name, args) {
+        return Ajax.call([{methodname: `format_rumbos_${name}`, args: {courseid: this.courseId, ...args}}])[0];
+    }
+
+    /**
+     * Reads the current user's result in a quiz.
+     *
+     * @param {number} cmid
+     * @returns {Promise<Object>}
+     */
+    callQuiz(cmid) {
+        return this.callFlow('get_quiz_result', {cmid});
+    }
+
+    /**
+     * Sends the app the flow progress Moodle answered with, or the error form when it cannot be used.
+     *
+     * The progress is the current user's own, and goes to the app and nowhere else: it is not part of host-init
+     * or host-state, not logged and not kept here.
+     *
+     * @param {string} mapId
+     * @param {Object} reply What the function returned.
+     */
+    sendFlowReply(mapId, reply) {
+        if (reply?.error) {
+            this.send(hostFlowProgressError(mapId, reply.error));
+            return;
+        }
+        this.send(hostFlowProgress(mapId, reply) ?? hostFlowProgressError(mapId, 'unavailable'));
+    }
+
+    /**
+     * Answers a request for the flow progress.
+     *
+     * @param {string} mapId
+     */
+    answerFlowProgress(mapId) {
+        this.flowReads.request(mapId).then((outcome) => {
+            this.sendFlowReply(mapId, outcome.error ? {error: 'unavailable'} : outcome.value);
+            return true;
+        }).catch(() => this.send(hostFlowProgressError(mapId, 'unavailable')));
+    }
+
+    /**
+     * Records a step and answers with the progress as it is afterwards (Moodle returns it with the write).
+     *
+     * @param {string} mapId
+     * @param {string} name The write function.
+     * @param {Object} args Its arguments besides the course.
+     */
+    answerFlowWrite(mapId, name, args) {
+        this.flowWrites.enqueue(() => this.callFlow(name, args)).then((outcome) => {
+            this.sendFlowReply(mapId, outcome.error ? {error: 'unavailable'} : outcome.value);
+            return true;
+        }).catch(() => this.send(hostFlowProgressError(mapId, 'unavailable')));
+    }
+
+    /**
+     * Answers a reset of the user's own progress, in editor mode only.
+     *
+     * The server needs the edit capability as well; this keeps a student's page from even asking.
+     *
+     * @param {string} mapId
+     */
+    answerFlowReset(mapId) {
+        if (this.mode !== 'editor') {
+            this.send(hostFlowProgressError(mapId, 'readonly'));
+            return;
+        }
+        this.answerFlowWrite(mapId, 'reset_flow_progress', {mapid: mapId, userid: 0});
+    }
+
+    /**
+     * Answers a request for the user's result in a quiz, now: nothing is pushed when the activity closes.
+     *
+     * @param {number} cmid
+     */
+    answerQuizResult(cmid) {
+        this.quizReads.request(cmid).then((outcome) => {
+            if (outcome.error) {
+                this.send(hostQuizResultError(cmid, statsErrorKind(outcome.error)));
+                return false;
+            }
+            const reply = outcome.value;
+            this.send(reply?.error ?
+                hostQuizResultError(cmid, reply.error) :
+                hostQuizResult(cmid, reply?.result) ?? hostQuizResultError(cmid, 'unavailable'));
+            return true;
+        }).catch(() => this.send(hostQuizResultError(cmid, 'unavailable')));
     }
 
     /**

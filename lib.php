@@ -26,6 +26,7 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/course/format/lib.php');
 
+use format_rumbos\local\flow_config;
 use format_rumbos\local\map_size;
 
 /**
@@ -75,11 +76,12 @@ class format_rumbos extends core_courseformat\base {
     }
 
     /**
-     * The options of a course: how tall the Rumbos area is.
+     * The options of a course: how tall the Rumbos area is, and the threshold of the entry quiz.
      *
      * The names start with "rumbos_" so that they never collide with a field of the course table, and they
      * hold no ids, so a backup carries them to the restored course without any remapping. An empty mode and a 0
-     * mean "use the site default" (see {@see map_size} for the precedence).
+     * mean "use the site default" (see {@see map_size} for the precedence). For the threshold a 0 is a real
+     * value: it turns the branching on the quiz result off (see {@see flow_config}).
      *
      * @param bool $foreditform Whether the definitions are for the course edit form, which needs labels.
      * @return array
@@ -89,6 +91,7 @@ class format_rumbos extends core_courseformat\base {
             map_size::OPTION_PREFIX . 'heightmode' => ['default' => '', 'type' => PARAM_ALPHA],
             map_size::OPTION_PREFIX . 'heightvalue' => ['default' => 0, 'type' => PARAM_INT],
             map_size::OPTION_PREFIX . 'mobileheight' => ['default' => 0, 'type' => PARAM_INT],
+            flow_config::OPTION_QUIZ_THRESHOLD => ['default' => flow_config::DEFAULT_QUIZ_THRESHOLD, 'type' => PARAM_INT],
         ];
         if ($foreditform) {
             $options[map_size::OPTION_PREFIX . 'heightmode'] += [
@@ -117,6 +120,13 @@ class format_rumbos extends core_courseformat\base {
                 'element_type' => 'text',
                 'element_attributes' => [['size' => 6, 'maxlength' => 3]],
             ];
+            $options[flow_config::OPTION_QUIZ_THRESHOLD] += [
+                'label' => new lang_string('rumbos_quizthreshold', 'format_rumbos'),
+                'help' => 'rumbos_quizthreshold',
+                'help_component' => 'format_rumbos',
+                'element_type' => 'text',
+                'element_attributes' => [['size' => 4, 'maxlength' => 3]],
+            ];
         }
         return $options;
     }
@@ -138,7 +148,7 @@ class format_rumbos extends core_courseformat\base {
     }
 
     /**
-     * Checks the height options of the course form.
+     * Checks the options of the course form.
      *
      * @param array $data
      * @param array $files
@@ -146,7 +156,9 @@ class format_rumbos extends core_courseformat\base {
      * @return array Error message keyed by element name.
      */
     public function edit_form_validation($data, $files, $errors) {
-        return map_size::validate_course_data($data) + parent::edit_form_validation($data, $files, $errors);
+        return map_size::validate_course_data($data)
+            + flow_config::validate_course_data($data)
+            + parent::edit_form_validation($data, $files, $errors);
     }
 
     /**

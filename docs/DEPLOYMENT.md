@@ -62,7 +62,7 @@ changes with the purge, so it is usually not needed.
   `mincohort` ("Minimum students to show statistics", default 5), the cache definition
   `coursestats` and the AJAX function `format_rumbos_get_course_stats`. The purge is needed for
   the new JavaScript and the changed template.
-- **Nothing is created in the database**: no table and no stored statistic.
+- **Statistics store nothing**: no table and no stored statistic. (The welcome-flow progress has its own table; see the README.)
 - The iframe's sandbox gains `allow-downloads`. If a proxy or a page cache keeps old HTML, the
   app's Export button stays blocked until it is purged.
 - **Older builds of the Rumbos app** never send `rumbos:request-stats`; nothing changes for them.

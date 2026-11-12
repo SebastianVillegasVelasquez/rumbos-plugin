@@ -176,7 +176,7 @@ it is granted to the editing teacher and manager roles.
 In editor mode the app can show how many students completed each activity (a heat map). The
 numbers are computed in Moodle as **aggregates**, handed to the iframe through the page and
 never sent to the Rumbos service; they contain no user id, name or per-user row, and the plugin
-stores nothing: no table, no log entry. See the contract in
+stores nothing of its own: no table, no log entry. See the contract in
 [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md#completion-statistics-v57).
 
 - **Capability `format/rumbos:viewstats`**, in the course: editing teacher and manager by default.
@@ -200,6 +200,52 @@ stores nothing: no table, no log entry. See the contract in
   parameter that recomputes instead of using the cache, for holders of the capability, and at
   most once every 30 seconds per course and group. The page does not send it yet: the contract
   has no field for it, so a teacher waits out the 5 minutes or an administrator purges the cache.
+
+### Welcome flow progress and entry quiz
+
+The app can run a mandatory welcome flow (video, HTML, PDF, a Moodle quiz). The flow itself lives in the Rumbos
+service; **who completed which step lives in Moodle**, and nothing about a student's progress or quiz result is sent to
+the service. The contract is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md#welcome-flow-progress-and-quiz-results-v58).
+
+| What | Where |
+| --- | --- |
+| Table `format_rumbos_flow` | One row per user, course, map and step: course id, user id, map id, step key, revision, method (`completed`, `fallback`, `unavailable`) and the time. At most 500 rows per user and course; repeating a step keeps the earliest completion of the same revision and a higher revision replaces it. |
+| Capability `format/rumbos:resetflow` | In the course: editing teacher and manager by default. Needed to reset **another** user's progress; resetting your own needs `format/rumbos:editmap`. |
+| Course option "Entry quiz result threshold (%)" | In the course settings, 0 to 100, default 80. 0 means no branching on the result. Only someone who may update the course can change it. |
+| External functions | `format_rumbos_get_flow_progress`, `_set_flow_step_done`, `_reset_flow_progress`, `_get_quiz_result`. AJAX only, always about the current user; writes are limited to 30 a minute per user. |
+
+Progress is not stored for a guest, for somebody who used "Log in as" and for a user who takes no part in the course
+(the app is told `persistent: false`). It is the client's own record of its progress, a convenience and not a security
+boundary: nothing in Moodle decides anything on it.
+
+**What the quiz result honours.** The result goes to the student's own browser and is never more than Moodle would show
+them. The percentage is `null` unless ALL of these hold: the course shows grades to students; the user may view grades;
+the gradebook item, the grade and any "hidden until" date leave the grade visible; the quiz's **review options** show the
+marks for every finished attempt (the test the quiz page makes before it prints the final grade, so "marks: not shown
+after the attempt" gives `null`); the quiz is graded; and there is a finished attempt. The value is the gradebook grade,
+so the **grading method** (highest, average, first, last) and teacher overrides apply. Only the finished state is a
+finished attempt (abandoned attempts and previews are ignored). **Not honoured:** the other review options (feedback,
+correct answers), the "show total only if hidden items" category rules, and group or availability rules beyond what
+makes the activity visible to the user. The threshold outcome is `null` as well whenever the percentage is, or grading
+is pending, so it cannot give a hidden grade away.
+
+**For the result to appear.** The entry quiz must show its grade to the student: the gradebook item and the grade are not
+hidden, and the quiz's review options show the marks after the attempt (and while it is open, if you want the result at
+once). Otherwise the app gets `percent: null` and `passedThreshold: null` and shows the neutral result.
+
+**Resetting your own progress.** A user needs Moodle's **editing mode on** to reset their own progress, because the host only
+enters editor mode with it (the `flow-reset` message is answered `readonly` otherwise), and the capability
+`format/rumbos:editmap`.
+
+**In the activity overlay.** The browser security of the entry quiz must be **None**: a quiz with the secure window setting
+does not work in the overlay (below). A quiz with a password (the form appears in the overlay), a time limit and the normal
+attempt, finish and review pages work. A quiz with the **"Full screen popup with some JavaScript security"** browser
+security setting asks Moodle to open the attempt in a separate browser window, so it is **not supported inside the
+overlay**: use "None" for the entry quiz. A time limit keeps running while the overlay is closed, and an attempt that has run out of time stays
+"in progress" until Moodle's cron or the next view of the quiz submits it. Closing the overlay does not push the result; the app asks again.
+
+**Backup and restore.** The progress is **not** included in course backups in this phase: a restored or duplicated course
+starts with no progress. The threshold option is, as part of the course settings.
 
 ### Size of the area
 
@@ -452,12 +498,18 @@ run such commands as that user from then on, for example
 
 ## Privacy
 
-The plugin stores no personal data in Moodle. When a user opens a Rumbos course page,
+Moodle stores one kind of personal data for the plugin: which step of a welcome flow a user completed in a
+course, when, how, and which map (table `format_rumbos_flow`). It is **personal data processed inside Moodle**, so in
+Colombia the site owner is its controller under Ley 1581 de 2012 and its regulations: it needs the data subject's
+authorisation and a purpose (tracking the welcome flow), and must honour the rights of access, correction and deletion.
+The privacy provider exports and deletes it (per course, per user, and for a list of users), and it is deleted with
+its course or its user. It is not part of course backups. When a user opens a Rumbos course page,
 the Rumbos service receives the pseudonymous id, the course id and the role, and the
 user's browser connects to it directly, so it also sees the network address and
-browser details of that request. This is declared through Moodle's privacy API. The completion
+browser details of that request. Both are declared through Moodle's privacy API. The completion
 counts for teachers are aggregates held only in a short-lived cache and handed to the browser;
-they are not personal data and are not sent to the service.
+they are not personal data and are not sent to the service. Quiz results are read on request and handed to the
+student's own browser; they are not stored by the plugin.
 Requests to export or delete data held by the service go to its operator. See
 [docs/LIFECYCLE.md](docs/LIFECYCLE.md) for what happens on install, uninstall and
 course deletion, and [SECURITY.md](SECURITY.md) for the threat model and how to
