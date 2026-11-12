@@ -229,10 +229,20 @@ correct answers), the "show total only if hidden items" category rules, and grou
 makes the activity visible to the user. The threshold outcome is `null` as well whenever the percentage is, or grading
 is pending, so it cannot give a hidden grade away.
 
-**In the activity overlay.** A quiz with a password (the form appears in the overlay), a time limit and the normal
+**For the result to appear.** The entry quiz must show its grade to the student: the gradebook item and the grade are not
+hidden, and the quiz's review options show the marks after the attempt (and while it is open, if you want the result at
+once). Otherwise the app gets `percent: null` and `passedThreshold: null` and shows the neutral result.
+
+**Resetting your own progress.** A user needs Moodle's **editing mode on** to reset their own progress, because the host only
+enters editor mode with it (the `flow-reset` message is answered `readonly` otherwise), and the capability
+`format/rumbos:editmap`.
+
+**In the activity overlay.** The browser security of the entry quiz must be **None**: a quiz with the secure window setting
+does not work in the overlay (below). A quiz with a password (the form appears in the overlay), a time limit and the normal
 attempt, finish and review pages work. A quiz with the **"Full screen popup with some JavaScript security"** browser
 security setting asks Moodle to open the attempt in a separate browser window, so it is **not supported inside the
-overlay**: use "None" for the entry quiz. Closing the overlay does not push the result; the app asks again.
+overlay**: use "None" for the entry quiz. A time limit keeps running while the overlay is closed, and an attempt that has run out of time stays
+"in progress" until Moodle's cron or the next view of the quiz submits it. Closing the overlay does not push the result; the app asks again.
 
 **Backup and restore.** The progress is **not** included in course backups in this phase: a restored or duplicated course
 starts with no progress. The threshold option is, as part of the course settings.
