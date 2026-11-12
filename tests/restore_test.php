@@ -124,7 +124,7 @@ final class restore_test extends \advanced_testcase {
     }
 
     /**
-     * The size options of the course travel with a backup: a duplicate keeps them, and keeps using the site fallbacks.
+     * The course options (size and quiz threshold) travel with a backup: a duplicate keeps them.
      */
     public function test_the_size_options_survive_a_backup_and_restore(): void {
         $this->resetAfterTest();
@@ -134,13 +134,17 @@ final class restore_test extends \advanced_testcase {
             'rumbos_heightmode' => 'viewport',
             'rumbos_heightvalue' => 85,
             'rumbos_mobileheight' => 65,
+            'rumbos_quizthreshold' => 55,
         ]);
         $other = $this->getDataGenerator()->create_course(['format' => 'rumbos']);
 
         $newid = $this->duplicate($course);
 
         $this->assertSame(
-            ['rumbos_heightmode' => 'viewport', 'rumbos_heightvalue' => 85, 'rumbos_mobileheight' => 65],
+            [
+                'rumbos_heightmode' => 'viewport', 'rumbos_heightvalue' => 85, 'rumbos_mobileheight' => 65,
+                'rumbos_quizthreshold' => 55,
+            ],
             course_get_format($newid)->get_format_options()
         );
         $size = course_get_format($newid)->get_map_size();

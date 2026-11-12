@@ -16,6 +16,8 @@
 
 namespace format_rumbos;
 
+use format_rumbos\local\flow_config;
+
 /**
  * Tests for the course options of the format: names, defaults, storage, form validation and precedence.
  *
@@ -53,7 +55,7 @@ final class format_options_test extends \advanced_testcase {
             $this->assertNotContains($name, $columns);
         }
         $this->assertEqualsCanonicalizing(
-            ['rumbos_heightmode', 'rumbos_heightvalue', 'rumbos_mobileheight'],
+            ['rumbos_heightmode', 'rumbos_heightvalue', 'rumbos_mobileheight', 'rumbos_quizthreshold'],
             array_keys($format->course_format_options())
         );
     }
@@ -65,7 +67,7 @@ final class format_options_test extends \advanced_testcase {
         $format = $this->course_format();
 
         $this->assertSame(
-            ['rumbos_heightmode' => '', 'rumbos_heightvalue' => 0, 'rumbos_mobileheight' => 0],
+            ['rumbos_heightmode' => '', 'rumbos_heightvalue' => 0, 'rumbos_mobileheight' => 0, 'rumbos_quizthreshold' => 80],
             $format->get_format_options()
         );
         $this->assertSame(
@@ -87,6 +89,7 @@ final class format_options_test extends \advanced_testcase {
             $this->assertSame($name, $option['help']);
             $this->assertTrue(get_string_manager()->string_exists($name . '_help', 'format_rumbos'), $name);
         }
+        $this->assertSame('text', $options['rumbos_quizthreshold']['element_type']);
         $this->assertSame('select', $options['rumbos_heightmode']['element_type']);
         $this->assertSame(
             ['', 'auto', 'viewport', 'fixed'],
@@ -179,8 +182,57 @@ final class format_options_test extends \advanced_testcase {
             $this->assertNotSame((int) $format->get_courseid(), $value, $name);
         }
         $this->assertSame(
-            ['rumbos_heightmode' => 'viewport', 'rumbos_heightvalue' => 90, 'rumbos_mobileheight' => 70],
+            [
+                'rumbos_heightmode' => 'viewport', 'rumbos_heightvalue' => 90, 'rumbos_mobileheight' => 70,
+                'rumbos_quizthreshold' => 80,
+            ],
             course_get_format($format->get_courseid())->get_format_options()
         );
+    }
+
+    /**
+     * The threshold defaults to 80, is stored as given, and 0 is a real value (no branching).
+     */
+    public function test_the_quiz_threshold(): void {
+        $format = $this->course_format();
+        $courseid = $format->get_courseid();
+
+        $this->assertSame(80, flow_config::get_quiz_threshold($courseid));
+
+        $format->update_course_format_options(['rumbos_quizthreshold' => 65]);
+        $this->assertSame(65, flow_config::get_quiz_threshold($courseid));
+
+        $format->update_course_format_options(['rumbos_quizthreshold' => 0]);
+        $this->assertSame(0, flow_config::get_quiz_threshold($courseid));
+
+        $format->update_course_format_options(['rumbos_quizthreshold' => 100]);
+        $this->assertSame(100, flow_config::get_quiz_threshold($courseid));
+    }
+
+    /**
+     * A threshold written through the API that is out of range is read as the default.
+     */
+    public function test_a_bad_stored_threshold_is_read_as_the_default(): void {
+        $format = $this->course_format();
+
+        foreach ([101, -1, 100000] as $bad) {
+            $format->update_course_format_options(['rumbos_quizthreshold' => $bad]);
+            $this->assertSame(80, flow_config::get_quiz_threshold($format->get_courseid()), (string) $bad);
+        }
+    }
+
+    /**
+     * The form accepts 0 to 100 and rejects anything else.
+     */
+    public function test_the_threshold_form_validation(): void {
+        $format = $this->course_format();
+
+        foreach (['0', '80', '100', 55] as $good) {
+            $this->assertSame([], $format->edit_form_validation(['rumbos_quizthreshold' => $good], [], []), (string) $good);
+        }
+        foreach (['101', '-1', '', 'abc', '8.5', '1e2'] as $bad) {
+            $errors = $format->edit_form_validation(['rumbos_quizthreshold' => $bad], [], []);
+            $this->assertSame(['rumbos_quizthreshold'], array_keys($errors), (string) $bad);
+        }
     }
 }

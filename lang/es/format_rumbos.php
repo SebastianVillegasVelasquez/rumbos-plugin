@@ -45,6 +45,7 @@ $string['errorkeydecrypt'] = 'Las claves de firma de Rumbos no se pueden descifr
 $string['errorkeygeneration'] = 'No se pudo generar el par de claves de firma. Compruebe que la extensión OpenSSL de PHP está disponible.';
 $string['errormobileheight'] = 'Introduce un porcentaje de la altura de la pantalla de {$a->min} a {$a->max}, o déjalo vacío para usar el predeterminado del sitio.';
 $string['errornewtabmodules'] = 'Introduce nombres de módulo como bigbluebuttonbn, lti separados por comas.';
+$string['errorquizthreshold'] = 'El umbral debe ser un número entero de {$a->min} a {$a->max}.';
 $string['errorselectors'] = 'Introduce como máximo {$a} selectores CSS, uno por línea, con letras, dígitos, comillas y los caracteres - _ # . > + ~ * : ( ) [ ] = ^ $ |. No se permiten llaves, @, url(), comas ni comentarios.';
 $string['errornotenabled'] = 'Esta acción de Rumbos no está disponible: Rumbos está desactivado o no se ha configurado la URL de la aplicación.';
 $string['errornotrumbos'] = 'Este curso no usa el formato Rumbos.';
@@ -140,6 +141,8 @@ $string['rumbos_heightvalue'] = 'Altura';
 $string['rumbos_heightvalue_help'] = 'Para un porcentaje de la altura de la pantalla, un número de 40 a 100. Para una altura fija, píxeles de 360 a 1600. Déjala vacía para usar la predeterminada del sitio. No se usa con el modo automático.';
 $string['rumbos_mobileheight'] = 'Altura en pantallas pequeñas (porcentaje)';
 $string['rumbos_mobileheight_help'] = 'Porcentaje de la altura de la pantalla que ocupa el área de Rumbos en un teléfono o una ventana angosta, de 50 a 100. Déjalo vacío para usar el predeterminado del sitio.';
+$string['rumbos_quizthreshold'] = 'Umbral del resultado del cuestionario de entrada (%)';
+$string['rumbos_quizthreshold_help'] = 'El porcentaje de la calificación del cuestionario del flujo de bienvenida a partir del cual se considera que el estudiante lo aprobó, de 0 a 100. Con 0 el flujo no se bifurca según el resultado. El resultado del estudiante solo se usa cuando su calificación es visible para él en el libro de calificaciones.';
 $string['section0name'] = 'General';
 $string['settingsblocked'] = 'Su navegador bloqueó la nueva pestaña. Permita las ventanas emergentes de este sitio e inténtelo de nuevo.';
 $string['showactivitylist'] = 'Ver la lista de actividades';

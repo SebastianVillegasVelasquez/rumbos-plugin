@@ -45,6 +45,7 @@ $string['errorkeydecrypt'] = 'The Rumbos signing keys cannot be decrypted with t
 $string['errorkeygeneration'] = 'The signing key pair could not be generated. Check that the PHP OpenSSL extension is available.';
 $string['errormobileheight'] = 'Enter a percentage of the screen height from {$a->min} to {$a->max}, or leave it empty to use the site default.';
 $string['errornewtabmodules'] = 'Enter module names such as bigbluebuttonbn, lti separated by commas.';
+$string['errorquizthreshold'] = 'The threshold must be a whole number from {$a->min} to {$a->max}.';
 $string['errorselectors'] = 'Enter at most {$a} CSS selectors, one per line, using letters, digits, quotes and the characters - _ # . > + ~ * : ( ) [ ] = ^ $ |. Braces, @, url(), commas and comments are not allowed.';
 $string['errornotenabled'] = 'This Rumbos action is not available: Rumbos is disabled or the app URL is not configured.';
 $string['errornotrumbos'] = 'This course does not use the Rumbos format.';
@@ -140,6 +141,8 @@ $string['rumbos_heightvalue'] = 'Height';
 $string['rumbos_heightvalue_help'] = 'For a percentage of the screen height, a number from 40 to 100. For a fixed height, pixels from 360 to 1600. Leave it empty to use the site default. It is not used with the automatic mode.';
 $string['rumbos_mobileheight'] = 'Height on small screens (percent)';
 $string['rumbos_mobileheight_help'] = 'Percentage of the screen height the Rumbos area takes on a phone or a narrow window, from 50 to 100. Leave it empty to use the site default.';
+$string['rumbos_quizthreshold'] = 'Entry quiz result threshold (%)';
+$string['rumbos_quizthreshold_help'] = 'The percentage of the grade of the welcome flow\'s quiz at or above which the student counts as having passed it, from 0 to 100. With 0 the flow does not branch on the result. The student\'s result is only used when the grade is visible to them in the gradebook.';
 $string['section0name'] = 'General';
 $string['settingsblocked'] = 'Your browser blocked the new tab. Allow pop-ups for this site and try again.';
 $string['showactivitylist'] = 'View the activity list';
