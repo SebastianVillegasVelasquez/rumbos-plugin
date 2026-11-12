@@ -362,3 +362,41 @@ Not observed: the real browser full screen. In this automated window `requestFul
 fails with `TypeError: not granted` **even on a top-level page with no iframes**, so it says
 nothing about the attributes. The popup open and closed was not exercised either, because it
 needs the app's messages. Firefox and Safari were not run.
+
+## Welcome flow progress and quiz results (release 0.6.0)
+
+Moodle 5.2.4, Chrome on Windows 11 driven through an extension, PostgreSQL 17. Course "wf" with five quizzes (plain,
+password, time limit 5 minutes, "secure window", hidden grade), `student1` and `teacher1` (local test accounts). The Rumbos
+app was not reachable: the app URL needs https and the browser would not accept a self-signed certificate, so the host
+was driven the way earlier tests did it (a hidden same-origin window stood in for the iframe's window and the message events
+carried the app's origin). The fake app server and the seed script were kept outside the repository.
+
+| Case | Result |
+| --- | --- |
+| Student, `request-flow-progress` | `persistent: true`, `quizThreshold: 80`, items as stored |
+| `flow-step-done` twice (same step and revision, second says `fallback`) | Both answered with the refreshed progress; one row, `completed`, earliest time |
+| Step key `bad key!` | Ignored, no reply |
+| `flow-reset` while the page is in student mode | `host-flow-progress { error: "readonly" }`, nothing deleted |
+| `request-quiz-result` for a quiz with no attempts, a hidden-grade quiz, an unknown cmid | zeros and nulls; zeros and nulls; `not_found` |
+| `embed-ready` | `host-init` has no progress or quiz data |
+| Attempt in progress | `inProgress: true`, `attempts: 1`, `finishedAttempts: 0` |
+| Finish the attempt in the overlay, close it | The host sends only `host-state` and `host-overlay { open: false }`; the app asks again and gets `finishedAttempts: 1`, `percent: 100`, `passedThreshold: true` |
+| Quiz with a password | The password form appears inside the overlay and the attempt starts there |
+| Quiz with a time limit | The view page shows the limit in the overlay; **the attempt was not started in this run** |
+| Quiz with "Full screen popup with some JavaScript security" | The "Attempt quiz" button calls `window.open` (a separate window); the overlay stays on the view page. **Not supported inside the overlay.** |
+| Privacy | Context found for the user, rows deleted by `delete_data_for_user` on the live site; export, user-list and course deletes by PHPUnit |
+| Upgrade | Table dropped and version set back to 0.5.1: the upgrade step recreates the table and both indexes |
+
+PHPUnit covers the access control and every guard (guest, "log in as", user outside the course, hidden item, hidden grade,
+hidden until a date, review options, course hiding grades, no grade view capability, no attempts, in progress, abandoned,
+preview, pending manual grading, the four grading methods), the row cap, the idempotence, the rate limit, the
+reset capabilities and that no answer holds data about other users.
+
+**To run the matrix by hand:** a student (progress persists, quiz result appears), a teacher in editor mode (reset works),
+a guest (`persistent: false`, writes answered `readonly`), "Log in as" a student (same), a quiz whose grade is hidden
+(`percent` and `passedThreshold` are `null`), a quiz with a password (works in the overlay), the secure window quiz
+(opens a separate window).
+
+**Not verified.** (1) The real Rumbos app and a real iframe: all messages were injected. (2) The privacy **export**
+on the live site (the writer only runs under PHPUnit in a plain CLI script); (3) a time-limited attempt inside the overlay,
+including its expiry; (4) Behat; (5) Moodle 5.3 and MariaDB (only 5.2.4 with PostgreSQL ran).
