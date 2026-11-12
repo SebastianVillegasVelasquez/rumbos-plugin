@@ -1,6 +1,6 @@
 # Lifecycle: install, upgrade, uninstall, deletion
 
-The plugin stores **no personal data and no maps** in Moodle's database. Its only
+The plugin stores **no maps** in Moodle's database. The only personal data it keeps is the welcome-flow progress of each user (table `format_rumbos_flow`), which is deleted with its course or user and is not part of backups. Its only
 persistent state is plugin configuration (`config_plugins`, component
 `format_rumbos`):
 

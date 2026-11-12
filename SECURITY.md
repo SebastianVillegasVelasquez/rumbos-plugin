@@ -149,6 +149,30 @@ activity. The design keeps this to aggregates:
   for, which is the point; a hostile app could ask repeatedly, and the host answers at most one
   server call per group every 2 seconds.
 
+## Welcome flow progress and quiz results
+
+Moodle records which step of a welcome flow each user completed (`format_rumbos_flow`: course, user, map, step,
+revision, method, time). This is **personal data inside Moodle**, declared and handled by the privacy provider (export,
+deletion per course, user and user list) and deleted with its course or user; it is not sent to the Rumbos service and not
+included in backups.
+
+- **The client decides nothing.** The functions take no user id except the reset, which needs
+  `format/rumbos:resetflow` for anybody but the caller. Every value (map UUID, step pattern, revision range, method) is
+  checked again on the server. What a client reports about its own progress is a convenience; no authority decision may
+  rest on it. The planned exemption (auto-completion, certificates) must be decided server-side in Moodle.
+- **No progress for a guest or for "log in as".** The answer is `readonly` (no exception), and the app is told
+  `persistent: false`, so an administrator looking at a student's page cannot write progress in the student's name.
+- **Limits.** 30 writes a minute per user (a counter per user and minute in an application cache) and 500 rows per user and
+  course. Both are brakes, not hard guarantees: two requests at the very same moment may both pass.
+- **Quiz results never say more than Moodle does.** The grade is withheld (and so is the pass/fail outcome, which would
+  reveal it) when the course hides grades, the user may not view grades, the grade or item is hidden or hidden until a date,
+  or the quiz's review options do not show marks. See the README for what is and is not honoured. A hidden grade was
+  checked for the item, the single grade and both "until" forms.
+- **Only the current user's data** is in any answer, and it is sent to the app's origin only, on request: never in
+  `host-init` or `host-state`, and not when the activity overlay closes.
+- Residual risk: the app, being a third party page, learns the progress and quiz result of whoever uses it, which is the
+  point; a hostile app could ask repeatedly, and the host joins requests in flight while the server limits writes.
+
 ## Opening an activity's settings
 
 `rumbos:open-activity-settings { cmid }` lets a teacher editing the map jump to an activity's
