@@ -14,7 +14,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.6).
+ * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.8).
  *
  * Nothing here touches the DOM or Moodle APIs, so it can be unit tested with
  * plain Node (see tests/js).
@@ -34,6 +34,10 @@ export const MESSAGE = {
     OPEN_ACTIVITY_SETTINGS: 'rumbos:open-activity-settings',
     REQUEST_FULLSCREEN: 'rumbos:request-fullscreen',
     REQUEST_STATS: 'rumbos:request-stats',
+    REQUEST_FLOW_PROGRESS: 'rumbos:request-flow-progress',
+    FLOW_STEP_DONE: 'rumbos:flow-step-done',
+    REQUEST_QUIZ_RESULT: 'rumbos:request-quiz-result',
+    FLOW_RESET: 'rumbos:flow-reset',
     ERROR: 'rumbos:error',
     NO_CONTENT: 'rumbos:no-content',
     PREFERRED_SIZE: 'rumbos:preferred-size',
@@ -43,6 +47,8 @@ export const MESSAGE = {
     HOST_FULLSCREEN: 'rumbos:host-fullscreen',
     HOST_STATS: 'rumbos:host-stats',
     HOST_OVERLAY: 'rumbos:host-overlay',
+    HOST_FLOW_PROGRESS: 'rumbos:host-flow-progress',
+    HOST_QUIZ_RESULT: 'rumbos:host-quiz-result',
 };
 
 /**
@@ -61,6 +67,24 @@ export const NO_CONTENT_REASONS = ['no_saved_map', 'empty_map'];
 
 /** Errors the host may answer a statistics request with (contract v5.7). */
 export const STATS_ERRORS = ['capability', 'unavailable'];
+
+/** How a welcome-flow step may have been completed (contract v5.8). */
+export const FLOW_METHODS = ['completed', 'fallback', 'unavailable'];
+
+/** Errors the host may answer a flow progress request with (contract v5.8). */
+export const FLOW_ERRORS = ['readonly', 'unavailable'];
+
+/** Errors the host may answer a quiz result request with (contract v5.8). */
+export const QUIZ_ERRORS = ['not_found', 'unavailable', 'capability'];
+
+/** A map id is a UUID; the host treats it as opaque text (contract v5.8). */
+export const MAP_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A step key: letters, digits, "_" and "-", at most 16 (contract v5.8). */
+export const STEP_KEY_PATTERN = /^[A-Za-z0-9_-]{1,16}$/;
+
+/** The highest revision of a step the host accepts (contract v5.8). */
+export const MAX_REVISION = 1000000;
 
 /** Range of the aspect ratio (width / height) the app may prefer (contract v5.5). */
 export const ASPECT_RATIO_RANGE = {min: 0.5, max: 4};
@@ -109,6 +133,30 @@ const isCmid = (cmid) => Number.isSafeInteger(cmid) && cmid > 0;
 const isGroupId = (groupId) => Number.isSafeInteger(groupId) && groupId >= 0;
 
 /**
+ * Whether a value is a map id.
+ *
+ * @param {*} mapId
+ * @returns {boolean}
+ */
+const isMapId = (mapId) => typeof mapId === 'string' && MAP_ID_PATTERN.test(mapId);
+
+/**
+ * Whether a value is a step key.
+ *
+ * @param {*} stepKey
+ * @returns {boolean}
+ */
+const isStepKey = (stepKey) => typeof stepKey === 'string' && STEP_KEY_PATTERN.test(stepKey);
+
+/**
+ * Whether a value is a revision in the accepted range.
+ *
+ * @param {*} revision
+ * @returns {boolean}
+ */
+const isRevision = (revision) => Number.isSafeInteger(revision) && revision >= 0 && revision <= MAX_REVISION;
+
+/**
  * What to keep of each message type the app may send, or null when its fields are not well formed.
  * Fields the app adds beyond these are dropped.
  */
@@ -123,6 +171,12 @@ const APP_MESSAGE_PARSERS = {
         const groupId = data.groupId ?? 0;
         return data.groupId !== null && isGroupId(groupId) ? {type: data.type, groupId} : null;
     },
+    [MESSAGE.REQUEST_FLOW_PROGRESS]: (data) => isMapId(data.mapId) ? {type: data.type, mapId: data.mapId} : null,
+    [MESSAGE.FLOW_STEP_DONE]: (data) => isMapId(data.mapId) && isStepKey(data.stepKey) && isRevision(data.revision) &&
+        FLOW_METHODS.includes(data.method) ?
+        {type: data.type, mapId: data.mapId, stepKey: data.stepKey, revision: data.revision, method: data.method} : null,
+    [MESSAGE.REQUEST_QUIZ_RESULT]: (data) => isCmid(data.cmid) ? {type: data.type, cmid: data.cmid} : null,
+    [MESSAGE.FLOW_RESET]: (data) => isMapId(data.mapId) ? {type: data.type, mapId: data.mapId} : null,
     [MESSAGE.ERROR]: (data) => ERROR_CODES.includes(data.code)
         ? {type: data.type, code: data.code, detail: cleanDetail(data.detail)}
         : null,
@@ -219,6 +273,104 @@ export const hostStatsError = (error) => ({type: MESSAGE.HOST_STATS, v: PROTOCOL
  * @returns {Object}
  */
 export const hostOverlay = (open) => ({type: MESSAGE.HOST_OVERLAY, v: PROTOCOL_VERSION, open});
+
+/**
+ * The host-flow-progress message: the current user's own progress on a map.
+ *
+ * It is built field by field from what Moodle answered, so nothing else that comes back can reach the app.
+ *
+ * @param {string} mapId The map the app asked about.
+ * @param {Object} reply What format_rumbos_get_flow_progress (or the write or the reset) returned.
+ * @returns {?Object} Null when the reply is not well formed.
+ */
+export const hostFlowProgress = (mapId, reply) => {
+    const threshold = reply?.config?.quizThreshold;
+    if (!Array.isArray(reply?.items) || typeof reply.persistent !== 'boolean' ||
+            !Number.isInteger(threshold) || threshold < 0 || threshold > 100) {
+        return null;
+    }
+    const items = [];
+    for (const item of reply.items) {
+        if (!isStepKey(item?.stepKey) || !isRevision(item.revision) || !FLOW_METHODS.includes(item.method) ||
+                typeof item.completedAt !== 'string') {
+            return null;
+        }
+        items.push({stepKey: item.stepKey, revision: item.revision, method: item.method, completedAt: item.completedAt});
+    }
+    return {
+        type: MESSAGE.HOST_FLOW_PROGRESS,
+        v: PROTOCOL_VERSION,
+        mapId,
+        items,
+        persistent: reply.persistent,
+        config: {quizThreshold: threshold},
+    };
+};
+
+/**
+ * The host-flow-progress message when there is no progress to give.
+ *
+ * @param {string} mapId
+ * @param {string} error One of FLOW_ERRORS.
+ * @returns {Object}
+ */
+export const hostFlowProgressError = (mapId, error) => ({
+    type: MESSAGE.HOST_FLOW_PROGRESS,
+    v: PROTOCOL_VERSION,
+    mapId,
+    error: FLOW_ERRORS.includes(error) ? error : 'unavailable',
+});
+
+/**
+ * Whether a value is a finite number or null.
+ *
+ * @param {*} value
+ * @returns {boolean}
+ */
+const isNumberOrNull = (value) => value === null || (typeof value === 'number' && Number.isFinite(value));
+
+/**
+ * The host-quiz-result message: the current user's own result in a quiz.
+ *
+ * @param {number} cmid The quiz the app asked about.
+ * @param {Object} result What format_rumbos_get_quiz_result returned.
+ * @returns {?Object} Null when the result is not well formed.
+ */
+export const hostQuizResult = (cmid, result) => {
+    const counts = [result?.attempts, result?.finishedAttempts];
+    if (!counts.every((count) => Number.isSafeInteger(count) && count >= 0) ||
+            typeof result.inProgress !== 'boolean' || typeof result.pendingGrading !== 'boolean' ||
+            !isNumberOrNull(result.percent) || !(result.passedThreshold === null || typeof result.passedThreshold === 'boolean')) {
+        return null;
+    }
+    return {
+        type: MESSAGE.HOST_QUIZ_RESULT,
+        v: PROTOCOL_VERSION,
+        cmid,
+        result: {
+            attempts: result.attempts,
+            finishedAttempts: result.finishedAttempts,
+            inProgress: result.inProgress,
+            percent: result.percent,
+            pendingGrading: result.pendingGrading,
+            passedThreshold: result.passedThreshold,
+        },
+    };
+};
+
+/**
+ * The host-quiz-result message when there is no result to give.
+ *
+ * @param {number} cmid
+ * @param {string} error One of QUIZ_ERRORS.
+ * @returns {Object}
+ */
+export const hostQuizResultError = (cmid, error) => ({
+    type: MESSAGE.HOST_QUIZ_RESULT,
+    v: PROTOCOL_VERSION,
+    cmid,
+    error: QUIZ_ERRORS.includes(error) ? error : 'unavailable',
+});
 
 /**
  * Path of the Moodle site without a trailing slash ("" for a site at the root of its host).
