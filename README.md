@@ -237,11 +237,13 @@ once). Otherwise the app gets `percent: null` and `passedThreshold: null` and sh
 enters editor mode with it (the `flow-reset` message is answered `readonly` otherwise), and the capability
 `format/rumbos:editmap`.
 
-**In the activity overlay.** The browser security of the entry quiz must be **None**: a quiz with the secure window setting
-does not work in the overlay (below). A quiz with a password (the form appears in the overlay), a time limit and the normal
-attempt, finish and review pages work. A quiz with the **"Full screen popup with some JavaScript security"** browser
-security setting asks Moodle to open the attempt in a separate browser window, so it is **not supported inside the
-overlay**: use "None" for the entry quiz. A time limit keeps running while the overlay is closed, and an attempt that has run out of time stays
+**In the activity overlay.** Use browser security **None** for the entry quiz. A quiz with a password (the form appears in
+the overlay), a time limit and the normal attempt, finish and review pages work inside the overlay. A quiz with the
+**"Full screen popup with some JavaScript security"** setting (`securewindow`) also completes in the overlay, but in a
+different way: Moodle opens the attempt in a **separate browser window**, and the overlay frame stays on the quiz page
+and reloads when the student finishes. That needs the browser to allow the popup and the overlay to stay open until the
+student finishes; see [SECURE-WINDOW-QUIZZES.md](docs/SECURE-WINDOW-QUIZZES.md) for the verified cause and the limits.
+A time limit keeps running while the overlay is closed, and an attempt that has run out of time stays
 "in progress" until Moodle's cron or the next view of the quiz submits it. Closing the overlay does not push the result; the app asks again.
 
 **Backup and restore.** The progress is **not** included in course backups in this phase: a restored or duplicated course

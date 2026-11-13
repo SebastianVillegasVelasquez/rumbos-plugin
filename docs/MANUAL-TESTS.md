@@ -383,7 +383,7 @@ carried the app's origin). The fake app server and the seed script were kept out
 | Finish the attempt in the overlay, close it | The host sends only `host-state` and `host-overlay { open: false }`; the app asks again and gets `finishedAttempts: 1`, `percent: 100`, `passedThreshold: true` |
 | Quiz with a password | The password form appears inside the overlay and the attempt starts there |
 | Quiz with a time limit (5 minutes) | Works in the overlay; see the next section |
-| Quiz with "Full screen popup with some JavaScript security" | The "Attempt quiz" button calls `window.open` (a separate window); the overlay stays on the view page. **Not supported inside the overlay.** |
+| Quiz with "Full screen popup with some JavaScript security" | **Correction (see [SECURE-WINDOW-QUIZZES.md](SECURE-WINDOW-QUIZZES.md)):** the button opens a separate window, and the attempt can be completed there; finishing reloads the overlay frame and closes the window. The earlier "not supported" was a conclusion from seeing the overlay stay on the view page, not a failure. It does fail if the overlay frame is sandboxed without `allow-popups`, and the popup navigates to the quiz page instead of closing if the overlay was closed first |
 | Privacy | Context found for the user, rows deleted by `delete_data_for_user` on the live site; export, user-list and course deletes by PHPUnit |
 | Upgrade | Table dropped and version set back to 0.5.1: the upgrade step recreates the table and both indexes |
 
