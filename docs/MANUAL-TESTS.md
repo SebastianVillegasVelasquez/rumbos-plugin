@@ -401,6 +401,30 @@ a guest (`persistent: false`, writes answered `readonly`), "Log in as" a student
 on the live site (the writer only runs under PHPUnit in a plain CLI script); (3) the expiry of an attempt with Moodle's
 cron running (the dev site has no cron); (4) Behat; (5) Moodle 5.3 and MariaDB (only 5.2.4 with PostgreSQL ran).
 
+### Teacher, manager and administrator finishing the check-in quiz, and finishing without submitting (release 0.6.0)
+
+Moodle 5.2.4+ (`0c7a1c05f`), PostgreSQL 17, the dev site with one quiz set like the production one (browser security None, no
+password, no time limit, unlimited attempts, "Highest grade", deferred feedback). The real HTTP flow (login, `startattempt.php`,
+`processattempt.php`, the AJAX service) for `student1` and `teacher1`; the other accounts through the same core functions
+those pages call. The table of every account and the core references is in [QUIZ-PREVIEW-ATTEMPTS.md](QUIZ-PREVIEW-ATTEMPTS.md).
+
+| Case | Rows in `quiz_attempts` | Result of `format_rumbos_get_quiz_result` |
+| --- | --- | --- |
+| Student finishes | `finished`, preview 0 | `finishedAttempts: 1`, `percent: 100`, `reason: ok`, `canAttempt: true`, `previewAttempts: 0` |
+| Student presses "Finish attempt ..." and **stops there** | `inprogress`, preview 0 | `finishedAttempts: 0`, `inProgress: true`, `reason: in_progress` |
+| Editing teacher finishes | `finished`, **preview 1** | `finishedAttempts: 0`, `previewAttempts: 1`, `canAttempt: false`, `reason: cannot_attempt` |
+| Non-editing teacher, manager finish | `finished`, **preview 1** | the same as the editing teacher |
+| Site administrator finishes | `finished`, **preview 1** | `finishedAttempts: 0`, `previewAttempts: 1`, `canAttempt: true`, `reason: preview_only` |
+| Student and teacher roles in one course | `finished`, **preview 1** | `finishedAttempts: 0`, `reason: preview_only` |
+| Teacher or administrator with the role switched to Student, finishes | `finished`, preview 0 | `finishedAttempts: 1`, `reason: ok` |
+| Administrator with an earlier **open preview**, then switches and finishes | the preview is resumed and finished, preview 1 | `finishedAttempts: 0`, `reason: preview_only` |
+| Teacher starts a second time | the earlier preview is **deleted** and a new one starts | `previewAttempts: 1` (never grows) |
+
+**To run it by hand:** open the quiz as a student (button "Attempt quiz now"), as a teacher (button "Preview quiz now"), press
+"Finish attempt ..." and "Submit all and finish", and compare `request-quiz-result` or `cli/quiz_check.php --cmid=<id>
+--username=<user>`. **Not verified:** the Rumbos app showing the reason (out of scope here), Moodle 5.3 and MariaDB, the Moodle
+**"Log in as"** attempts, and a production Moodle.
+
 ### A time-limited attempt in the overlay
 
 Quiz with a 5 minute limit and "Open attempts are submitted automatically" (the default). The student starts the attempt in

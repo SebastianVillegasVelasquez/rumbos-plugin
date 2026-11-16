@@ -9,6 +9,11 @@
   the host messages of contract v5.8.
 - `format_rumbos_get_quiz_result`: the student's own result in a quiz (attempts, finished attempts, an open
   attempt, percentage, pending grading and the outcome against the course threshold), never more than Moodle shows them.
+- Contract v5.9: the quiz result says why it is what it is. `previewAttempts`, `canAttempt` and `reason` (`ok`,
+  `no_attempts`, `in_progress`, `preview_only`, `cannot_attempt`, `not_graded_yet`) are added to it; the v5.8 fields are
+  unchanged and previews are still never counted as attempts. A teacher, manager or administrator who finishes the check-in
+  quiz has a preview, not an attempt, and the app can now be told so. See `docs/QUIZ-PREVIEW-ATTEMPTS.md`.
+- `cli/quiz_check.php`: a read-only command line check, for the site administrator, of why a user's quiz result is what it is.
 - Capability `format/rumbos:resetflow` (editing teacher and manager).
 - Course option "Entry quiz result threshold (%)" (0 to 100, default 80).
 - Privacy provider with metadata, export and deletion, and observers that delete the progress with its course or user.

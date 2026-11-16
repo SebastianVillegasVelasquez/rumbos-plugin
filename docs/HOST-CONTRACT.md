@@ -2,8 +2,8 @@
 
 What the Moodle page (the host) and the Rumbos app, which runs in an iframe, say to each
 other, and what each side may rely on. The app side is implemented in the Rumbos frontend
-against this document. This is **contract v5.8**: everything from v5 to v5.7 is unchanged
-and v5.8 only adds to it.
+against this document. This is **contract v5.9**: everything from v5 to v5.8 is unchanged
+and v5.9 only adds to it.
 
 All messages are `window.postMessage` objects with `v: 1`. The host ignores any message
 that does not come from the configured app origin **and** from the iframe's own window,
@@ -34,7 +34,7 @@ would follow.
 | host to app | `rumbos:host-fullscreen` | `on` | The full screen mode **as it is now**. |
 | host to app | `rumbos:host-stats` | `stats` or `error` | **v5.7.** The answer to `request-stats`: the counts, or `error` (`capability` or `unavailable`). Never sent unasked. |
 | host to app | `rumbos:host-flow-progress` | `items`, `persistent`, `config` or `error` | **v5.8.** The answer to `request-flow-progress`, `flow-step-done` and `flow-reset`. Never sent unasked. |
-| host to app | `rumbos:host-quiz-result` | `result` or `error` | **v5.8.** The answer to `request-quiz-result`. Never sent unasked. |
+| host to app | `rumbos:host-quiz-result` | `result` or `error` | **v5.8.** The answer to `request-quiz-result`. Never sent unasked. `result` gains `previewAttempts`, `canAttempt` and `reason` in v5.9. |
 | host to app | `rumbos:host-overlay` | `open` | An overlay (the activity popup) is above the map or has gone. |
 
 ### Completion statistics (v5.7)
@@ -95,7 +95,10 @@ host -> app: { type: "rumbos:host-quiz-result", v: 1, cmid, result: QuizResult }
              | { type: "rumbos:host-quiz-result", v: 1, cmid, error: "not_found" | "unavailable" | "capability" }
 app -> host: { type: "rumbos:flow-reset", v: 1, mapId }     // editor mode only
 QuizResult = { attempts: int, finishedAttempts: int, inProgress: boolean, percent: number|null,
-               pendingGrading: boolean, passedThreshold: boolean|null }
+               pendingGrading: boolean, passedThreshold: boolean|null,
+               // v5.9, all three or none (see "Why a quiz result is what it is" below):
+               previewAttempts?: int, canAttempt?: boolean,
+               reason?: "ok" | "no_attempts" | "in_progress" | "preview_only" | "cannot_attempt" | "not_graded_yet" }
 ```
 
 - **Whose data.** Everything is about the **current user**; there is no user id in any message. The host
@@ -139,6 +142,53 @@ QuizResult = { attempts: int, finishedAttempts: int, inProgress: boolean, percen
    view of the quiz). The app must not read it as proof that the student is still working.
 
 What the activity overlay supports for the entry quiz is in [MANUAL-TESTS.md](MANUAL-TESTS.md#welcome-flow-progress-and-quiz-results-release-060).
+
+### Why a quiz result is what it is (v5.9)
+
+A number alone cannot tell the app, or the person giving support, **why** a student who believes they finished a
+quiz has `finishedAttempts: 0`. The usual cause is not a bug: Moodle records the attempts of anybody who holds
+`mod/quiz:preview` (a teacher, a manager, a site administrator, a user with both a student and a teacher role) as
+**previews**, which are not attempts, never reach the gradebook and are not counted. The evidence is in
+[QUIZ-PREVIEW-ATTEMPTS.md](QUIZ-PREVIEW-ATTEMPTS.md). `QuizResult` therefore gains three fields. They are
+**derived when the result is read**: nothing new is stored.
+
+| Field | Meaning |
+| --- | --- |
+| `previewAttempts` | The current user's own preview attempts in this quiz that were started. They are **never** added to `attempts` or `finishedAttempts`. |
+| `canAttempt` | The user holds `mod/quiz:attempt` in the activity. It is `false` for a teacher or a manager, and `true` for a student and for a site administrator. |
+| `reason` | One value, decided in the server by the precedence below. |
+
+**`reason`, first match wins.** The order is fixed and the app must not recompute it:
+
+| # | `reason` | When |
+| --- | --- | --- |
+| 1 | `cannot_attempt` | `canAttempt` is `false`. It wins over everything, including a finished attempt the user made earlier in another role. |
+| 2 | `ok` | At least one **real** attempt is finished and has its mark (`finishedAttempts` counts it). |
+| 3 | `in_progress` | A real attempt is open: in progress, or overdue and not yet submitted by Moodle. |
+| 4 | `not_graded_yet` | The finished real attempts all wait for manual grading, or an attempt was handed in and is not processed yet. |
+| 5 | `preview_only` | The user has previews and nothing else. |
+| 6 | `no_attempts` | None of the above. This includes a user whose only attempts were abandoned (`attempts` can then be above 0). |
+
+- **`ok` says nothing about the grade.** A hidden grade, a course that hides grades or review options that hide the marks
+  give `percent: null` and `passedThreshold: null` under any reason; `reason` is the same with the grade shown or hidden, so
+  it cannot give a hidden grade away. To gate a step on the quiz keep using `finishedAttempts` and `percent` as in v5.8;
+  use `reason` to **tell the user what to do**: `cannot_attempt` and `preview_only` mean "this account cannot complete the
+  quiz, use a student account", `in_progress` means "press **Submit all and finish**", `not_graded_yet` means "wait for the
+  teacher".
+- **An administrator** holds both capabilities, so `canAttempt` is `true`, but Moodle still makes the attempt a preview
+  (`mod/quiz:preview` decides, not the lack of `mod/quiz:attempt`): the reason is `preview_only` once one exists.
+- **A role switched to Student** (Moodle's "Switch role to...") removes `mod/quiz:preview` for that session, so the attempt is
+  real and the reason is `ok` or `in_progress`. An **earlier open preview** is resumed instead of starting a real attempt, so
+  a switched user who left a preview open finishes a preview (`preview_only`). A new attempt after it starts a real one and
+  deletes the earlier previews.
+- **Old apps.** Everything up to v5.8 is unchanged: the same six fields with the same names, order and values. The host sends
+  the three new fields **only when all are present and well formed**, otherwise the message has exactly the v5.8 shape. An app
+  that does not know them ignores them; a v5.9 app must treat their absence as "unknown", not as `ok`.
+- **Whose data.** `previewAttempts` and `canAttempt` are the user's **own** attempts and capability, checked for the activity
+  exactly as in v5.8 (`not_found` and `capability` are unchanged). No other user's data is in the answer.
+
+**For support.** The state behind a result can be read without the app with the administrator's command line script
+`cli/quiz_check.php` (see the README). It is read only: it logs and stores nothing.
 
 ### `courseName` in `rumbos:host-init` (v5.6)
 
