@@ -96,7 +96,8 @@ final class get_quiz_result_test extends \advanced_testcase {
 
         $this->assertSame('', $reply['error']);
         $this->assertSame(
-            ['attempts', 'finishedAttempts', 'inProgress', 'percent', 'pendingGrading', 'passedThreshold'],
+            ['attempts', 'finishedAttempts', 'inProgress', 'percent', 'pendingGrading', 'passedThreshold',
+                'previewAttempts', 'canAttempt', 'reason'],
             array_keys($reply['result'])
         );
         $this->assertSame(1, $reply['result']['finishedAttempts']);

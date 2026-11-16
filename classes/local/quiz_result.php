@@ -35,7 +35,13 @@ use mod_quiz\question\display_options;
  * The grade itself is the one the gradebook holds: it already follows the grading method of the quiz (highest,
  * average, first or last attempt) and any override a teacher made. Attempt states count as the quiz does:
  * only the "finished" state is a finished attempt; "in progress" and "overdue" mean one is open; "abandoned"
- * attempts and previews are ignored.
+ * attempts are ignored. A preview (an attempt of somebody who holds mod/quiz:preview, which Moodle flags in
+ * quiz_attempts.preview) is never a real attempt: it is not counted as one and it never reaches the gradebook,
+ * but it is counted apart in "previewAttempts", so that the result can say why a user who "finished" the quiz
+ * has no finished attempt.
+ *
+ * Besides the numbers the result carries a "reason" (see {@see self::reason()}) that tells the app, and whoever
+ * gives support, why the result is what it is. Everything is derived when it is read; nothing is stored.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
@@ -47,6 +53,24 @@ class quiz_result {
 
     /** @var string The user may not view the quiz. */
     public const ERROR_CAPABILITY = 'capability';
+
+    /** @var string The user has no mod/quiz:attempt in the activity: whatever they do there is not an attempt. */
+    public const REASON_CANNOT_ATTEMPT = 'cannot_attempt';
+
+    /** @var string At least one real attempt is finished and has its mark. */
+    public const REASON_OK = 'ok';
+
+    /** @var string A real attempt is open (in progress or overdue) and none is finished. */
+    public const REASON_IN_PROGRESS = 'in_progress';
+
+    /** @var string The finished attempts all wait for manual grading, or one was handed in and is not processed. */
+    public const REASON_NOT_GRADED_YET = 'not_graded_yet';
+
+    /** @var string The user has previews and nothing else. */
+    public const REASON_PREVIEW_ONLY = 'preview_only';
+
+    /** @var string There is no real attempt that is finished, open or waiting for grading. */
+    public const REASON_NO_ATTEMPTS = 'no_attempts';
 
     /**
      * The result of a user in a quiz.
@@ -87,53 +111,138 @@ class quiz_result {
      * @param \stdClass $course
      * @param \cm_info $cm
      * @param int $userid
-     * @return array attempts, finishedAttempts, inProgress, percent, pendingGrading, passedThreshold.
+     * @return array attempts, finishedAttempts, inProgress, percent, pendingGrading, passedThreshold (the contract up
+     *      to v5.8, unchanged) and previewAttempts, canAttempt, reason (v5.9).
      */
     private static function compute(\stdClass $course, \cm_info $cm, int $userid): array {
         global $DB;
 
         $quiz = $DB->get_record('quiz', ['id' => $cm->instance], '*', MUST_EXIST);
-        $attempts = array_filter(
-            quiz_get_user_attempts($quiz->id, $userid, 'all', false),
-            fn($attempt) => $attempt->state !== \mod_quiz\quiz_attempt::NOT_STARTED
-        );
+        $tally = self::tally((int) $quiz->id, $userid);
+        $canattempt = has_capability('mod/quiz:attempt', context_module::instance($cm->id), $userid);
 
-        $finished = [];
-        $inprogress = false;
-        $pending = false;
-        foreach ($attempts as $attempt) {
-            switch ($attempt->state) {
-                case \mod_quiz\quiz_attempt::FINISHED:
-                    $finished[] = $attempt;
-                    // A finished attempt with no mark is waiting for a teacher to grade some question.
-                    $pending = $pending || $attempt->sumgrades === null;
-                    break;
-                case \mod_quiz\quiz_attempt::IN_PROGRESS:
-                case \mod_quiz\quiz_attempt::OVERDUE:
-                    $inprogress = true;
-                    break;
-                case \mod_quiz\quiz_attempt::SUBMITTED:
-                    // Handed in but not yet processed: not finished, and the grade is not there yet.
-                    $pending = true;
-                    break;
-            }
-        }
-
-        $percent = $finished ? self::visible_percent($course, $quiz, $userid, $finished) : null;
+        $percent = $tally['finished'] ? self::percent($course, $quiz, $userid, $tally['finishedrows'])[0] : null;
         $threshold = flow_config::get_quiz_threshold((int) $course->id);
         $passed = null;
-        if ($threshold > 0 && $percent !== null && !$pending) {
+        if ($threshold > 0 && $percent !== null && !$tally['pending']) {
             $passed = $percent >= $threshold;
         }
 
         return [
-            'attempts' => count($attempts),
-            'finishedAttempts' => count($finished),
-            'inProgress' => $inprogress,
+            'attempts' => $tally['attempts'],
+            'finishedAttempts' => $tally['finished'],
+            'inProgress' => $tally['inprogress'] + $tally['overdue'] > 0,
             'percent' => $percent,
-            'pendingGrading' => $pending,
+            'pendingGrading' => $tally['pending'],
             'passedThreshold' => $passed,
+            'previewAttempts' => $tally['previews'],
+            'canAttempt' => $canattempt,
+            'reason' => self::reason($canattempt, $tally),
         ];
+    }
+
+    /**
+     * Counts the attempts of a user in a quiz by what they are.
+     *
+     * Real attempts and previews are kept apart; an attempt that was never started is neither.
+     *
+     * @param int $quizid
+     * @param int $userid
+     * @return array attempts (real attempts, not counting the unstarted), finished, pendingfinished (finished with no
+     *      mark yet), inprogress, overdue, submitted, abandoned, previews, pending (the flag of the contract) and
+     *      finishedrows (the finished real attempts).
+     */
+    private static function tally(int $quizid, int $userid): array {
+        $tally = [
+            'attempts' => 0, 'finished' => 0, 'pendingfinished' => 0, 'inprogress' => 0, 'overdue' => 0,
+            'submitted' => 0, 'abandoned' => 0, 'previews' => 0, 'pending' => false, 'finishedrows' => [],
+        ];
+        foreach (quiz_get_user_attempts($quizid, $userid, 'all', true) as $attempt) {
+            if ($attempt->state === \mod_quiz\quiz_attempt::NOT_STARTED) {
+                continue;
+            }
+            if (!empty($attempt->preview)) {
+                $tally['previews']++;
+                continue;
+            }
+            $tally['attempts']++;
+            switch ($attempt->state) {
+                case \mod_quiz\quiz_attempt::FINISHED:
+                    $tally['finished']++;
+                    $tally['finishedrows'][] = $attempt;
+                    // A finished attempt with no mark is waiting for a teacher to grade some question.
+                    if ($attempt->sumgrades === null) {
+                        $tally['pendingfinished']++;
+                        $tally['pending'] = true;
+                    }
+                    break;
+                case \mod_quiz\quiz_attempt::IN_PROGRESS:
+                    $tally['inprogress']++;
+                    break;
+                case \mod_quiz\quiz_attempt::OVERDUE:
+                    $tally['overdue']++;
+                    break;
+                case \mod_quiz\quiz_attempt::SUBMITTED:
+                    // Handed in but not yet processed: not finished, and the grade is not there yet.
+                    $tally['submitted']++;
+                    $tally['pending'] = true;
+                    break;
+                case \mod_quiz\quiz_attempt::ABANDONED:
+                    $tally['abandoned']++;
+                    break;
+            }
+        }
+        return $tally;
+    }
+
+    /**
+     * Why the result is what it is: the first of these that holds.
+     *
+     *  1. cannot_attempt: the user has no mod/quiz:attempt in the activity (a teacher, a manager, a role without it);
+     *  2. ok: a real attempt is finished and has its mark;
+     *  3. in_progress: a real attempt is open (in progress or overdue);
+     *  4. not_graded_yet: the finished real attempts all wait for manual grading, or one was handed in and is not
+     *     processed yet;
+     *  5. preview_only: the user has previews and nothing else;
+     *  6. no_attempts: none of the above, which includes a user whose only attempts were abandoned.
+     *
+     * The reason says nothing about the grade: "ok" can come with a null percentage (a hidden grade).
+     *
+     * @param bool $canattempt Whether the user holds mod/quiz:attempt in the activity.
+     * @param array $tally What {@see self::tally()} returned.
+     * @return string One of the REASON_ constants.
+     */
+    public static function reason(bool $canattempt, array $tally): string {
+        if (!$canattempt) {
+            return self::REASON_CANNOT_ATTEMPT;
+        }
+        if ($tally['finished'] > $tally['pendingfinished']) {
+            return self::REASON_OK;
+        }
+        if ($tally['inprogress'] + $tally['overdue'] > 0) {
+            return self::REASON_IN_PROGRESS;
+        }
+        if ($tally['finished'] + $tally['submitted'] > 0) {
+            return self::REASON_NOT_GRADED_YET;
+        }
+        if ($tally['previews'] > 0) {
+            return self::REASON_PREVIEW_ONLY;
+        }
+        return self::REASON_NO_ATTEMPTS;
+    }
+
+    /**
+     * The gradebook item of the quiz and the user's grade in it.
+     *
+     * @param \stdClass $course
+     * @param \stdClass $quiz
+     * @param int $userid
+     * @return array [item, grade]; either can be null.
+     */
+    private static function gradebook_entry(\stdClass $course, \stdClass $quiz, int $userid): array {
+        $grades = grade_get_grades($course->id, 'mod', 'quiz', $quiz->id, $userid);
+        $item = $grades->items[0] ?? null;
+        return [$item, $item->grades[$userid] ?? null];
     }
 
     /**
@@ -143,37 +252,42 @@ class quiz_result {
      * @param \stdClass $quiz
      * @param int $userid
      * @param \stdClass[] $finished The user's finished attempts; not empty.
-     * @return float|null 0 to 100, with two decimals.
+     * @return array [percent, withheldby]: percent is 0 to 100 with two decimals, or null; withheldby is empty
+     *      when there is a percentage, else the first check that held it back (for support, never sent to the app).
      */
-    private static function visible_percent(\stdClass $course, \stdClass $quiz, int $userid, array $finished): ?float {
-        if (empty($course->showgrades) || !has_capability('moodle/grade:view', context_course::instance($course->id), $userid)) {
-            return null;
+    private static function percent(\stdClass $course, \stdClass $quiz, int $userid, array $finished): array {
+        if (empty($course->showgrades)) {
+            return [null, 'course_hides_grades'];
+        }
+        if (!has_capability('moodle/grade:view', context_course::instance($course->id), $userid)) {
+            return [null, 'cannot_view_grades'];
         }
         if (!quiz_has_grades($quiz)) {
-            return null;
+            return [null, 'quiz_ungraded'];
         }
 
         // The marks must be showable for every finished attempt, as the quiz page requires for the final grade.
         [, $alloptions] = quiz_get_combined_reviewoptions($quiz, $finished);
         if ($alloptions->marks < display_options::MARK_AND_MAX) {
-            return null;
+            return [null, 'review_options_hide_marks'];
         }
 
-        $grades = grade_get_grades($course->id, 'mod', 'quiz', $quiz->id, $userid);
-        $item = $grades->items[0] ?? null;
-        $grade = $item->grades[$userid] ?? null;
-        if (!$item || !$grade || $item->hidden || $grade->hidden) {
-            return null;
+        [$item, $grade] = self::gradebook_entry($course, $quiz, $userid);
+        if (!$item || !$grade) {
+            return [null, 'no_grade_yet'];
+        }
+        if ($item->hidden || $grade->hidden) {
+            return [null, 'grade_hidden'];
         }
         // Null when there is no grade yet, false when the gradebook failed to compute it.
         if ($grade->grade === null || $grade->grade === false) {
-            return null;
+            return [null, 'no_grade_yet'];
         }
         $range = (float) $item->grademax - (float) $item->grademin;
         if ($range <= 0) {
-            return null;
+            return [null, 'no_grade_range'];
         }
         $percent = ((float) $grade->grade - (float) $item->grademin) / $range * 100;
-        return round(min(100.0, max(0.0, $percent)), 2);
+        return [round(min(100.0, max(0.0, $percent)), 2), ''];
     }
 }
