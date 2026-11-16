@@ -883,6 +883,154 @@ final class quiz_result_test extends \advanced_testcase {
     }
 
     /**
+     * The check support reads: the capabilities, the attempts by state, the hidden-grade flag and the reason.
+     */
+    public function test_the_check_for_support(): void {
+        global $DB;
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $this->attempt($quiz, $student, 1, 'finish');
+        $this->attempt($quiz, $student, 2, 'inprogress');
+        $this->attempt($quiz, $student, 3, 'abandon');
+        $this->attempt($quiz, $student, 4, 'preview');
+        $this->attempt($quiz, $student, 5, 'inprogress');
+        $DB->set_field('quiz_attempts', 'state', quiz_attempt::OVERDUE, ['quiz' => $quiz->id, 'attempt' => 5]);
+        $this->grade_item($course, $quiz)->set_hidden(1);
+
+        $reply = quiz_result::diagnose($course->id, $cmid, $student->id, get_admin()->id);
+
+        $this->assertSame('', $reply['error']);
+        $check = $reply['check'];
+        $this->assertSame(
+            ['finished' => 1, 'inprogress' => 1, 'overdue' => 1, 'submitted' => 0, 'abandoned' => 1, 'preview' => 1],
+            $check['counts']
+        );
+        $this->assertTrue($check['canAttempt']);
+        $this->assertFalse($check['canPreview']);
+        $this->assertTrue($check['enrolled']);
+        $this->assertTrue($check['visible']);
+        $this->assertTrue($check['hiddenGrade']);
+        $this->assertSame('grade_hidden', $check['percentWithheldBy']);
+        $this->assertSame('ok', $check['reason']);
+        $this->assertSame($this->ok($course, $quiz, $student), $check['contract']['result'], 'the same answer the app gets');
+    }
+
+    /**
+     * The check tells a teacher's preview from a student's attempt, which is the point of it.
+     */
+    public function test_the_check_sees_a_teacher_with_previews(): void {
+        [$course, $quiz] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $teacher = $this->enrol_teacher($course);
+        $this->setUser($teacher);
+        $this->attempt_like_the_web($quiz, true);
+
+        $check = quiz_result::diagnose($course->id, $cmid, $teacher->id, get_admin()->id)['check'];
+
+        $this->assertSame(1, $check['counts']['preview']);
+        $this->assertSame(0, $check['counts']['finished']);
+        $this->assertFalse($check['canAttempt']);
+        $this->assertTrue($check['canPreview']);
+        $this->assertSame('cannot_attempt', $check['reason']);
+    }
+
+    /**
+     * A user who is not enrolled, or to whom the quiz is hidden, is told apart.
+     */
+    public function test_the_check_sees_enrolment_and_visibility(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $outsider = $this->getDataGenerator()->create_user();
+        set_coursemodule_visible($cmid, 0);
+
+        $asstudent = quiz_result::diagnose($course->id, $cmid, $student->id, get_admin()->id)['check'];
+        $asoutsider = quiz_result::diagnose($course->id, $cmid, $outsider->id, get_admin()->id)['check'];
+
+        $this->assertFalse($asstudent['visible']);
+        $this->assertTrue($asstudent['enrolled']);
+        $this->assertFalse($asoutsider['enrolled']);
+        $this->assertSame(['error' => 'not_found', 'result' => null], $asstudent['contract']);
+    }
+
+    /**
+     * Only somebody who may see grades or edit the course can ask about another user.
+     */
+    public function test_the_check_is_for_graders_and_editors_only(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $other = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $outsider = $this->getDataGenerator()->create_user();
+        $teacher = $this->enrol_teacher($course);
+        $nonediting = $this->enrol_teacher($course, 'teacher');
+
+        foreach ([$other, $outsider, $student] as $viewer) {
+            try {
+                quiz_result::diagnose($course->id, $cmid, $student->id, $viewer->id);
+                $this->fail('a user who may not see grades or edit the course got the check');
+            } catch (\required_capability_exception $e) {
+                $this->assertTrue(true);
+            }
+        }
+        foreach ([$teacher, $nonediting] as $viewer) {
+            $this->assertSame('', quiz_result::diagnose($course->id, $cmid, $student->id, $viewer->id)['error']);
+        }
+    }
+
+    /**
+     * Either capability is enough: editing the course without seeing grades, or seeing grades without editing.
+     */
+    public function test_the_check_needs_either_capability(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $coursecontext = \core\context\course::instance($course->id);
+
+        $editor = $this->getDataGenerator()->create_user();
+        $editorrole = $this->getDataGenerator()->create_role();
+        assign_capability('format/rumbos:editmap', CAP_ALLOW, $editorrole, \core\context\system::instance()->id);
+        $this->getDataGenerator()->enrol_user($editor->id, $course->id, $editorrole);
+        $this->assertFalse(has_capability('moodle/grade:viewall', $coursecontext, $editor->id), 'precondition');
+
+        $grader = $this->enrol_teacher($course, 'teacher');
+        $this->assertFalse(has_capability('format/rumbos:editmap', $coursecontext, $grader->id), 'precondition');
+        $this->assertTrue(has_capability('moodle/grade:viewall', $coursecontext, $grader->id), 'precondition');
+
+        foreach ([$editor, $grader] as $viewer) {
+            $this->assertSame('', quiz_result::diagnose($course->id, $cmid, $student->id, $viewer->id)['error']);
+        }
+    }
+
+    /**
+     * The check is a read: it stores nothing and logs nothing.
+     */
+    public function test_the_check_logs_nothing(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $this->attempt($quiz, $student, 1, 'finish');
+        global $DB;
+        $sink = $this->redirectEvents();
+        $tables = ['quiz_attempts', 'format_rumbos_flow', 'grade_grades', 'grade_items'];
+        $before = array_map(fn($table) => $DB->count_records($table), $tables);
+
+        quiz_result::diagnose($course->id, $cmid, $student->id, get_admin()->id);
+
+        $this->assertCount(0, $sink->get_events());
+        $this->assertSame($before, array_map(fn($table) => $DB->count_records($table), $tables));
+    }
+
+    /**
+     * A course module that is not a quiz of the course is "not found", not an exception.
+     */
+    public function test_the_check_of_something_that_is_not_a_quiz(): void {
+        [$course, , $student] = $this->setup_quiz();
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+
+        $this->assertSame(
+            ['error' => 'not_found', 'check' => null],
+            quiz_result::diagnose($course->id, $page->cmid, $student->id, get_admin()->id)
+        );
+    }
+
+    /**
      * The gradebook item of a quiz.
      *
      * @param \stdClass $course

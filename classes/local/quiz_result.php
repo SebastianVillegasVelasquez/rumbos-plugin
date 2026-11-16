@@ -106,6 +106,71 @@ class quiz_result {
     }
 
     /**
+     * What the support person needs to know about why a user's quiz result is what it is.
+     *
+     * It is about ANOTHER user, so it is for people who may see other users' grades or edit the course: the viewer
+     * needs moodle/grade:viewall or format/rumbos:editmap in the course, or this throws. It reads only; nothing is
+     * logged or stored.
+     *
+     * @param int $courseid
+     * @param int $cmid
+     * @param int $subjectid The user the question is about.
+     * @param int $viewerid The user who asks.
+     * @return array {error: string, check: ?array}; error is empty when there is a check. The check holds the access
+     *      of the user to the quiz, the attempts by state, whether the grade is hidden, why a percentage is withheld
+     *      (empty when it is not), the reason, and "contract": what {@see self::for_user()} answers for that user.
+     *      Capabilities are the user's own, so a role switched in a browser session is not seen from here.
+     * @throws \required_capability_exception When the viewer may neither see grades nor edit the course.
+     */
+    public static function diagnose(int $courseid, int $cmid, int $subjectid, int $viewerid): array {
+        global $CFG, $DB;
+
+        require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+        require_once($CFG->libdir . '/gradelib.php');
+
+        $coursecontext = context_course::instance($courseid);
+        if (!has_any_capability(['moodle/grade:viewall', 'format/rumbos:editmap'], $coursecontext, $viewerid)) {
+            throw new \required_capability_exception($coursecontext, 'moodle/grade:viewall', 'nopermissions', '');
+        }
+        try {
+            [$course, $viewercm] = get_course_and_cm_from_cmid($cmid, 'quiz', $courseid, $viewerid);
+        } catch (\moodle_exception $e) {
+            return ['error' => self::ERROR_NOT_FOUND, 'check' => null];
+        }
+        $context = context_module::instance($viewercm->id);
+        $quiz = $DB->get_record('quiz', ['id' => $viewercm->instance], '*', MUST_EXIST);
+        $subjectcm = get_fast_modinfo($course, $subjectid)->get_cm($viewercm->id);
+
+        $tally = self::tally((int) $quiz->id, $subjectid);
+        $canattempt = has_capability('mod/quiz:attempt', $context, $subjectid);
+        [$item, $grade] = self::gradebook_entry($course, $quiz, $subjectid);
+        $withheld = $tally['finished'] ?
+            self::percent($course, $quiz, $subjectid, $tally['finishedrows'])[1] : 'no_finished_attempt';
+
+        return ['error' => '', 'check' => [
+            'quiz' => (int) $quiz->id,
+            'enrolled' => is_enrolled($coursecontext, $subjectid, '', true),
+            'canView' => has_capability('mod/quiz:view', $context, $subjectid),
+            'visible' => (bool) $subjectcm->uservisible,
+            'canAttempt' => $canattempt,
+            'canPreview' => has_capability('mod/quiz:preview', $context, $subjectid),
+            'counts' => [
+                'finished' => $tally['finished'],
+                'inprogress' => $tally['inprogress'],
+                'overdue' => $tally['overdue'],
+                'submitted' => $tally['submitted'],
+                'abandoned' => $tally['abandoned'],
+                'preview' => $tally['previews'],
+            ],
+            'pendingGrading' => $tally['pending'],
+            'hiddenGrade' => (bool) ($item && $item->hidden) || (bool) ($grade && $grade->hidden),
+            'percentWithheldBy' => $withheld,
+            'reason' => self::reason($canattempt, $tally),
+            'contract' => self::for_user($courseid, $cmid, $subjectid),
+        ]];
+    }
+
+    /**
      * Builds the QuizResult of the contract.
      *
      * @param \stdClass $course
