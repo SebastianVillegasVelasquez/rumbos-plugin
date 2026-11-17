@@ -39,4 +39,25 @@ class pseudonym {
     public static function for_user(int $userid): string {
         return substr(hash_hmac('sha256', (string) $userid, key_manager::get_hmac_secret()), 0, self::LENGTH);
     }
+
+    /**
+     * The user, among some candidates, whose pseudonym is the given one.
+     *
+     * The pseudonym cannot be turned back into a user id, so this computes the candidates' pseudonyms and compares
+     * them in constant time. The site secret is read once, not once per candidate.
+     *
+     * @param int[] $userids The candidates.
+     * @param string $pseudonym The pseudonym to find.
+     * @return int|null The user id, or null when no candidate has it.
+     */
+    public static function find(array $userids, string $pseudonym): ?int {
+        $secret = key_manager::get_hmac_secret();
+        foreach ($userids as $userid) {
+            $candidate = substr(hash_hmac('sha256', (string) $userid, $secret), 0, self::LENGTH);
+            if (hash_equals($candidate, $pseudonym)) {
+                return (int) $userid;
+            }
+        }
+        return null;
+    }
 }
