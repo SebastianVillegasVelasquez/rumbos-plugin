@@ -77,6 +77,9 @@ export const FLOW_ERRORS = ['readonly', 'unavailable'];
 /** Errors the host may answer a quiz result request with (contract v5.8). */
 export const QUIZ_ERRORS = ['not_found', 'unavailable', 'capability'];
 
+/** Why a quiz result is what it is: the values of its `reason` (contract v5.9). */
+export const QUIZ_REASONS = ['ok', 'no_attempts', 'in_progress', 'preview_only', 'cannot_attempt', 'not_graded_yet'];
+
 /** A map id is a UUID; the host treats it as opaque text (contract v5.8). */
 export const MAP_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -330,6 +333,23 @@ export const hostFlowProgressError = (mapId, error) => ({
 const isNumberOrNull = (value) => value === null || (typeof value === 'number' && Number.isFinite(value));
 
 /**
+ * The fields of contract v5.9 that say why a quiz result is what it is.
+ *
+ * They are all or none: a result without them, or with any of them malformed, is passed on in the v5.8 shape, so an
+ * app that does not know them sees exactly what it always saw.
+ *
+ * @param {Object} result What format_rumbos_get_quiz_result returned.
+ * @returns {Object} previewAttempts, canAttempt and reason, or an empty object.
+ */
+const quizExplanation = (result) => {
+    if (!Number.isSafeInteger(result.previewAttempts) || result.previewAttempts < 0 ||
+            typeof result.canAttempt !== 'boolean' || !QUIZ_REASONS.includes(result.reason)) {
+        return {};
+    }
+    return {previewAttempts: result.previewAttempts, canAttempt: result.canAttempt, reason: result.reason};
+};
+
+/**
  * The host-quiz-result message: the current user's own result in a quiz.
  *
  * @param {number} cmid The quiz the app asked about.
@@ -354,6 +374,7 @@ export const hostQuizResult = (cmid, result) => {
             percent: result.percent,
             pendingGrading: result.pendingGrading,
             passedThreshold: result.passedThreshold,
+            ...quizExplanation(result),
         },
     };
 };

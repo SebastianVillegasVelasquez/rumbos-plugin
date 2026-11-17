@@ -91,6 +91,15 @@ class get_quiz_result extends external_api {
                     null,
                     NULL_ALLOWED
                 ),
+                'previewAttempts' => new external_value(
+                    PARAM_INT,
+                    'Previews of the user in this quiz (attempts of somebody with mod/quiz:preview); never counted as attempts'
+                ),
+                'canAttempt' => new external_value(PARAM_BOOL, 'Whether the user holds mod/quiz:attempt in the activity'),
+                'reason' => new external_value(
+                    PARAM_ALPHAEXT,
+                    'Why: "ok", "no_attempts", "in_progress", "preview_only", "cannot_attempt" or "not_graded_yet"'
+                ),
             ], 'The result; absent when there is an error', VALUE_OPTIONAL),
         ]);
     }

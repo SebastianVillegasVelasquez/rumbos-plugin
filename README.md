@@ -205,7 +205,8 @@ stores nothing of its own: no table, no log entry. See the contract in
 
 The app can run a mandatory welcome flow (video, HTML, PDF, a Moodle quiz). The flow itself lives in the Rumbos
 service; **who completed which step lives in Moodle**, and nothing about a student's progress or quiz result is sent to
-the service. The contract is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md#welcome-flow-progress-and-quiz-results-v58).
+the service. The contract is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md#welcome-flow-progress-and-quiz-results-v58)
+(v5.8) and [why a quiz result is what it is](docs/HOST-CONTRACT.md#why-a-quiz-result-is-what-it-is-v59) (v5.9).
 
 | What | Where |
 | --- | --- |
@@ -213,6 +214,8 @@ the service. The contract is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md#we
 | Capability `format/rumbos:resetflow` | In the course: editing teacher and manager by default. Needed to reset **another** user's progress; resetting your own needs `format/rumbos:editmap`. |
 | Course option "Entry quiz result threshold (%)" | In the course settings, 0 to 100, default 80. 0 means no branching on the result. Only someone who may update the course can change it. |
 | External functions | `format_rumbos_get_flow_progress`, `_set_flow_step_done`, `_reset_flow_progress`, `_get_quiz_result`. AJAX only, always about the current user; writes are limited to 30 a minute per user. |
+| Quiz result fields of v5.9 | `previewAttempts`, `canAttempt` and `reason` (`ok`, `no_attempts`, `in_progress`, `preview_only`, `cannot_attempt`, `not_graded_yet`), added to the v5.8 fields, which are unchanged. Derived when read; nothing is stored. |
+| `cli/quiz_check.php` | Read-only command line check, for the site administrator, of why a user's quiz result is what it is. See below. |
 
 Progress is not stored for a guest, for somebody who used "Log in as" and for a user who takes no part in the course
 (the app is told `persistent: false`). It is the client's own record of its progress, a convenience and not a security
@@ -229,6 +232,32 @@ correct answers), the "show total only if hidden items" category rules, and grou
 makes the activity visible to the user. The threshold outcome is `null` as well whenever the percentage is, or grading
 is pending, so it cannot give a hidden grade away.
 
+**Teachers, managers and administrators do not make attempts, they make previews.** Moodle flags an attempt as a *preview* when
+the user holds `mod/quiz:preview` (teacher, non-editing teacher, manager, site administrator, or any user who holds one of
+those roles next to the student one). A preview is not an attempt: it never reaches the gradebook, the quiz's own counts and
+reports leave it out, and so does the quiz result, which keeps them apart in `previewAttempts`. Somebody who finishes the
+entry quiz with such an account sees the step stay locked. `reason` says so (`cannot_attempt`, or `preview_only` for an
+administrator) and the app can tell them to use a student account, or Moodle's **Switch role to... Student** in the course
+before opening the quiz. An attempt left with "Finish attempt ..." but without "Submit all and finish" stays open
+(`reason: in_progress`). The evidence, with the core code and a table by account type, is in
+[docs/QUIZ-PREVIEW-ATTEMPTS.md](docs/QUIZ-PREVIEW-ATTEMPTS.md).
+
+**Reading the check in production.** Copy this version, then run **as the web server user, from the Moodle directory**:
+
+```
+php public/course/format/rumbos/cli/quiz_check.php --cmid=310 --username=<the evaluator's username>
+```
+
+(`--email=` or `--userid=` also work; `--json` prints JSON; Moodle before 5.1 has no `public/`, so drop it from the path.)
+It prints whether the user is enrolled and may view the quiz, `mod/quiz:attempt` and `mod/quiz:preview`, the attempts by
+state (finished, in progress, overdue, submitted, abandoned and **preview**), whether the grade is hidden and why a
+percentage is withheld, the reason, and the exact result the app receives. A line "mod/quiz:preview: yes" and a **preview**
+count above 0 confirm it. It changes, stores and logs nothing. Without installing it, the same is in the database (read
+only): `SELECT u.username, a.state, a.preview, a.timefinish FROM mdl_quiz_attempts a JOIN mdl_user u ON u.id = a.userid
+JOIN mdl_course_modules cm ON cm.instance = a.quiz AND cm.id = 310 ORDER BY a.timemodified DESC;` (`preview = 1` rows are
+previews; only the latest is kept per user, because a new attempt deletes the earlier previews). It sees the user's **own**
+roles: a role switched in a browser session is not visible from outside that session.
+
 **For the result to appear.** The entry quiz must show its grade to the student: the gradebook item and the grade are not
 hidden, and the quiz's review options show the marks after the attempt (and while it is open, if you want the result at
 once). Otherwise the app gets `percent: null` and `passedThreshold: null` and shows the neutral result.
@@ -237,11 +266,13 @@ once). Otherwise the app gets `percent: null` and `passedThreshold: null` and sh
 enters editor mode with it (the `flow-reset` message is answered `readonly` otherwise), and the capability
 `format/rumbos:editmap`.
 
-**In the activity overlay.** The browser security of the entry quiz must be **None**: a quiz with the secure window setting
-does not work in the overlay (below). A quiz with a password (the form appears in the overlay), a time limit and the normal
-attempt, finish and review pages work. A quiz with the **"Full screen popup with some JavaScript security"** browser
-security setting asks Moodle to open the attempt in a separate browser window, so it is **not supported inside the
-overlay**: use "None" for the entry quiz. A time limit keeps running while the overlay is closed, and an attempt that has run out of time stays
+**In the activity overlay.** Use browser security **None** for the entry quiz. A quiz with a password (the form appears in
+the overlay), a time limit and the normal attempt, finish and review pages work inside the overlay. A quiz with the
+**"Full screen popup with some JavaScript security"** setting (`securewindow`) also completes in the overlay, but in a
+different way: Moodle opens the attempt in a **separate browser window**, and the overlay frame stays on the quiz page
+and reloads when the student finishes. That needs the browser to allow the popup and the overlay to stay open until the
+student finishes; see [SECURE-WINDOW-QUIZZES.md](docs/SECURE-WINDOW-QUIZZES.md) for the verified cause and the limits.
+A time limit keeps running while the overlay is closed, and an attempt that has run out of time stays
 "in progress" until Moodle's cron or the next view of the quiz submits it. Closing the overlay does not push the result; the app asks again.
 
 **Backup and restore.** The progress is **not** included in course backups in this phase: a restored or duplicated course
@@ -508,8 +539,9 @@ the Rumbos service receives the pseudonymous id, the course id and the role, and
 user's browser connects to it directly, so it also sees the network address and
 browser details of that request. Both are declared through Moodle's privacy API. The completion
 counts for teachers are aggregates held only in a short-lived cache and handed to the browser;
-they are not personal data and are not sent to the service. Quiz results are read on request and handed to the
-student's own browser; they are not stored by the plugin.
+they are not personal data and are not sent to the service. Quiz results, including the explanation fields of
+contract v5.9, are derived when they are read and handed to the student's own browser; they are not stored by the plugin.
+The quiz check script reads a user's attempts for the site administrator and stores and logs nothing.
 Requests to export or delete data held by the service go to its operator. See
 [docs/LIFECYCLE.md](docs/LIFECYCLE.md) for what happens on install, uninstall and
 course deletion, and [SECURITY.md](SECURITY.md) for the threat model and how to

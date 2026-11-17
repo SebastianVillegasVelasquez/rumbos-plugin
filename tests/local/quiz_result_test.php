@@ -129,6 +129,7 @@ final class quiz_result_test extends \advanced_testcase {
         $this->assertSame([
             'attempts' => 0, 'finishedAttempts' => 0, 'inProgress' => false,
             'percent' => null, 'pendingGrading' => false, 'passedThreshold' => null,
+            'previewAttempts' => 0, 'canAttempt' => true, 'reason' => 'no_attempts',
         ], $this->ok($course, $quiz, $student));
     }
 
@@ -397,8 +398,10 @@ final class quiz_result_test extends \advanced_testcase {
         $this->assertSame(0, $mine['attempts']);
         $this->assertFalse($mine['inProgress']);
         $this->assertNull($mine['percent']);
+        $this->assertSame(0, $mine['previewAttempts']);
         $this->assertSame(
-            ['attempts', 'finishedAttempts', 'inProgress', 'percent', 'pendingGrading', 'passedThreshold'],
+            ['attempts', 'finishedAttempts', 'inProgress', 'percent', 'pendingGrading', 'passedThreshold',
+                'previewAttempts', 'canAttempt', 'reason'],
             array_keys($mine)
         );
     }
@@ -452,6 +455,579 @@ final class quiz_result_test extends \advanced_testcase {
 
         $this->assertNull($reply['result']);
         $this->assertContains($reply['error'], ['not_found', 'capability']);
+    }
+
+    /**
+     * Starts and finishes (or leaves open) an attempt the way the quiz pages do, as the user who is logged in.
+     *
+     * Whether it is a preview is then up to Moodle: the capability mod/quiz:preview of the current user decides, as it
+     * does in startattempt.php, and not anything the test says.
+     *
+     * @param \stdClass $quiz
+     * @param bool $finish Whether to hand it in ("Submit all and finish") or leave it open.
+     */
+    private function attempt_like_the_web(\stdClass $quiz, bool $finish): void {
+        global $USER;
+        $quizobj = quiz_settings::create($quiz->id, $USER->id);
+        $attempt = quiz_prepare_and_start_new_attempt($quizobj, 1, false);
+        $attemptobj = quiz_attempt::create($attempt->id);
+        $attemptobj->process_submitted_actions(time(), false, [1 => ['answer' => '3.14']]);
+        if ($finish) {
+            $attemptobj->process_attempt(time(), true, false, 0);
+        }
+    }
+
+    /**
+     * A user with a role that has mod/quiz:preview and not mod/quiz:attempt in the course of the quiz.
+     *
+     * @param \stdClass $course
+     * @param string $role "editingteacher" or "teacher".
+     * @return \stdClass
+     */
+    private function enrol_teacher(\stdClass $course, string $role = 'editingteacher'): \stdClass {
+        return $this->getDataGenerator()->create_and_enrol($course, $role);
+    }
+
+    /**
+     * What Moodle does for somebody who may preview: the finished quiz is a preview, not an attempt.
+     *
+     * This is the production incident: the teacher finishes the quiz and the result says nothing was finished.
+     */
+    public function test_a_teacher_who_finishes_the_quiz_has_a_preview_not_an_attempt(): void {
+        [$course, $quiz] = $this->setup_quiz();
+        $teacher = $this->enrol_teacher($course);
+        $this->setUser($teacher);
+        $this->attempt_like_the_web($quiz, true);
+
+        $result = $this->ok($course, $quiz, $teacher);
+
+        $this->assertSame(0, $result['attempts']);
+        $this->assertSame(0, $result['finishedAttempts']);
+        $this->assertFalse($result['inProgress']);
+        $this->assertNull($result['percent']);
+        $this->assertSame(1, $result['previewAttempts']);
+        $this->assertFalse($result['canAttempt']);
+        $this->assertSame('cannot_attempt', $result['reason']);
+    }
+
+    /**
+     * A preview that was left open is still a preview: it is not "in progress" in the contract's sense.
+     */
+    public function test_a_preview_left_open_is_not_in_progress(): void {
+        [$course, $quiz] = $this->setup_quiz();
+        $teacher = $this->enrol_teacher($course, 'teacher');
+        $this->setUser($teacher);
+        $this->attempt_like_the_web($quiz, false);
+
+        $result = $this->ok($course, $quiz, $teacher);
+
+        $this->assertFalse($result['inProgress']);
+        $this->assertSame(0, $result['attempts']);
+        $this->assertSame(1, $result['previewAttempts']);
+    }
+
+    /**
+     * A manager at the site level, with no enrolment, behaves like a teacher: previews only.
+     */
+    public function test_a_manager_has_previews(): void {
+        global $DB;
+        [$course, $quiz] = $this->setup_quiz();
+        $manager = $this->getDataGenerator()->create_user();
+        role_assign(
+            $DB->get_field('role', 'id', ['shortname' => 'manager'], MUST_EXIST),
+            $manager->id,
+            \core\context\system::instance()->id
+        );
+        $this->setUser($manager);
+        $this->attempt_like_the_web($quiz, true);
+
+        $result = $this->ok($course, $quiz, $manager);
+
+        $this->assertSame([0, 0, 1, false, 'cannot_attempt'], [
+            $result['attempts'], $result['finishedAttempts'], $result['previewAttempts'], $result['canAttempt'], $result['reason'],
+        ]);
+    }
+
+    /**
+     * A site administrator holds mod/quiz:attempt (they can do anything) and mod/quiz:preview, and the preview wins:
+     * the attempt is a preview, and the reason is "preview_only", not "cannot_attempt".
+     */
+    public function test_an_administrator_has_previews_and_can_attempt(): void {
+        [$course, $quiz] = $this->setup_quiz();
+        $this->setAdminUser();
+        $this->attempt_like_the_web($quiz, true);
+
+        $result = $this->ok($course, $quiz, get_admin());
+
+        $this->assertSame([0, 0, 1, true, 'preview_only'], [
+            $result['attempts'], $result['finishedAttempts'], $result['previewAttempts'], $result['canAttempt'], $result['reason'],
+        ]);
+    }
+
+    /**
+     * A teacher who switches the role to Student attempts the quiz for real: the switch takes mod/quiz:preview away.
+     */
+    public function test_a_teacher_with_the_role_switched_to_student_has_real_attempts(): void {
+        [$course, $quiz] = $this->setup_quiz();
+        $teacher = $this->enrol_teacher($course);
+        $this->setUser($teacher);
+        role_switch($this->get_student_role_id(), \core\context\course::instance($course->id));
+        $this->attempt_like_the_web($quiz, true);
+
+        $result = $this->ok($course, $quiz, $teacher);
+
+        $this->assertSame([1, 1, 0, true, 'ok'], [
+            $result['attempts'], $result['finishedAttempts'], $result['previewAttempts'], $result['canAttempt'], $result['reason'],
+        ]);
+        $this->assertEquals(100.0, $result['percent']);
+    }
+
+    /**
+     * The role switch is a property of the session, so the same user back in their own role is "cannot_attempt" again,
+     * with the real attempt they made while switched still counted in the numbers of the v5.8 contract.
+     */
+    public function test_the_precedence_puts_cannot_attempt_before_ok(): void {
+        [$course, $quiz] = $this->setup_quiz();
+        $teacher = $this->enrol_teacher($course);
+        $this->setUser($teacher);
+        role_switch($this->get_student_role_id(), \core\context\course::instance($course->id));
+        $this->attempt_like_the_web($quiz, true);
+        role_switch(0, \core\context\course::instance($course->id));
+
+        $result = $this->ok($course, $quiz, $teacher);
+
+        $this->assertSame(1, $result['finishedAttempts']);
+        $this->assertFalse($result['canAttempt']);
+        $this->assertSame('cannot_attempt', $result['reason']);
+    }
+
+    /**
+     * A switched administrator who had an open preview from before keeps using it: Moodle resumes the unfinished
+     * attempt whatever it is, so what is finished after the switch is a preview and the result says so.
+     */
+    public function test_a_switched_administrator_resumes_the_earlier_preview(): void {
+        [$course, $quiz] = $this->setup_quiz();
+        $this->setAdminUser();
+        $this->attempt_like_the_web($quiz, false);
+        role_switch($this->get_student_role_id(), \core\context\course::instance($course->id));
+        $quizobj = quiz_settings::create($quiz->id, get_admin()->id);
+        [$currentattemptid] = quiz_validate_new_attempt($quizobj, $quizobj->get_access_manager(time()), false, -1, false);
+        quiz_attempt::create($currentattemptid)->process_attempt(time(), true, false, 0);
+
+        $result = $this->ok($course, $quiz, get_admin());
+
+        $this->assertSame([0, 0, 1, true, 'preview_only'], [
+            $result['attempts'], $result['finishedAttempts'], $result['previewAttempts'], $result['canAttempt'], $result['reason'],
+        ]);
+    }
+
+    /**
+     * Every reason with a user and a quiz that produce it, and nothing else about it.
+     *
+     * @param string $reason The reason expected.
+     * @param string $setup The scenario: see {@see self::build_scenario()}.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('reasons')]
+    public function test_each_reason(string $reason, string $setup): void {
+        [$course, $quiz, $user] = $this->build_scenario($setup);
+
+        $result = $this->ok($course, $quiz, $user);
+
+        $this->assertSame($reason, $result['reason']);
+    }
+
+    /**
+     * Every reason with its scenario.
+     *
+     * @return array
+     */
+    public static function reasons(): array {
+        return [
+            'ok' => ['ok', 'finished'],
+            'ok, with another attempt open' => ['ok', 'finished_and_open'],
+            'in progress' => ['in_progress', 'open'],
+            'in progress, overdue' => ['in_progress', 'overdue'],
+            'not graded yet, by hand' => ['not_graded_yet', 'essay'],
+            'not graded yet, handed in and not processed' => ['not_graded_yet', 'submitted'],
+            'preview only' => ['preview_only', 'preview'],
+            'no attempts' => ['no_attempts', 'none'],
+            'no attempts, only an abandoned one' => ['no_attempts', 'abandoned'],
+            'cannot attempt' => ['cannot_attempt', 'teacher'],
+        ];
+    }
+
+    /**
+     * The rule of precedence, on its own: one row for each way the first condition that holds wins.
+     *
+     * @param bool $canattempt
+     * @param array $counts What the user has; the rest are zero.
+     * @param string $expected
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('precedence')]
+    public function test_the_precedence(bool $canattempt, array $counts, string $expected): void {
+        $tally = $counts + [
+            'finished' => 0, 'pendingfinished' => 0, 'inprogress' => 0, 'overdue' => 0, 'submitted' => 0, 'previews' => 0,
+        ];
+
+        $this->assertSame($expected, quiz_result::reason($canattempt, $tally));
+    }
+
+    /**
+     * Combinations that settle the order of the reasons.
+     *
+     * @return array
+     */
+    public static function precedence(): array {
+        return [
+            'no capability beats everything' => [false, ['finished' => 2, 'inprogress' => 1, 'previews' => 3], 'cannot_attempt'],
+            'finished beats open' => [true, ['finished' => 1, 'inprogress' => 1], 'ok'],
+            'finished beats previews' => [true, ['finished' => 1, 'previews' => 2], 'ok'],
+            'a graded one among the ungraded is ok' => [true, ['finished' => 2, 'pendingfinished' => 1], 'ok'],
+            'open beats ungraded' => [true, ['finished' => 1, 'pendingfinished' => 1, 'overdue' => 1], 'in_progress'],
+            'open beats previews' => [true, ['overdue' => 1, 'previews' => 1], 'in_progress'],
+            'ungraded beats previews' => [true, ['finished' => 1, 'pendingfinished' => 1, 'previews' => 1], 'not_graded_yet'],
+            'handed in beats previews' => [true, ['submitted' => 1, 'previews' => 1], 'not_graded_yet'],
+            'previews beat nothing' => [true, ['previews' => 1], 'preview_only'],
+            'nothing' => [true, [], 'no_attempts'],
+        ];
+    }
+
+    /**
+     * What each reason looks like in the rest of the result, so the fields cannot contradict the reason.
+     *
+     * @param string $reason The reason expected.
+     * @param string $setup The scenario.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('reasons')]
+    public function test_the_reason_agrees_with_the_counts(string $reason, string $setup): void {
+        [$course, $quiz, $user] = $this->build_scenario($setup);
+
+        $result = $this->ok($course, $quiz, $user);
+
+        $this->assertSame($result['reason'] === 'cannot_attempt', !$result['canAttempt']);
+        if ($result['reason'] === 'ok') {
+            $this->assertGreaterThan(0, $result['finishedAttempts']);
+        }
+        if ($result['reason'] === 'in_progress') {
+            $this->assertTrue($result['inProgress']);
+            $this->assertSame(0, $result['finishedAttempts']);
+        }
+        if ($result['reason'] === 'preview_only') {
+            $this->assertSame(0, $result['attempts']);
+            $this->assertGreaterThan(0, $result['previewAttempts']);
+        }
+        if ($result['reason'] === 'no_attempts') {
+            $this->assertSame(0, $result['finishedAttempts']);
+            $this->assertFalse($result['inProgress']);
+            $this->assertSame(0, $result['previewAttempts']);
+        }
+    }
+
+    /**
+     * A hidden grade changes the percentage and the outcome, and nothing else: the reason is the same with the grade
+     * hidden as with it shown, and no grade appears under any reason.
+     *
+     * @param string $reason The reason expected.
+     * @param string $setup The scenario.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('reasons')]
+    public function test_a_hidden_grade_changes_no_reason_and_leaks_nothing(string $reason, string $setup): void {
+        [$course, $quiz, $user] = $this->build_scenario($setup);
+        $shown = $this->ok($course, $quiz, $user);
+
+        $this->grade_item($course, $quiz)->set_hidden(1);
+        $hidden = $this->ok($course, $quiz, $user);
+
+        $this->assertSame($reason, $hidden['reason']);
+        $this->assertSame($shown['reason'], $hidden['reason']);
+        $this->assertNull($hidden['percent']);
+        $this->assertNull($hidden['passedThreshold']);
+        $this->assertSame($shown['finishedAttempts'], $hidden['finishedAttempts']);
+        $this->assertSame($shown['previewAttempts'], $hidden['previewAttempts']);
+        $this->assertStringNotContainsString('100', json_encode($hidden));
+    }
+
+    /**
+     * Builds a user in front of a quiz in a given situation.
+     *
+     * @param string $setup finished, finished_and_open, open, overdue, essay (finished, waiting for a teacher),
+     *      submitted (handed in, not processed), preview (a student with only a preview), none, abandoned, or teacher
+     *      (somebody who previews: no mod/quiz:attempt).
+     * @return array [course, quiz, user]
+     */
+    private function build_scenario(string $setup): array {
+        global $DB;
+        [$course, $quiz, $student] = $this->setup_quiz([], $setup === 'essay' ? 'essay' : 'numerical');
+        $user = $student;
+        switch ($setup) {
+            case 'finished':
+                $this->attempt($quiz, $user, 1, 'finish');
+                break;
+            case 'finished_and_open':
+                $this->attempt($quiz, $user, 1, 'finish');
+                $this->attempt($quiz, $user, 2, 'inprogress');
+                break;
+            case 'open':
+                $this->attempt($quiz, $user, 1, 'inprogress');
+                break;
+            case 'overdue':
+                $this->attempt($quiz, $user, 1, 'inprogress');
+                $DB->set_field('quiz_attempts', 'state', quiz_attempt::OVERDUE, ['quiz' => $quiz->id, 'userid' => $user->id]);
+                break;
+            case 'essay':
+                $this->attempt($quiz, $user, 1, 'finish', 'An essay.');
+                break;
+            case 'submitted':
+                $this->attempt($quiz, $user, 1, 'inprogress');
+                $DB->set_field('quiz_attempts', 'state', quiz_attempt::SUBMITTED, ['quiz' => $quiz->id, 'userid' => $user->id]);
+                break;
+            case 'preview':
+                $this->attempt($quiz, $user, 1, 'preview');
+                break;
+            case 'abandoned':
+                $this->attempt($quiz, $user, 1, 'abandon');
+                break;
+            case 'teacher':
+                $user = $this->enrol_teacher($course);
+                $this->attempt($quiz, $user, 1, 'preview');
+                break;
+        }
+        return [$course, $quiz, $user];
+    }
+
+    /**
+     * Previews are counted apart and never added to the real attempts, however many there are.
+     */
+    public function test_previews_and_real_attempts_stay_apart(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $this->attempt($quiz, $student, 1, 'finish');
+        $this->attempt($quiz, $student, 2, 'preview');
+        $this->attempt($quiz, $student, 3, 'preview');
+
+        $result = $this->ok($course, $quiz, $student);
+
+        $this->assertSame(1, $result['attempts']);
+        $this->assertSame(1, $result['finishedAttempts']);
+        $this->assertSame(2, $result['previewAttempts']);
+        $this->assertSame('ok', $result['reason']);
+        $this->assertEquals(100.0, $result['percent'], 'a preview never changes the grade');
+    }
+
+    /**
+     * An attempt that was never started is neither a preview nor an attempt.
+     */
+    public function test_an_unstarted_attempt_is_nothing(): void {
+        global $DB;
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $this->attempt($quiz, $student, 1, 'inprogress');
+        $DB->set_field('quiz_attempts', 'state', quiz_attempt::NOT_STARTED, ['quiz' => $quiz->id, 'userid' => $student->id]);
+
+        $result = $this->ok($course, $quiz, $student);
+
+        $this->assertSame([0, 0, 'no_attempts'], [$result['attempts'], $result['previewAttempts'], $result['reason']]);
+    }
+
+    /**
+     * The previews and the capability are the user's own: the previews of a teacher do not show in a student's result.
+     */
+    public function test_the_previews_of_others_are_not_mine(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $teacher = $this->enrol_teacher($course);
+        $this->attempt($quiz, $teacher, 1, 'preview');
+        $this->attempt($quiz, $teacher, 2, 'preview');
+
+        $mine = $this->ok($course, $quiz, $student);
+        $theirs = $this->ok($course, $quiz, $teacher);
+
+        $this->assertSame([0, true, 'no_attempts'], [$mine['previewAttempts'], $mine['canAttempt'], $mine['reason']]);
+        $this->assertSame([2, false, 'cannot_attempt'], [$theirs['previewAttempts'], $theirs['canAttempt'], $theirs['reason']]);
+    }
+
+    /**
+     * The answer for a user who is not allowed to see the quiz carries none of the new fields either.
+     */
+    public function test_an_error_has_none_of_the_new_fields(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $this->attempt($quiz, $student, 1, 'preview');
+
+        $reply = quiz_result::for_user($course->id, 999999, $student->id);
+
+        $this->assertSame(['error' => 'not_found', 'result' => null], $reply);
+    }
+
+    /**
+     * What a consumer of v5.8 reads is the same as before: the six fields it knows, with the same values, whatever the
+     * new ones say. The new fields are only added.
+     */
+    public function test_a_v58_consumer_reads_the_same_values(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $this->attempt($quiz, $student, 1, 'finish');
+        $this->attempt($quiz, $student, 2, 'inprogress');
+        $this->attempt($quiz, $student, 3, 'preview');
+
+        $result = $this->ok($course, $quiz, $student);
+        $v58 = array_intersect_key($result, array_flip(
+            ['attempts', 'finishedAttempts', 'inProgress', 'percent', 'pendingGrading', 'passedThreshold']
+        ));
+
+        $this->assertSame(
+            ['attempts' => 2, 'finishedAttempts' => 1, 'inProgress' => true, 'percent' => 100.0,
+                'pendingGrading' => false, 'passedThreshold' => true],
+            $v58
+        );
+        $this->assertSame(
+            ['attempts', 'finishedAttempts', 'inProgress', 'percent', 'pendingGrading', 'passedThreshold'],
+            array_slice(array_keys($result), 0, 6),
+            'the old fields keep their names and their order; the new ones come after'
+        );
+    }
+
+    /**
+     * The check support reads: the capabilities, the attempts by state, the hidden-grade flag and the reason.
+     */
+    public function test_the_check_for_support(): void {
+        global $DB;
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $this->attempt($quiz, $student, 1, 'finish');
+        $this->attempt($quiz, $student, 2, 'inprogress');
+        $this->attempt($quiz, $student, 3, 'abandon');
+        $this->attempt($quiz, $student, 4, 'preview');
+        $this->attempt($quiz, $student, 5, 'inprogress');
+        $DB->set_field('quiz_attempts', 'state', quiz_attempt::OVERDUE, ['quiz' => $quiz->id, 'attempt' => 5]);
+        $this->grade_item($course, $quiz)->set_hidden(1);
+
+        $reply = quiz_result::diagnose($course->id, $cmid, $student->id, get_admin()->id);
+
+        $this->assertSame('', $reply['error']);
+        $check = $reply['check'];
+        $this->assertSame(
+            ['finished' => 1, 'inprogress' => 1, 'overdue' => 1, 'submitted' => 0, 'abandoned' => 1, 'preview' => 1],
+            $check['counts']
+        );
+        $this->assertTrue($check['canAttempt']);
+        $this->assertFalse($check['canPreview']);
+        $this->assertTrue($check['enrolled']);
+        $this->assertTrue($check['visible']);
+        $this->assertTrue($check['hiddenGrade']);
+        $this->assertSame('grade_hidden', $check['percentWithheldBy']);
+        $this->assertSame('ok', $check['reason']);
+        $this->assertSame($this->ok($course, $quiz, $student), $check['contract']['result'], 'the same answer the app gets');
+    }
+
+    /**
+     * The check tells a teacher's preview from a student's attempt, which is the point of it.
+     */
+    public function test_the_check_sees_a_teacher_with_previews(): void {
+        [$course, $quiz] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $teacher = $this->enrol_teacher($course);
+        $this->setUser($teacher);
+        $this->attempt_like_the_web($quiz, true);
+
+        $check = quiz_result::diagnose($course->id, $cmid, $teacher->id, get_admin()->id)['check'];
+
+        $this->assertSame(1, $check['counts']['preview']);
+        $this->assertSame(0, $check['counts']['finished']);
+        $this->assertFalse($check['canAttempt']);
+        $this->assertTrue($check['canPreview']);
+        $this->assertSame('cannot_attempt', $check['reason']);
+    }
+
+    /**
+     * A user who is not enrolled, or to whom the quiz is hidden, is told apart.
+     */
+    public function test_the_check_sees_enrolment_and_visibility(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $outsider = $this->getDataGenerator()->create_user();
+        set_coursemodule_visible($cmid, 0);
+
+        $asstudent = quiz_result::diagnose($course->id, $cmid, $student->id, get_admin()->id)['check'];
+        $asoutsider = quiz_result::diagnose($course->id, $cmid, $outsider->id, get_admin()->id)['check'];
+
+        $this->assertFalse($asstudent['visible']);
+        $this->assertTrue($asstudent['enrolled']);
+        $this->assertFalse($asoutsider['enrolled']);
+        $this->assertSame(['error' => 'not_found', 'result' => null], $asstudent['contract']);
+    }
+
+    /**
+     * Only somebody who may see grades or edit the course can ask about another user.
+     */
+    public function test_the_check_is_for_graders_and_editors_only(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $other = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $outsider = $this->getDataGenerator()->create_user();
+        $teacher = $this->enrol_teacher($course);
+        $nonediting = $this->enrol_teacher($course, 'teacher');
+
+        foreach ([$other, $outsider, $student] as $viewer) {
+            try {
+                quiz_result::diagnose($course->id, $cmid, $student->id, $viewer->id);
+                $this->fail('a user who may not see grades or edit the course got the check');
+            } catch (\required_capability_exception $e) {
+                $this->assertTrue(true);
+            }
+        }
+        foreach ([$teacher, $nonediting] as $viewer) {
+            $this->assertSame('', quiz_result::diagnose($course->id, $cmid, $student->id, $viewer->id)['error']);
+        }
+    }
+
+    /**
+     * Either capability is enough: editing the course without seeing grades, or seeing grades without editing.
+     */
+    public function test_the_check_needs_either_capability(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $coursecontext = \core\context\course::instance($course->id);
+
+        $editor = $this->getDataGenerator()->create_user();
+        $editorrole = $this->getDataGenerator()->create_role();
+        assign_capability('format/rumbos:editmap', CAP_ALLOW, $editorrole, \core\context\system::instance()->id);
+        $this->getDataGenerator()->enrol_user($editor->id, $course->id, $editorrole);
+        $this->assertFalse(has_capability('moodle/grade:viewall', $coursecontext, $editor->id), 'precondition');
+
+        $grader = $this->enrol_teacher($course, 'teacher');
+        $this->assertFalse(has_capability('format/rumbos:editmap', $coursecontext, $grader->id), 'precondition');
+        $this->assertTrue(has_capability('moodle/grade:viewall', $coursecontext, $grader->id), 'precondition');
+
+        foreach ([$editor, $grader] as $viewer) {
+            $this->assertSame('', quiz_result::diagnose($course->id, $cmid, $student->id, $viewer->id)['error']);
+        }
+    }
+
+    /**
+     * The check is a read: it stores nothing and logs nothing.
+     */
+    public function test_the_check_logs_nothing(): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $cmid = (int) get_coursemodule_from_instance('quiz', $quiz->id)->id;
+        $this->attempt($quiz, $student, 1, 'finish');
+        global $DB;
+        $sink = $this->redirectEvents();
+        $tables = ['quiz_attempts', 'format_rumbos_flow', 'grade_grades', 'grade_items'];
+        $before = array_map(fn($table) => $DB->count_records($table), $tables);
+
+        quiz_result::diagnose($course->id, $cmid, $student->id, get_admin()->id);
+
+        $this->assertCount(0, $sink->get_events());
+        $this->assertSame($before, array_map(fn($table) => $DB->count_records($table), $tables));
+    }
+
+    /**
+     * A course module that is not a quiz of the course is "not found", not an exception.
+     */
+    public function test_the_check_of_something_that_is_not_a_quiz(): void {
+        [$course, , $student] = $this->setup_quiz();
+        $page = $this->getDataGenerator()->create_module('page', ['course' => $course->id]);
+
+        $this->assertSame(
+            ['error' => 'not_found', 'check' => null],
+            quiz_result::diagnose($course->id, $page->cmid, $student->id, get_admin()->id)
+        );
     }
 
     /**

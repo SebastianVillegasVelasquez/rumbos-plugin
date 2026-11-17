@@ -24,6 +24,7 @@ import {describe, it} from 'node:test';
 import {
     MAX_REVISION,
     MESSAGE,
+    QUIZ_REASONS,
     hostFlowProgress,
     hostFlowProgressError,
     hostQuizResult,
@@ -164,6 +165,31 @@ describe('hostQuizResult', () => {
                 attempts: 2, finishedAttempts: 1, inProgress: true, percent: 87.5, pendingGrading: false, passedThreshold: true,
             },
         });
+    });
+
+    it('passes on the fields that say why (v5.9) when all are well formed', () => {
+        const why = {previewAttempts: 1, canAttempt: false, reason: 'cannot_attempt'};
+        const message = hostQuizResult(5, {...result, ...why});
+        assert.deepEqual(message.result, {
+            attempts: 2, finishedAttempts: 1, inProgress: true, percent: 87.5, pendingGrading: false, passedThreshold: true,
+            ...why,
+        });
+        for (const reason of QUIZ_REASONS) {
+            assert.equal(hostQuizResult(5, {...result, ...why, reason}).result.reason, reason);
+        }
+    });
+
+    it('sends the v5.8 shape when the fields that say why are missing or any of them is malformed', () => {
+        const why = {previewAttempts: 0, canAttempt: true, reason: 'ok'};
+        const old = hostQuizResult(5, result).result;
+        assert.deepEqual(Object.keys(old), ['attempts', 'finishedAttempts', 'inProgress', 'percent', 'pendingGrading', 'passedThreshold']);
+        const bad = [
+            {previewAttempts: -1}, {previewAttempts: 1.5}, {previewAttempts: '1'}, {previewAttempts: undefined},
+            {canAttempt: 1}, {canAttempt: undefined}, {reason: 'maybe'}, {reason: undefined}, {reason: null},
+        ];
+        for (const change of bad) {
+            assert.deepEqual(hostQuizResult(5, {...result, ...why, ...change}).result, old, JSON.stringify(change));
+        }
     });
 
     it('keeps the nulls', () => {
