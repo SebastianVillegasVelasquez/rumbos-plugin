@@ -28,10 +28,13 @@ use format_rumbos\admin\setting_appurl;
 use format_rumbos\admin\setting_height;
 use format_rumbos\admin\setting_newtabmodules;
 use format_rumbos\admin\setting_registration;
+use format_rumbos\admin\setting_resultkeys;
 use format_rumbos\admin\setting_selectors;
 use format_rumbos\local\config;
+use format_rumbos\local\launch_assertion;
 use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
+use format_rumbos\local\result_config;
 
 // The rotation confirmation page lives outside the settings page but inside the admin tree.
 $ADMIN->add('formatsettings', new admin_externalpage(
@@ -175,6 +178,48 @@ if ($ADMIN->fulltree) {
         config::DEFAULT_MIN_COHORT,
         PARAM_INT,
         4
+    ));
+
+    $settings->add(new admin_setting_heading(
+        'format_rumbos/resultheading',
+        get_string('resultheading', 'format_rumbos'),
+        get_string('resultheading_desc', 'format_rumbos', (object) [
+            'url' => result_config::endpoint_url(),
+            'aud' => launch_assertion::issuer(),
+        ])
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'format_rumbos/resultsenabled',
+        new lang_string('resultsenabled', 'format_rumbos'),
+        new lang_string('resultsenabled_desc', 'format_rumbos'),
+        0
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'format_rumbos/resultissuer',
+        new lang_string('resultissuer', 'format_rumbos'),
+        new lang_string('resultissuer_desc', 'format_rumbos'),
+        'rumbos',
+        '/^[A-Za-z0-9._:\/-]{1,128}$/'
+    ));
+
+    $settings->add(new admin_setting_configtext(
+        'format_rumbos/resulttenant',
+        new lang_string('resulttenant', 'format_rumbos'),
+        new lang_string('resulttenant_desc', 'format_rumbos'),
+        '',
+        '/^[A-Za-z0-9._:\/-]{0,128}$/'
+    ));
+
+    $settings->add(new setting_resultkeys(
+        'format_rumbos/resultkeys',
+        new lang_string('resultkeys', 'format_rumbos'),
+        new lang_string('resultkeys_desc', 'format_rumbos'),
+        '',
+        PARAM_RAW,
+        '60',
+        '10'
     ));
 
     $settings->add(new setting_registration(
