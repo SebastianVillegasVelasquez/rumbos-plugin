@@ -55,7 +55,7 @@ changes with the purge, so it is usually not needed.
 | --- | --- | --- |
 | `pollmodules` | `scorm,h5pactivity` | Modules whose open popup also reads the course progress every 15 seconds while the tab is visible. Empty turns it off. Each read queries the whole course (see [COMPLETION-STATES.md](COMPLETION-STATES.md#what-a-read-costs)). |
 
-## Result passback (release 0.7.0)
+## Result passback (release 0.6.1)
 
 The upgrade adds the tables `format_rumbos_result` and `format_rumbos_audit` and a cache definition, so **purge the caches**
 after it. It configures nothing: the receiver is off and no course is changed. To turn it on, set *Accept results*, the issuer,

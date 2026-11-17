@@ -449,7 +449,7 @@ was not otherwise touched. `inProgress` and `finishedAttempts` are what `request
   not treat `inProgress: true` as proof that the student is still working: open the quiz again (which finishes it) and ask
   again.
 
-## Result passback and completion (release 0.7.0)
+## Result passback and completion (release 0.6.1)
 
 Run on a course set up with `cli/configure_course.php` (see [RESULT-PASSBACK.md](RESULT-PASSBACK.md)), with the real backend
 or with `dev/sign-test-statement.php`. Check the gradebook, the course completion report and the certificate after each row.
