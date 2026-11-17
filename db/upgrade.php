@@ -55,5 +55,54 @@ function xmldb_format_rumbos_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026111100, 'format', 'rumbos');
     }
 
+    if ($oldversion < 2026111700) {
+        // The results applied from verified statements of the Rumbos service, and the audit of every statement.
+        $table = new xmldb_table('format_rumbos_result');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('purpose', XMLDB_TYPE_CHAR, '12', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('attemptid', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('jti', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('payloadhash', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('percent', XMLDB_TYPE_CHAR, '6', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('passed', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timefinished', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timeapplied', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('attemptid', XMLDB_KEY_UNIQUE, ['attemptid']);
+        $table->add_key('jti', XMLDB_KEY_UNIQUE, ['jti']);
+        $table->add_index('courseuser', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'userid']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        $table = new xmldb_table('format_rumbos_audit');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('status', XMLDB_TYPE_INTEGER, '4', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('reason', XMLDB_TYPE_CHAR, '48', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('kid', XMLDB_TYPE_CHAR, '32', null, null, null, null);
+        $table->add_field('jti', XMLDB_TYPE_CHAR, '64', null, null, null, null);
+        $table->add_field('attemptid', XMLDB_TYPE_CHAR, '64', null, null, null, null);
+        $table->add_field('subject', XMLDB_TYPE_CHAR, '64', null, null, null, null);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('purpose', XMLDB_TYPE_CHAR, '12', null, null, null, null);
+        $table->add_field('percent', XMLDB_TYPE_CHAR, '6', null, null, null, null);
+        $table->add_field('passed', XMLDB_TYPE_INTEGER, '1', null, null, null, null);
+        $table->add_field('policy', XMLDB_TYPE_CHAR, '24', null, null, null, null);
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('timecreated', XMLDB_INDEX_NOTUNIQUE, ['timecreated']);
+        $table->add_index('courseuser', XMLDB_INDEX_NOTUNIQUE, ['courseid', 'userid']);
+        $table->add_index('jti', XMLDB_INDEX_NOTUNIQUE, ['jti']);
+        $table->add_index('attemptid', XMLDB_INDEX_NOTUNIQUE, ['attemptid']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026111700, 'format', 'rumbos');
+    }
+
     return true;
 }
