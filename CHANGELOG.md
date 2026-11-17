@@ -1,6 +1,23 @@
 # Changelog
 
-## Unreleased (0.6.0)
+## Unreleased (0.7.0)
+
+### Added
+
+- Result passback: `passback.php` receives a JWS (RS256) statement from the Rumbos service, verifies it, applies it once
+  (idempotent on `attempt_id`, replay protected on `jti`), keeps the best percent in a grade item and completes the course on a
+  pass. Only students can complete; every statement is audited. Answers 200, 400, 401, 409, 422, 429, 503, 5xx.
+- Tables `format_rumbos_result` and `format_rumbos_audit`; settings *Accept results*, issuer, tenant and keys.
+- `cli/configure_course.php`: sets a course up (dry run unless `--apply`, idempotent, `--revert`).
+- Privacy provider declares, exports and erases the new tables (the text needs legal review). Documents: `RESULT-PASSBACK.md`,
+  `RESULT-PASSBACK-AUDIT.md`, `DECISIONS.md`.
+- `dev/sign-test-statement.php`, a local signer that plays the backend.
+
+### Notes
+
+- Nothing is configured on upgrade. Purge the caches.
+
+## 0.6.0
 
 ### Added
 
