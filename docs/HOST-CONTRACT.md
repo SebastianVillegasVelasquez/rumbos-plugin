@@ -409,3 +409,12 @@ Rules:
 - `classes/local/map_size.php` resolves the height settings; `styles.css` turns them into the layout.
 - `classes/local/course_state.php` computes the state; `classes/external/get_course_state.php`
   and `get_activity_settings_url.php` are the two AJAX functions the host calls for this.
+
+## Preview and results (no new field)
+
+The launch assertion already carries `role`: `editor` for anyone who holds `format/rumbos:editmap` (editing teacher, manager,
+site administrator), `student` otherwise. The app uses it to mark an attempt as a **preview**. It does not depend on editing
+mode or on a role switched in the browser. Results the app produces are reported by the Rumbos **service**, not by the
+host, in a signed statement: see [RESULT-PASSBACK.md](RESULT-PASSBACK.md). The receiver refuses a statement for anyone who
+is not a student (`422 role_not_allowed`), so a preview can never complete a course even if the service sent it. The host
+contract is unchanged by this feature.

@@ -55,6 +55,21 @@ changes with the purge, so it is usually not needed.
 | --- | --- | --- |
 | `pollmodules` | `scorm,h5pactivity` | Modules whose open popup also reads the course progress every 15 seconds while the tab is visible. Empty turns it off. Each read queries the whole course (see [COMPLETION-STATES.md](COMPLETION-STATES.md#what-a-read-costs)). |
 
+## Result passback (release 0.7.0)
+
+The upgrade adds the tables `format_rumbos_result` and `format_rumbos_audit` and a cache definition, so **purge the caches**
+after it. It configures nothing: the receiver is off and no course is changed. To turn it on, set *Accept results*, the issuer,
+the tenant and the backend's public key(s) in the plugin settings, then run, per course and dry run first:
+
+```sh
+php public/course/format/rumbos/cli/configure_course.php --course=10
+php public/course/format/rumbos/cli/configure_course.php --course=10 --pass-percent=80 --pass-operator=gt --aggregation-any --apply
+php public/course/format/rumbos/cli/configure_course.php --course=10        # nothing left to change
+```
+
+To undo a course: `--course=10 --revert --apply` (add `--drop-grades` to delete the grade item with its grades). See
+[RESULT-PASSBACK.md](RESULT-PASSBACK.md) for the contract and [RESULT-PASSBACK-AUDIT.md](RESULT-PASSBACK-AUDIT.md) for why.
+
 ## Completion statistics and downloads (contract v5.7)
 
 - **Run the upgrade (step 2) and purge the caches (step 3).** The upgrade installs the capability
