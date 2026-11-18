@@ -14,7 +14,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.8).
+ * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.10).
  *
  * Nothing here touches the DOM or Moodle APIs, so it can be unit tested with
  * plain Node (see tests/js).
@@ -38,6 +38,7 @@ export const MESSAGE = {
     FLOW_STEP_DONE: 'rumbos:flow-step-done',
     REQUEST_QUIZ_RESULT: 'rumbos:request-quiz-result',
     FLOW_RESET: 'rumbos:flow-reset',
+    TUTOR_OPEN: 'tutor.open',
     ERROR: 'rumbos:error',
     NO_CONTENT: 'rumbos:no-content',
     PREFERRED_SIZE: 'rumbos:preferred-size',
@@ -49,6 +50,7 @@ export const MESSAGE = {
     HOST_OVERLAY: 'rumbos:host-overlay',
     HOST_FLOW_PROGRESS: 'rumbos:host-flow-progress',
     HOST_QUIZ_RESULT: 'rumbos:host-quiz-result',
+    TUTOR_CLOSED: 'tutor.closed',
 };
 
 /**
@@ -180,6 +182,8 @@ const APP_MESSAGE_PARSERS = {
         {type: data.type, mapId: data.mapId, stepKey: data.stepKey, revision: data.revision, method: data.method} : null,
     [MESSAGE.REQUEST_QUIZ_RESULT]: (data) => isCmid(data.cmid) ? {type: data.type, cmid: data.cmid} : null,
     [MESSAGE.FLOW_RESET]: (data) => isMapId(data.mapId) ? {type: data.type, mapId: data.mapId} : null,
+    // No fields at all (contract v5.10): the address of the tutor is never the app's to give.
+    [MESSAGE.TUTOR_OPEN]: (data) => ({type: data.type}),
     [MESSAGE.ERROR]: (data) => ERROR_CODES.includes(data.code)
         ? {type: data.type, code: data.code, detail: cleanDetail(data.detail)}
         : null,
@@ -215,10 +219,14 @@ export const parseAppMessage = (event, {appOrigin, frameWindow}) => {
 /**
  * The host-init message.
  *
- * @param {{mode: string, locale: string, courseId: number, courseName: string, assertion: string, state: Object}} init
+ * `capabilities` (contract v5.10) lists what the host can do for the app, and only names the features that are on: an
+ * app that does not know the field ignores it, and one that finds a feature missing must not offer it.
+ *
+ * @param {{mode: string, locale: string, courseId: number, courseName: string, assertion: string, state: Object,
+ *     capabilities?: Object}} init
  * @returns {Object}
  */
-export const hostInit = ({mode, locale, courseId, courseName, assertion, state}) => ({
+export const hostInit = ({mode, locale, courseId, courseName, assertion, state, capabilities = {}}) => ({
     type: MESSAGE.HOST_INIT,
     v: PROTOCOL_VERSION,
     mode,
@@ -227,6 +235,7 @@ export const hostInit = ({mode, locale, courseId, courseName, assertion, state})
     courseName,
     assertion,
     state,
+    capabilities,
 });
 
 /**
@@ -394,6 +403,13 @@ export const hostQuizResultError = (cmid, error) => ({
 });
 
 /**
+ * The message that tells the app the tutor overlay has closed (contract v5.10).
+ *
+ * @returns {Object}
+ */
+export const hostTutorClosed = () => ({type: MESSAGE.TUTOR_CLOSED, v: PROTOCOL_VERSION});
+
+/**
  * Path of the Moodle site without a trailing slash ("" for a site at the root of its host).
  *
  * @param {URL} root The wwwroot URL.
@@ -513,4 +529,27 @@ export const parsePopupMessage = (event, {siteOrigin, frameWindow}) => {
         return null;
     }
     return data.type;
+};
+
+/**
+ * Whether an address is one the host may frame as the tutor: https, on this page's own origin.
+ *
+ * The server checks the same when it stores the setting; this is a second check on what reached the page, so a
+ * wrong value can never put another site (or a plain http page) in the overlay. Same origin is also what the
+ * tutor's own X-Frame-Options: SAMEORIGIN requires.
+ *
+ * @param {*} href
+ * @param {{siteOrigin: string}} site Where the page is running.
+ * @returns {?string} The normalised address, or null when it must not be framed.
+ */
+export const resolveTutorUrl = (href, {siteOrigin}) => {
+    if (typeof href !== 'string' || href === '') {
+        return null;
+    }
+    try {
+        const url = new URL(href);
+        return url.protocol === 'https:' && url.origin === siteOrigin && !url.username && !url.password ? url.href : null;
+    } catch (error) {
+        return null;
+    }
 };

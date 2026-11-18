@@ -220,6 +220,72 @@ body.format-rumbos-popup-open {
 }
 
 /*
+ * Tutor overlay: the site's virtual tutor over the whole viewport. 100dvh follows the visible viewport on phones
+ * (the address bar coming and going); the host sets --format-rumbos-tutor-height from visualViewport as well, so
+ * the on-screen keyboard does not cover the message box. Above the activity popup and the full-screen map.
+ */
+.format-rumbos-tutor {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #fff;
+    overscroll-behavior: contain;
+}
+
+@supports (height: 100dvh) {
+    .format-rumbos-tutor {
+        height: 100dvh;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .format-rumbos-tutor {
+        height: var(--format-rumbos-tutor-height, 100vh);
+        bottom: auto;
+    }
+}
+
+.format-rumbos-tutor-bar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.format-rumbos-tutor-bar .btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+    white-space: nowrap;
+}
+
+.format-rumbos-tutor-title {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 1rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.format-rumbos-tutor-frame {
+    display: block;
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    border: 0;
+}
+
+body.format-rumbos-tutor-open {
+    overflow: hidden;
+}
+
+/*
  * The activity page inside the popup (the body class is added by the popup_page
  * module, only when the window is the popup frame). The popup already shows the
  * title and the way back, so the site chrome goes: the top bar, the drawers, the

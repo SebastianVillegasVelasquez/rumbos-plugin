@@ -98,6 +98,7 @@ class content extends content_base {
                 'popupSession' => popup::get_mode() !== popup::MODE_OFF,
                 'newTabModules' => popup::get_newtab_modules(),
                 'pollModules' => popup::get_poll_modules(),
+                'tutorUrl' => (string) config::get_tutor_url(),
             ]]);
         }
 
