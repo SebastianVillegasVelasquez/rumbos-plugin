@@ -49,6 +49,8 @@ $string['errorquizthreshold'] = 'The threshold must be a whole number from {$a->
 $string['errorselectors'] = 'Enter at most {$a} CSS selectors, one per line, using letters, digits, quotes and the characters - _ # . > + ~ * : ( ) [ ] = ^ $ |. Braces, @, url(), commas and comments are not allowed.';
 $string['errornotenabled'] = 'This Rumbos action is not available: Rumbos is disabled or the app URL is not configured.';
 $string['errornotrumbos'] = 'This course does not use the Rumbos format.';
+$string['errortutorurl'] = 'Enter a valid https:// address without credentials, query string or fragment, or leave it empty.';
+$string['errortutorurlhost'] = 'The tutor must be a page of this Moodle site: the address must use https and the same host (and port) as the site.';
 $string['exitfullscreen'] = 'Exit full screen';
 $string['fallback_apperror'] = 'Rumbos reported an error (code: {$a}). Students are seeing the standard course content.';
 $string['fallback_error'] = 'Rumbos could not be loaded for this course because the service returned an error. Students are seeing the standard course content.';
@@ -150,3 +152,7 @@ $string['sizeheading'] = 'Size of the Rumbos area';
 $string['sizeheading_desc'] = 'The defaults below apply to every Rumbos course. A course can choose its own mode and height in its settings; the minimum and the maximum always apply.';
 $string['skipmap'] = 'Skip the Rumbos map and go to the activity list';
 $string['turneditingon'] = 'Turn editing on to modify the map.';
+$string['tutorclose'] = 'Close';
+$string['tutortitle'] = 'Virtual tutor';
+$string['tutorurl'] = 'Virtual tutor URL';
+$string['tutorurl_desc'] = 'Address of the virtual tutor of this site, for example https://moodle.example.com/agente/chat. When set, the Rumbos app can show a Virtual tutor button that opens this page full screen over the course page. It must be https and on the same host as this Moodle site (the tutor can only be framed by its own site). Leave it empty to turn the feature off. The tutor is an AI service: check that your privacy notice covers it.';

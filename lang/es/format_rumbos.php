@@ -49,6 +49,8 @@ $string['errorquizthreshold'] = 'El umbral debe ser un número entero de {$a->mi
 $string['errorselectors'] = 'Introduce como máximo {$a} selectores CSS, uno por línea, con letras, dígitos, comillas y los caracteres - _ # . > + ~ * : ( ) [ ] = ^ $ |. No se permiten llaves, @, url(), comas ni comentarios.';
 $string['errornotenabled'] = 'Esta acción de Rumbos no está disponible: Rumbos está desactivado o no se ha configurado la URL de la aplicación.';
 $string['errornotrumbos'] = 'Este curso no usa el formato Rumbos.';
+$string['errortutorurl'] = 'Introduzca una dirección https:// válida, sin credenciales, parámetros ni fragmento, o déjela vacía.';
+$string['errortutorurlhost'] = 'El tutor debe ser una página de este sitio Moodle: la dirección debe usar https y el mismo host (y puerto) que el sitio.';
 $string['exitfullscreen'] = 'Salir de pantalla completa';
 $string['fallback_apperror'] = 'Rumbos informó de un error (código: {$a}). Los estudiantes ven el contenido estándar del curso.';
 $string['fallback_error'] = 'No se pudo cargar Rumbos en este curso porque el servicio devolvió un error. Los estudiantes ven el contenido estándar del curso.';
@@ -150,3 +152,7 @@ $string['sizeheading'] = 'Tamaño del área de Rumbos';
 $string['sizeheading_desc'] = 'Los valores de abajo se aplican a todos los cursos Rumbos. Un curso puede elegir su propio modo y altura en su configuración; el mínimo y el máximo se aplican siempre.';
 $string['skipmap'] = 'Saltar el mapa de Rumbos e ir a la lista de actividades';
 $string['turneditingon'] = 'Activa la edición del curso para modificar el mapa.';
+$string['tutorclose'] = 'Cerrar';
+$string['tutortitle'] = 'Tutor virtual';
+$string['tutorurl'] = 'URL del tutor virtual';
+$string['tutorurl_desc'] = 'Dirección del tutor virtual de este sitio, por ejemplo https://moodle.ejemplo.com/agente/chat. Si se indica, la aplicación Rumbos puede mostrar un botón Tutor virtual que abre esta página a pantalla completa sobre la página del curso. Debe ser https y del mismo host que este sitio Moodle (el tutor solo puede incrustarlo su propio sitio). Déjela vacía para desactivar la función. El tutor es un servicio de IA: compruebe que su aviso de privacidad lo cubre.';
