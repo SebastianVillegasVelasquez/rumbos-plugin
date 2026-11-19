@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 (virtual tutor)
+## 0.7.0
 
 ### Added
 
