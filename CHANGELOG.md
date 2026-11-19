@@ -1,11 +1,19 @@
 # Changelog
 
+## 0.7.1
+
+### Fixed
+
+- Virtual tutor: the host listened for `tutor.open` / `tutor.closed` while the app sends `rumbos:tutor-open` and
+  expects `rumbos:host-tutor-closed`, so the button showed and the click did nothing. The host now uses the app's names.
+  Messages from the app that the host does not handle are logged once per type. Purge caches after deploying.
+
 ## 0.7.0
 
 ### Added
 
 - Virtual tutor overlay (contract v5.10): admin setting `tutor_url` (https, the site's own host; empty = off),
-  `capabilities.tutor` in `host-init`, and the app messages `tutor.open` and `tutor.closed`. The tutor opens in a
+  `capabilities.tutor` in `host-init`, and the app messages `rumbos:tutor-open` and `rumbos:host-tutor-closed`. The tutor opens in a
   full-viewport dialog in the Moodle page, with no camera, microphone or location. See `docs/TUTOR.md`; its
   privacy note is for legal review.
 

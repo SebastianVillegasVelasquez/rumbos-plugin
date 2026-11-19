@@ -23,33 +23,47 @@ const frameWindow = {name: 'rumbos-frame'};
 const expected = {appOrigin: APP, frameWindow};
 const fromApp = (data, overrides = {}) => ({origin: APP, source: frameWindow, data, ...overrides});
 
-describe('tutor.open', () => {
+describe('rumbos:tutor-open', () => {
     it('is accepted from the Rumbos origin and the Rumbos frame', () => {
-        assert.deepEqual(parseAppMessage(fromApp({type: 'tutor.open', v: 1}), expected), {type: MESSAGE.TUTOR_OPEN});
+        assert.deepEqual(parseAppMessage(fromApp({type: 'rumbos:tutor-open', v: 1}), expected), {type: MESSAGE.TUTOR_OPEN});
     });
 
     it('carries nothing: a url or any other field the app adds is dropped', () => {
-        const message = parseAppMessage(fromApp({type: 'tutor.open', v: 1, url: 'https://evil.example', data: {a: 1}}), expected);
-        assert.deepEqual(message, {type: 'tutor.open'});
+        const message = parseAppMessage(fromApp({type: 'rumbos:tutor-open', v: 1, url: 'https://evil.example', data: {a: 1}}), expected);
+        assert.deepEqual(message, {type: 'rumbos:tutor-open'});
     });
 
     it('is ignored from another origin, even with the right window', () => {
-        assert.equal(parseAppMessage(fromApp({type: 'tutor.open', v: 1}, {origin: 'https://evil.example'}), expected), null);
-        assert.equal(parseAppMessage(fromApp({type: 'tutor.open', v: 1}, {origin: SITE}), expected), null);
+        assert.equal(parseAppMessage(fromApp({type: 'rumbos:tutor-open', v: 1}, {origin: 'https://evil.example'}), expected), null);
+        assert.equal(parseAppMessage(fromApp({type: 'rumbos:tutor-open', v: 1}, {origin: SITE}), expected), null);
     });
 
     it('is ignored from another window, even with the right origin', () => {
-        assert.equal(parseAppMessage(fromApp({type: 'tutor.open', v: 1}, {source: {name: 'other'}}), expected), null);
-        assert.equal(parseAppMessage(fromApp({type: 'tutor.open', v: 1}, {source: null}), expected), null);
+        assert.equal(parseAppMessage(fromApp({type: 'rumbos:tutor-open', v: 1}, {source: {name: 'other'}}), expected), null);
+        assert.equal(parseAppMessage(fromApp({type: 'rumbos:tutor-open', v: 1}, {source: null}), expected), null);
     });
 
     it('is ignored without the protocol version', () => {
-        assert.equal(parseAppMessage(fromApp({type: 'tutor.open'}), expected), null);
-        assert.equal(parseAppMessage(fromApp({type: 'tutor.open', v: 2}), expected), null);
+        assert.equal(parseAppMessage(fromApp({type: 'rumbos:tutor-open'}), expected), null);
+        assert.equal(parseAppMessage(fromApp({type: 'rumbos:tutor-open', v: 2}), expected), null);
     });
 
-    it('is never sent by the host: tutor.closed is not an app message', () => {
-        assert.equal(parseAppMessage(fromApp({type: 'tutor.closed', v: 1}), expected), null);
+    it('is never sent by the host: rumbos:host-tutor-closed is not an app message', () => {
+        assert.equal(parseAppMessage(fromApp({type: 'rumbos:host-tutor-closed', v: 1}), expected), null);
+    });
+});
+
+describe('the names on the wire', () => {
+    it('are the ones the app sends, in the same rumbos: family as every other message', () => {
+        // Regression: the host once listened for a bare "tutor.open" while the app sent "rumbos:tutor-open", so the
+        // button showed and the click was dropped without a trace.
+        assert.equal(MESSAGE.TUTOR_OPEN, 'rumbos:tutor-open');
+        assert.equal(MESSAGE.TUTOR_CLOSED, 'rumbos:host-tutor-closed');
+        assert.deepEqual(parseAppMessage(fromApp({type: 'rumbos:tutor-open', v: 1}), expected), {type: 'rumbos:tutor-open'});
+    });
+
+    it('the former bare names are not accepted', () => {
+        assert.equal(parseAppMessage(fromApp({type: 'tutor.open', v: 1}), expected), null);
     });
 });
 
@@ -68,7 +82,7 @@ describe('capabilities in host-init', () => {
 
 describe('hostTutorClosed', () => {
     it('is the closed message with the protocol version and nothing else', () => {
-        assert.deepEqual(hostTutorClosed(), {type: 'tutor.closed', v: 1});
+        assert.deepEqual(hostTutorClosed(), {type: 'rumbos:host-tutor-closed', v: 1});
     });
 });
 

@@ -251,6 +251,7 @@ class RumbosHost {
         }
         const message = parseAppMessage(event, {appOrigin: this.appOrigin, frameWindow: this.frame.contentWindow});
         if (!message) {
+            this.noteIgnored(event);
             return;
         }
 
@@ -309,6 +310,31 @@ class RumbosHost {
             case MESSAGE.NO_CONTENT:
                 this.degrade('nocontent', message.reason);
                 break;
+        }
+    }
+
+    /**
+     * Says, once per type, that the app sent something the host does not act on.
+     *
+     * Only messages that pass the sender checks are named: a message from anywhere else is not the app's and stays
+     * silent. A type the host does not know (or one with the wrong version) used to vanish without a trace, which is
+     * how a button that did nothing could not be told from a message that never arrived.
+     *
+     * @param {MessageEvent} event
+     */
+    noteIgnored(event) {
+        const data = event.data;
+        if (event.origin !== this.appOrigin || event.source !== this.frame.contentWindow || !data ||
+                typeof data.type !== 'string' || data.type.startsWith('rumbos:popup-')) {
+            return;
+        }
+        const key = `${String(data.type).slice(0, 60)} v=${String(data.v).slice(0, 10)}`;
+        if (!this.ignoredSeen) {
+            this.ignoredSeen = new Set();
+        }
+        if (!this.ignoredSeen.has(key) && this.ignoredSeen.size < 20) {
+            this.ignoredSeen.add(key);
+            Log.warn(`format_rumbos: ignored a message from the app that the host does not handle (${key})`);
         }
     }
 
@@ -491,7 +517,13 @@ class RumbosHost {
         }
         // Inside the element that is in the browser's full screen when there is one: nothing else is shown there.
         const inNativeFullscreen = document.fullscreenElement && document.fullscreenElement === this.frameWrap;
-        this.tutor.open(this.tutorUrl, this.frame, inNativeFullscreen ? this.frameWrap : document.body);
+        try {
+            this.tutor.open(this.tutorUrl, this.frame, inNativeFullscreen ? this.frameWrap : document.body);
+        } catch (error) {
+            Log.error(`format_rumbos: the virtual tutor overlay could not be opened (${error?.message ?? error})`);
+            this.tutor.close();
+            this.tutor = null;
+        }
     }
 
     /**

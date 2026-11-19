@@ -38,7 +38,7 @@ export const MESSAGE = {
     FLOW_STEP_DONE: 'rumbos:flow-step-done',
     REQUEST_QUIZ_RESULT: 'rumbos:request-quiz-result',
     FLOW_RESET: 'rumbos:flow-reset',
-    TUTOR_OPEN: 'tutor.open',
+    TUTOR_OPEN: 'rumbos:tutor-open',
     ERROR: 'rumbos:error',
     NO_CONTENT: 'rumbos:no-content',
     PREFERRED_SIZE: 'rumbos:preferred-size',
@@ -50,7 +50,7 @@ export const MESSAGE = {
     HOST_OVERLAY: 'rumbos:host-overlay',
     HOST_FLOW_PROGRESS: 'rumbos:host-flow-progress',
     HOST_QUIZ_RESULT: 'rumbos:host-quiz-result',
-    TUTOR_CLOSED: 'tutor.closed',
+    TUTOR_CLOSED: 'rumbos:host-tutor-closed',
 };
 
 /**

@@ -31,7 +31,7 @@ Site administration > Plugins > Course formats > Rumbos > **Virtual tutor URL** 
 
 | Decision | Why |
 | --- | --- |
-| `tutor.open` / `tutor.closed` keep the names given in the brief, plus `v: 1` like the rest of the contract | The brief fixes the names; `v: 1` keeps one rule for every message. **If the app does not send `v: 1` the message is ignored**; tell the app team. |
+| The messages are `rumbos:tutor-open` (app to host) and `rumbos:host-tutor-closed` (host to app), both with `v: 1` | These are the names the app sends (app decision D23), in the same `rumbos:` family as every other message. 0.7.0 listened for bare `tutor.open` / `tutor.closed`, taken from the brief, so the button showed and the click was dropped. **A message with another type or without `v: 1` is ignored** (and now logged once, see Troubleshooting). |
 | `capabilities` is in `host-init`, always present, only true features listed | Additive; an old app ignores it; a missing flag means off. |
 | The message carries nothing; the URL is the setting | The app (another origin) can never choose what is framed. |
 | Same origin required, not just same host | `SAMEORIGIN` compares origins; another port or scheme would be blocked by the browser anyway. |
@@ -44,9 +44,33 @@ Site administration > Plugins > Course formats > Rumbos > **Virtual tutor URL** 
 | Ignored while the activity popup or the tutor is open | The app is not in front of the user then. |
 | One Escape closes one thing | The host's full-screen Escape handler skips while the tutor is open. |
 | Escape inside the tutor's own page is not seen by the host | A frame owns its keys; the visible **Close** button is the way out there. |
-| No `host-overlay` message for the tutor | It would change the app's behaviour without being asked; `tutor.closed` is the contract. |
+| No `host-overlay` message for the tutor | It would change the app's behaviour without being asked; `rumbos:host-tutor-closed` is the contract. |
 | No version bump | Releases are their own commit (docs/RELEASE.md). The new setting shows after a cache purge. |
 | Per-course setting: not done; a cheap follow-up | The format already has course options; the page would pass the course value instead of the site value. The same-host rule would stay. |
+
+## Troubleshooting: the button shows but nothing opens
+
+The button only proves the capability announcement (`host-init`) arrived. Walk the chain in order:
+
+1. **Is the new code loaded?** Moodle caches JavaScript. After a deploy, run *Site administration > Development >
+   Purge caches* (or `php admin/cli/purge_caches.php`), then reload with the cache off. In the browser's Network panel
+   `host.min.js` and `protocol.min.js` must come from `/lib/requirejs.php/<revision>/format_rumbos/...`, with a
+   revision that changed after the purge.
+2. **Does the message arrive?** In the console of the course page run
+   `addEventListener('message', e => console.log(e.origin, e.data))` and click the button. Expected:
+   the Rumbos origin and `{type: "rumbos:tutor-open", v: 1}`. Nothing logged means the app did not send it.
+3. **Received and ignored?** The console shows `format_rumbos: ignored a message from the app that the host does not
+   handle (<type> v=<v>)`. The type or the version differs from the contract (names above, `v: 1`). Messages from
+   another origin or window are dropped silently by design.
+   `event.origin` must equal the configured Rumbos origin exactly (scheme, host, port, no trailing slash) and
+   `event.source` must be the Rumbos iframe, not a frame nested inside it.
+4. **Handled but nothing visible?** The console shows `the virtual tutor overlay could not be opened`, or inspect
+   `[data-region="rumbos-tutor"]` at the moment of the click: its computed `display`, `z-index` and size.
+5. **Overlay opens but the tutor is blank?** Request the configured URL and read its headers: it must answer 200 on the
+   same origin with `X-Frame-Options: SAMEORIGIN` (or no restriction); a redirect to another host is refused by the
+   browser, and a `frame-src` / `frame-ancestors` set by the web server or a proxy applies.
+6. **Same setting everywhere?** The announcement and the handler both use `config::get_tutor_url()` (checked again in
+   the browser), so a visible button means the setting is valid. If it is not visible, see the setting section.
 
 ## Privacy (for legal review, not final)
 
@@ -66,7 +90,7 @@ Needs an https Moodle on the same host as the tutor. Mark each cell with the bro
 | Open with keyboard (Enter on the button) and touch (tap) | | | | |
 | Close with the Close button: mouse, keyboard, touch | | | | |
 | `Esc` closes while the focus is in the host page | | | | |
-| Focus returns to the Rumbos iframe; app receives `tutor.closed` | | | | |
+| Focus returns to the Rumbos iframe; app receives `rumbos:host-tutor-closed` | | | | |
 | Tab and Shift+Tab never leave the dialog | | | | |
 | Page behind does not scroll | | | | |
 | Overlay fills the viewport; the on-screen keyboard does not hide the message box | | | | |
@@ -80,5 +104,5 @@ Needs an https Moodle on the same host as the tutor. Mark each cell with the bro
 2. Site administration > Plugins > Course formats > Rumbos > Virtual tutor URL: enter
    `https://academiaturismo.mincit.gov.co/agente/chat` and save. An error means the host or scheme is not the site's own.
 3. Open a course: the **Tutor virtual** button should appear in Rumbos (the app version that reads `capabilities`
-   and sends `tutor.open` must be deployed).
+   and sends `rumbos:tutor-open` must be deployed).
 4. Turn off: empty the field and save. The next page load announces no capability and the button disappears.
