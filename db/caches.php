@@ -44,4 +44,15 @@ $definitions = [
         'staticacceleration' => false,
         'ttl' => 120,
     ],
+
+    // How many result statements the receiver handled in the current minute, site wide, and how many requests
+    // that failed before their signature was checked: counts only. The ttl is twice the window of the
+    // result_rate_limit class.
+    'resultrate' => [
+        'mode' => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true,
+        'staticacceleration' => false,
+        'ttl' => 120,
+    ],
 ];

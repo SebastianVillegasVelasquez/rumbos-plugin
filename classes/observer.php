@@ -19,6 +19,7 @@ namespace format_rumbos;
 use core\event\course_deleted;
 use core\event\user_deleted;
 use format_rumbos\local\flow_progress;
+use format_rumbos\local\result_store;
 
 /**
  * Event observers: the flow progress goes when its course or its user goes.
@@ -35,6 +36,7 @@ class observer {
      */
     public static function course_deleted(course_deleted $event): void {
         flow_progress::delete_for_course((int) $event->objectid);
+        result_store::erase_course((int) $event->objectid);
     }
 
     /**
@@ -44,5 +46,6 @@ class observer {
      */
     public static function user_deleted(user_deleted $event): void {
         flow_progress::delete_for_user((int) $event->objectid);
+        result_store::erase_user((int) $event->objectid);
     }
 }

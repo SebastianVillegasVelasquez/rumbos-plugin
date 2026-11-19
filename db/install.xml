@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="course/format/rumbos/db" VERSION="20261111" COMMENT="XMLDB file for the Rumbos course format"
+<XMLDB PATH="course/format/rumbos/db" VERSION="20261117" COMMENT="XMLDB file for the Rumbos course format"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd"
 >
@@ -21,6 +21,56 @@
       </KEYS>
       <INDEXES>
         <INDEX NAME="courseuser" UNIQUE="false" FIELDS="courseid, userid"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="format_rumbos_result" COMMENT="Assessment results applied from verified statements of the Rumbos service: one row per attempt">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The course the result belongs to"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The student the result belongs to"/>
+        <FIELD NAME="purpose" TYPE="char" LENGTH="12" NOTNULL="true" SEQUENCE="false" COMMENT="check_in or final"/>
+        <FIELD NAME="attemptid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The attempt in the Rumbos service: the idempotency key"/>
+        <FIELD NAME="jti" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The statement id: the replay guard"/>
+        <FIELD NAME="payloadhash" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="SHA-256 of the statement's normalised claims"/>
+        <FIELD NAME="percent" TYPE="char" LENGTH="6" NOTNULL="true" SEQUENCE="false" COMMENT="Decimal string with two decimals, as sent"/>
+        <FIELD NAME="passed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Whether the Rumbos service decided it is a pass"/>
+        <FIELD NAME="timefinished" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the attempt finished"/>
+        <FIELD NAME="timeapplied" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When Moodle applied it"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="attemptid" TYPE="unique" FIELDS="attemptid"/>
+        <KEY NAME="jti" TYPE="unique" FIELDS="jti"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="courseuser" UNIQUE="false" FIELDS="courseid, userid"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="format_rumbos_audit" COMMENT="Every result statement received, accepted or rejected, with the reason">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the statement arrived"/>
+        <FIELD NAME="status" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The HTTP status answered"/>
+        <FIELD NAME="reason" TYPE="char" LENGTH="48" NOTNULL="true" SEQUENCE="false" COMMENT="Why: completed, recorded, already_applied or a rejection reason"/>
+        <FIELD NAME="kid" TYPE="char" LENGTH="32" NOTNULL="false" SEQUENCE="false" COMMENT="The key id of the statement header"/>
+        <FIELD NAME="jti" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="The statement id, only once its signature was verified"/>
+        <FIELD NAME="attemptid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="The attempt, only once the signature was verified"/>
+        <FIELD NAME="subject" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="The pseudonymous user reference of the statement"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The course, 0 when unknown"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The Moodle user once resolved, 0 otherwise"/>
+        <FIELD NAME="purpose" TYPE="char" LENGTH="12" NOTNULL="false" SEQUENCE="false" COMMENT="check_in or final"/>
+        <FIELD NAME="percent" TYPE="char" LENGTH="6" NOTNULL="false" SEQUENCE="false" COMMENT="The percent as sent"/>
+        <FIELD NAME="passed" TYPE="int" LENGTH="1" NOTNULL="false" SEQUENCE="false" COMMENT="The passed flag as sent"/>
+        <FIELD NAME="policy" TYPE="char" LENGTH="24" NOTNULL="false" SEQUENCE="false" COMMENT="The policy as sent, for example gt:80"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
+        <INDEX NAME="courseuser" UNIQUE="false" FIELDS="courseid, userid"/>
+        <INDEX NAME="jti" UNIQUE="false" FIELDS="jti"/>
+        <INDEX NAME="attemptid" UNIQUE="false" FIELDS="attemptid"/>
       </INDEXES>
     </TABLE>
   </TABLES>

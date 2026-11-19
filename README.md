@@ -163,6 +163,7 @@ Open **Site administration > Plugins > Course formats > Rumbos**.
 | Height on small screens | Percentage of the screen height (50 to 100, default 80) on screens narrower than 768 px. |
 | Minimum and maximum height | Pixels (200 to 1000, default 360; 400 to 4000, default 1600). No course can go outside them on a computer screen. |
 | Minimum students to show statistics | Default 5, at least 1. The teacher's completion counts are given only when at least this many students are tracked in the course or group being looked at. See [Completion statistics](#completion-statistics-for-teachers). |
+| Accept results, Result issuer, Result tenant, Result keys | The receiver of signed results from the Rumbos service. Off by default. See [Result passback](#result-passback-and-course-completion). |
 | Registration | Read-only panel with what the Rumbos service needs to know about this site: issuer, host origin, audience, key id, public key and its fingerprint, a registration command, and a diagnostic. See [Registering the site](#registering-the-site-in-the-rumbos-service). |
 
 To use the format, a teacher selects **Rumbos** as the course format in the course
@@ -277,6 +278,46 @@ A time limit keeps running while the overlay is closed, and an attempt that has 
 
 **Backup and restore.** The progress is **not** included in course backups in this phase: a restored or duplicated course
 starts with no progress. The threshold option is, as part of the course settings.
+
+### Result passback and course completion
+
+The Rumbos app has a native check-in and final exam. **The browser never reports a grade.** The Rumbos service sends this
+site a **signed result statement** (a JWS, RS256, the mirror of the launch assertion) and the plugin verifies it, records the
+result and, on a pass, completes the course in Moodle's own completion system, so Moodle's reports and the certificate keep
+working. The contract the backend follows is [docs/RESULT-PASSBACK.md](docs/RESULT-PASSBACK.md); the audit that led to it,
+with the mechanisms considered and why they were rejected, is [docs/RESULT-PASSBACK-AUDIT.md](docs/RESULT-PASSBACK-AUDIT.md).
+
+1. **Turn the receiver on**: in the Rumbos settings tick *Accept results*, set the *Result issuer* and *Result tenant* the
+   Rumbos service gives you, and paste its public key(s) in *Result keys*. The page shows the address to give the service
+   (`https://<moodle>/course/format/rumbos/passback.php`) and the audience statements must carry. Until a course is set up
+   (step 2) the receiver answers `503` and the service keeps its results.
+2. **Set a course up** with the administrator's command. It is a **dry run unless `--apply` is given**, and nothing is
+   configured on install or upgrade:
+
+   ```sh
+   php public/course/format/rumbos/cli/configure_course.php --course=10            # prints the state and what would change
+   php public/course/format/rumbos/cli/configure_course.php --course=10 --aggregation-any --apply
+   php public/course/format/rumbos/cli/configure_course.php --course=10            # again: "Nothing to change"
+   ```
+
+   `--pass-percent` (default 80) and `--pass-operator` (`gt`, default, or `gte`) only set the gradebook's "grade to pass" as a
+   **display mirror**: Moodle compares with "greater or equal", so it cannot decide a "strictly more than" rule, and the
+   service's `passed` is what counts. `--aggregation-any` is needed for "check-in **or** final" when the course also has
+   other completion criteria (for example the fallback quiz); it is never changed without being asked.
+3. **What the command leaves**: course completion on; the grade item **Rumbos result** (idnumber `rumbos_result`, 0 to
+   100) holding the **best** percent of the check-in and the final, which a later worse attempt never lowers; the role
+   **Rumbos result** (`rumbosresult`), assigned to nobody, whose only permission is to mark; and the completion criterion
+   **Manual completion by Rumbos result**, which the receiver marks on a pass. A student cannot mark it.
+4. **To undo**: `--course=10 --revert --apply` removes the criterion and the grade item when it holds no grades;
+   `--drop-grades` removes it with its grades. The role, the overall aggregation and every completion that already
+   happened stay: they are real.
+
+Only a student can complete the course: a teacher, a manager, a site administrator and anybody who may edit the map are
+refused with `422 role_not_allowed`, even when also enrolled as a student, and a role switched to Student in a browser is
+invisible to the receiver. Every statement, accepted or refused, writes a row to `format_rumbos_audit` (time, status,
+reason, the pseudonymous reference, the score; no name, email or address), and the receiver is idempotent on `attempt_id` and
+replay protected on `jti`. Neither table is purged by the plugin; the retention is a decision for the site owner and
+legal advice.
 
 ### Size of the area
 
@@ -529,8 +570,17 @@ run such commands as that user from then on, for example
 
 ## Privacy
 
-Moodle stores one kind of personal data for the plugin: which step of a welcome flow a user completed in a
-course, when, how, and which map (table `format_rumbos_flow`). It is **personal data processed inside Moodle**, so in
+**The declaration below is a draft that needs legal review before it is presented as final.** Moodle stores three kinds
+of personal data for the plugin: which step of a welcome flow a user completed in a course, when, how, and which map
+(table `format_rumbos_flow`); the results of check-in and final exams that the Rumbos service reported (table
+`format_rumbos_result`, plus the grade and the course completion they cause, which Moodle's own privacy providers cover); and
+the audit of every result statement received (table `format_rumbos_audit`: the pseudonymous reference and the score, never a
+name, an email or a network address). The results and the audit are **not purged automatically** because they back a
+certificate; the retention period is open. The privacy provider exports them, deletes the results and makes the audit rows
+anonymous on an erasure request, and they go with their course or user. The Rumbos service also keeps what the user does in
+the app (practice attempts for 90 days, assessment records without an automatic deletion, saved words and progress until
+deleted); **there is no channel from the plugin to forward an erasure request to it**, so such a request goes to the
+service's operator. The flow progress is **personal data processed inside Moodle**, so in
 Colombia the site owner is its controller under Ley 1581 de 2012 and its regulations: it needs the data subject's
 authorisation and a purpose (tracking the welcome flow), and must honour the rights of access, correction and deletion.
 The privacy provider exports and deletes it (per course, per user, and for a list of users), and it is deleted with
