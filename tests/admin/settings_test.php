@@ -130,6 +130,70 @@ zoom, lti "));
     }
 
     /**
+     * The tutor URL of this site, on its own origin, is stored normalised.
+     */
+    public function test_tutorurl_is_stored_normalised(): void {
+        global $CFG;
+        $this->setAdminUser();
+        $setting = new setting_tutorurl('format_rumbos/tutor_url', 'Tutor', '');
+        $origin = strtoupper(\format_rumbos\local\app_url::origin($CFG->wwwroot));
+
+        $this->assertSame('', $setting->write_setting('  ' . $origin . '/agente/chat/ '));
+
+        $this->assertSame(
+            \format_rumbos\local\app_url::origin($CFG->wwwroot) . '/agente/chat',
+            get_config('format_rumbos', 'tutor_url')
+        );
+    }
+
+    /**
+     * Empty is valid and turns the feature off, even after it was on.
+     */
+    public function test_tutorurl_may_be_empty(): void {
+        global $CFG;
+        $this->setAdminUser();
+        $setting = new setting_tutorurl('format_rumbos/tutor_url', 'Tutor', '');
+        $this->assertTrue($setting->validate(''));
+        $this->assertTrue($setting->validate('   '));
+
+        $setting->write_setting(\format_rumbos\local\app_url::origin($CFG->wwwroot) . '/agente/chat');
+        $this->assertSame('', $setting->write_setting(''));
+
+        $this->assertNull(\format_rumbos\local\config::get_tutor_url());
+    }
+
+    /**
+     * Anything but https on this site's own host is refused, and nothing is stored.
+     */
+    public function test_tutorurl_rejects_other_hosts_and_schemes(): void {
+        global $CFG;
+        $this->setAdminUser();
+        $setting = new setting_tutorurl('format_rumbos/tutor_url', 'Tutor', '');
+        $origin = \format_rumbos\local\app_url::origin($CFG->wwwroot);
+        $host = parse_url($CFG->wwwroot, PHP_URL_HOST);
+
+        $refused = [
+            'https://evil.example/agente/chat',
+            'https://' . $host . '.evil.example/agente/chat',
+            'https://' . $host . '@evil.example/agente/chat',
+            'https://user:pass@' . $host . '/agente/chat',
+            'https://' . $host . ':8443/agente/chat',
+            'http://' . $host . '/agente/chat',
+            'ftp://' . $host . '/agente/chat',
+            'javascript:alert(1)',
+            '//' . $host . '/agente/chat',
+            '/agente/chat',
+            $origin . '/agente/chat?next=https://evil.example',
+            $origin . '/agente/chat#x',
+        ];
+        foreach ($refused as $url) {
+            $this->assertNotTrue($setting->validate($url), $url);
+            $this->assertNotSame('', $setting->write_setting($url), $url);
+            $this->assertEmpty(get_config('format_rumbos', 'tutor_url'), $url);
+        }
+    }
+
+    /**
      * Renders the registration panel as the current user.
      *
      * @return string

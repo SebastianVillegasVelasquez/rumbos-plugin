@@ -2,8 +2,8 @@
 
 What the Moodle page (the host) and the Rumbos app, which runs in an iframe, say to each
 other, and what each side may rely on. The app side is implemented in the Rumbos frontend
-against this document. This is **contract v5.9**: everything from v5 to v5.8 is unchanged
-and v5.9 only adds to it.
+against this document. This is **contract v5.10**: everything from v5 to v5.9 is unchanged
+and v5.10 only adds to it.
 
 All messages are `window.postMessage` objects with `v: 1`. The host ignores any message
 that does not come from the configured app origin **and** from the iframe's own window,
@@ -25,10 +25,11 @@ would follow.
 | app to host | `rumbos:flow-step-done` | `mapId`, `stepKey`, `revision`, `method` | **v5.8.** Record that the user completed a step. |
 | app to host | `rumbos:request-quiz-result` | `cmid` | **v5.8.** Ask for the user's own result in a quiz. |
 | app to host | `rumbos:flow-reset` | `mapId` | **v5.8.** Editor mode only: reset the user's own progress on the map, for testing. |
+| app to host | `tutor.open` | | **v5.10.** Open the virtual tutor full screen over the page. Only if `capabilities.tutor` was announced. |
 | app to host | `rumbos:error` | `code`, `detail` | The app failed; the host falls back to the standard course content. |
 | app to host | `rumbos:no-content` | `reason` | **v5.5.** The app has nothing to show this user; the host falls back to the standard course content. |
 | app to host | `rumbos:preferred-size` | `aspectRatio` | **v5.5.** The proportions of the level on display; the host applies them only in automatic height mode. |
-| host to app | `rumbos:host-init` | `mode`, `locale`, `courseId`, `courseName`, `assertion`, `state` | The answer to `embed-ready`. `courseName` is new in v5.6. |
+| host to app | `rumbos:host-init` | `mode`, `locale`, `courseId`, `courseName`, `assertion`, `state`, `capabilities` | The answer to `embed-ready`. `courseName` is new in v5.6, `capabilities` in v5.10. |
 | host to app | `rumbos:host-state` | `state` | A newer course state. |
 | host to app | `rumbos:host-launch` | `assertion` | A fresh launch assertion. |
 | host to app | `rumbos:host-fullscreen` | `on` | The full screen mode **as it is now**. |
@@ -36,6 +37,27 @@ would follow.
 | host to app | `rumbos:host-flow-progress` | `items`, `persistent`, `config` or `error` | **v5.8.** The answer to `request-flow-progress`, `flow-step-done` and `flow-reset`. Never sent unasked. |
 | host to app | `rumbos:host-quiz-result` | `result` or `error` | **v5.8.** The answer to `request-quiz-result`. Never sent unasked. `result` gains `previewAttempts`, `canAttempt` and `reason` in v5.9. |
 | host to app | `rumbos:host-overlay` | `open` | An overlay (the activity popup) is above the map or has gone. |
+| host to app | `tutor.closed` | | **v5.10.** The tutor overlay was closed (button, Escape or the page). Sent only after `tutor.open` opened it. |
+
+### Virtual tutor (v5.10)
+
+The site's tutor page sends `X-Frame-Options: SAMEORIGIN`, so the app (another origin) cannot frame it; the host does.
+See [TUTOR.md](TUTOR.md) for the setting, the overlay and the decisions behind it.
+
+```
+host -> app: { type: "rumbos:host-init", v: 1, ..., capabilities: { tutor: true } }   // tutor only when the feature is on
+app -> host: { type: "tutor.open", v: 1 }
+host -> app: { type: "tutor.closed", v: 1 }
+```
+
+- **`capabilities`** is always present in `host-init`; it is `{}` when nothing is on. The app shows its "Tutor virtual"
+  button **only** if `capabilities.tutor === true`. An absent key means off; the host never sends `tutor: false`.
+- **`tutor.open` carries no URL and no data.** Anything else in the message is dropped. The address is the admin
+  setting `tutor_url`, https on the Moodle site's own host. The usual sender checks apply (origin **and** window);
+  the host ignores the message, without a reply, when the feature is off, when the tutor is already open and while
+  the activity popup is open.
+- **`tutor.closed`** is the only answer, also sent when the user closes the overlay in the host.
+- Like every message in this contract both carry `v: 1`; a message without it is ignored.
 
 ### Completion statistics (v5.7)
 

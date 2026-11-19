@@ -31,6 +31,7 @@ import Log from 'core/log';
 import {addNotification} from 'core/notification';
 import {getString, getStrings} from 'core/str';
 import ActivityPopup from 'format_rumbos/popup';
+import TutorOverlay from 'format_rumbos/tutor';
 import {createPoller} from 'format_rumbos/poller';
 import {createRefresher} from 'format_rumbos/refresher';
 import {exitScorm} from 'format_rumbos/safe_exit';
@@ -51,11 +52,13 @@ import {
     hostStatsError,
     hasActivity,
     hostState,
+    hostTutorClosed,
     isCourseViewUrl,
     parseAppMessage,
     parsePopupMessage,
     resolveActivityTarget,
     resolveSettingsUrl,
+    resolveTutorUrl,
 } from 'format_rumbos/protocol';
 
 const SELECTORS = {
@@ -112,10 +115,12 @@ class RumbosHost {
      * @param {string[]} [params.pollModules] Modules whose open popup also re-reads the state on an interval.
      * @param {string} [params.popupHeaderSelector] The site header the popup sits below, or empty for the whole window.
      * @param {boolean} [params.popupSession] Whether to mark the session for the popup (the activity pages drop the site chrome).
+     * @param {string} [params.tutorUrl] The site's virtual tutor, from the admin setting; empty when the feature is off.
      */
     constructor({
         courseId, courseName = '', appOrigin, mode, size = {mode: 'viewport', min: 0, max: Infinity}, canEdit = false,
         locale, timeoutMs, wwwroot, popupFrameName, newTabModules, pollModules = [], popupHeaderSelector = '', popupSession = true,
+        tutorUrl = '',
     }) {
         this.courseId = courseId;
         this.courseName = courseName;
@@ -134,6 +139,9 @@ class RumbosHost {
         this.pollModules = pollModules;
         this.popupHeaderSelector = popupHeaderSelector;
         this.popupSession = popupSession;
+        // Checked again here: only an https address on this page's own origin is ever framed.
+        this.tutorUrl = resolveTutorUrl(tutorUrl, {siteOrigin: this.siteOrigin});
+        this.tutor = null;
         this.popupPending = false;
         this.openModname = '';
         this.closing = false;
@@ -145,7 +153,9 @@ class RumbosHost {
         this.scrollY = 0;
         this.returnFocus = null;
         this.popup = null;
-        this.strings = {back: 'Back to the map', frameTitle: '{$a}', settingsBlocked: ''};
+        this.strings = {
+            back: 'Back to the map', frameTitle: '{$a}', settingsBlocked: '', tutorTitle: 'Virtual tutor', tutorClose: 'Close',
+        };
         this.overlayToken = 0;
         this.lastPushed = '';
         // Every read of the state goes through this: one request at a time, whoever asks.
@@ -195,8 +205,10 @@ class RumbosHost {
             {key: 'backtomap', component: 'format_rumbos'},
             {key: 'popupframetitle', component: 'format_rumbos', param: '{$a}'},
             {key: 'settingsblocked', component: 'format_rumbos'},
-        ]).then(([back, frameTitle, settingsBlocked]) => {
-            this.strings = {back, frameTitle, settingsBlocked};
+            {key: 'tutortitle', component: 'format_rumbos'},
+            {key: 'tutorclose', component: 'format_rumbos'},
+        ]).then(([back, frameTitle, settingsBlocked, tutorTitle, tutorClose]) => {
+            this.strings = {back, frameTitle, settingsBlocked, tutorTitle, tutorClose};
             return true;
         }).catch(() => false);
         window.addEventListener('message', this.onMessage);
@@ -284,6 +296,9 @@ class RumbosHost {
                 break;
             case MESSAGE.REQUEST_QUIZ_RESULT:
                 this.answerQuizResult(message.cmid);
+                break;
+            case MESSAGE.TUTOR_OPEN:
+                this.openTutor();
                 break;
             case MESSAGE.ERROR:
                 this.degrade('apperror', message.code, message.detail);
@@ -440,11 +455,43 @@ class RumbosHost {
                     courseName: this.courseName,
                     assertion,
                     state,
+                    capabilities: this.capabilities(),
                 }));
                 this.setState('ready');
                 return true;
             })
             .catch((error) => this.fail(error));
+    }
+
+    /**
+     * What the host can do for the app, announced in host-init (contract v5.10). Only features that are on.
+     *
+     * @returns {Object}
+     */
+    capabilities() {
+        return this.tutorUrl ? {tutor: true} : {};
+    }
+
+    /**
+     * Opens the virtual tutor over the page, when the app asks and the feature is on.
+     *
+     * The request carries nothing: the address is the admin setting. It is ignored while another overlay is open
+     * (the app is not in front of the user then) and when the tutor is already open.
+     */
+    openTutor() {
+        if (!this.tutorUrl || this.tutor?.isOpen || this.popup?.isOpen || this.popupPending) {
+            return;
+        }
+        if (!this.tutor) {
+            this.tutor = new TutorOverlay({
+                title: this.strings.tutorTitle,
+                closeLabel: this.strings.tutorClose,
+                onClose: () => this.send(hostTutorClosed()),
+            });
+        }
+        // Inside the element that is in the browser's full screen when there is one: nothing else is shown there.
+        const inNativeFullscreen = document.fullscreenElement && document.fullscreenElement === this.frameWrap;
+        this.tutor.open(this.tutorUrl, this.frame, inNativeFullscreen ? this.frameWrap : document.body);
     }
 
     /**
@@ -879,7 +926,8 @@ class RumbosHost {
      * @param {KeyboardEvent} event
      */
     onKeydown(event) {
-        if (event.key === 'Escape') {
+        // One Escape closes one thing: the tutor over the map takes it first.
+        if (event.key === 'Escape' && !event.defaultPrevented && !this.tutor?.isOpen) {
             this.setFullscreen(false);
         }
     }
@@ -937,6 +985,8 @@ class RumbosHost {
         this.poller.stop();
         this.resizeObserver?.disconnect();
         this.setFullscreen(false);
+        // The app is gone: nothing to tell it, and the page must not be left behind a dialog.
+        this.tutor?.close();
         window.removeEventListener('message', this.onMessage);
 
         this.frameWrap?.classList.add(CLASSES.HIDDEN);

@@ -75,6 +75,34 @@ class config {
     }
 
     /**
+     * Whether an address may be the virtual tutor: https, plain, and on this Moodle site's own origin.
+     *
+     * The tutor answers with X-Frame-Options: SAMEORIGIN, so only a page of this site can frame it, and the same
+     * rule keeps the setting from becoming a way to put any other site in an overlay.
+     *
+     * @param string $url Raw input.
+     * @return string|null The normalised address, or null when it is not acceptable.
+     */
+    public static function normalize_tutor_url(string $url): ?string {
+        global $CFG;
+
+        $normalised = app_url::normalize($url);
+        return $normalised !== null && app_url::is_same_origin($normalised, $CFG->wwwroot) ? $normalised : null;
+    }
+
+    /**
+     * The address of the site's virtual tutor, or null when the feature is off (empty or invalid setting).
+     *
+     * It is read again with the full check, so a value that stopped being valid (the site moved) turns the
+     * feature off instead of framing another origin.
+     *
+     * @return string|null
+     */
+    public static function get_tutor_url(): ?string {
+        return self::normalize_tutor_url((string) get_config('format_rumbos', 'tutor_url'));
+    }
+
+    /**
      * Audience claim for launch assertions.
      *
      * @return string

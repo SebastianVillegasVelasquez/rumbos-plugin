@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (0.7.0)
+
+### Added
+
+- Virtual tutor overlay (contract v5.10): admin setting `tutor_url` (https, the site's own host; empty = off),
+  `capabilities.tutor` in `host-init`, and the app messages `tutor.open` and `tutor.closed`. The tutor opens in a
+  full-viewport dialog in the Moodle page, with no camera, microphone or location. See `docs/TUTOR.md`; its
+  privacy note is for legal review.
+
 ## Unreleased (0.6.0)
 
 ### Added

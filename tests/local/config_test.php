@@ -46,4 +46,25 @@ final class config_test extends \advanced_testcase {
             $this->assertSame(1, config::get_min_cohort(), $value);
         }
     }
+
+    /**
+     * The tutor is on only with a valid address on the site's own origin; otherwise there is none to announce.
+     */
+    public function test_tutor_url_is_null_unless_valid(): void {
+        global $CFG;
+        $this->resetAfterTest();
+        $origin = app_url::origin($CFG->wwwroot);
+
+        unset_config('tutor_url', 'format_rumbos');
+        $this->assertNull(config::get_tutor_url());
+
+        set_config('tutor_url', $origin . '/agente/chat', 'format_rumbos');
+        $this->assertSame($origin . '/agente/chat', config::get_tutor_url());
+
+        $host = parse_url($CFG->wwwroot, PHP_URL_HOST);
+        foreach (['', 'https://evil.example/agente/chat', 'http://' . $host . '/agente/chat'] as $value) {
+            set_config('tutor_url', $value, 'format_rumbos');
+            $this->assertNull(config::get_tutor_url(), $value);
+        }
+    }
 }

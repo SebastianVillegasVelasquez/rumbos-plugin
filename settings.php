@@ -29,6 +29,7 @@ use format_rumbos\admin\setting_height;
 use format_rumbos\admin\setting_newtabmodules;
 use format_rumbos\admin\setting_registration;
 use format_rumbos\admin\setting_selectors;
+use format_rumbos\admin\setting_tutorurl;
 use format_rumbos\local\config;
 use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
@@ -113,6 +114,12 @@ if ($ADMIN->fulltree) {
         1
     ));
     $settings->hide_if('format_rumbos/popupheaderselector', 'format_rumbos/popupposition', 'eq', popup::POSITION_FULLSCREEN);
+
+    $settings->add(new setting_tutorurl(
+        'format_rumbos/tutor_url',
+        get_string('tutorurl', 'format_rumbos'),
+        get_string('tutorurl_desc', 'format_rumbos')
+    ));
 
     $settings->add(new admin_setting_heading(
         'format_rumbos/sizeheading',

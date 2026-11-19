@@ -277,7 +277,7 @@ describe('message builders', () => {
             hostInit({mode: 'editor', locale: 'es', courseId: 2, courseName: 'Ruta 1', assertion: 'jws', state}),
             {
                 type: 'rumbos:host-init', v: 1, mode: 'editor', locale: 'es', courseId: 2, courseName: 'Ruta 1',
-                assertion: 'jws', state,
+                assertion: 'jws', state, capabilities: {},
             },
         );
     });
