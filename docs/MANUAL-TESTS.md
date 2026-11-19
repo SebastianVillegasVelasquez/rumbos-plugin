@@ -448,3 +448,23 @@ was not otherwise touched. `inProgress` and `finishedAttempts` are what `request
 - **Consequence for the app.** After the limit, `inProgress` can stay `true` until Moodle processes the attempt. The app must
   not treat `inProgress: true` as proof that the student is still working: open the quiz again (which finishes it) and ask
   again.
+
+## Result passback and completion (release 0.6.1)
+
+Run on a course set up with `cli/configure_course.php` (see [RESULT-PASSBACK.md](RESULT-PASSBACK.md)), with the real backend
+or with `dev/sign-test-statement.php`. Check the gradebook, the course completion report and the certificate after each row.
+
+| # | Scenario | Expected |
+| --- | --- | --- |
+| 1 | Student passes the check-in | `200 completed`; grade item holds the percent; course complete; certificate available |
+| 2 | Student fails the check-in, fails the final, passes the final on the third attempt | `recorded`, `recorded`, `completed`; the grade is the best percent; complete once |
+| 3 | Student passes, then a worse attempt is reported | `recorded`; the grade stays at the best; still complete |
+| 4 | Teacher (editing, non-editing), manager or administrator in preview, also enrolled as student | `422 role_not_allowed`; nothing recorded; audit row written |
+| 5 | Backend sends while the course is not set up, or completion is off | `503`; the backend keeps the result and retries after the course is set up |
+| 6 | Same statement sent twice; same attempt with a new `jti`; same `jti` with another payload | `already_applied`; `already_applied`; `409` |
+| 7 | Tampered, expired, unknown key, wrong issuer, audience or tenant | `401`; audit row; nothing recorded |
+| 8 | Exactly 80.00 under the rule "strictly more than 80" | Not passed: `passed` is the backend's decision; Moodle's grade to pass shows 80.01 |
+| 9 | Revert (`--revert --apply`), then a statement | `503 course_not_configured`; completions that already happened remain |
+
+**Not verified here:** the certificate (it is a third-party plugin that was not installed), the real backend sender and its
+clock, and Moodle 5.3.
