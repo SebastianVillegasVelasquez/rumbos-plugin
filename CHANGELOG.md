@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0
+
+### Added
+
+- Level prerequisites (off by default): admin settings `levelgate` and `levelchain` (ordered course ID numbers, validated: each must
+  belong to exactly one course, no repeats); capability `format/rumbos:skiplevelcheck` for a recorded per-student exception;
+  `cli/level_report.php`, a read-only dry run listing who would be blocked, by level; a "locked" message with a link to the previous level
+  (only when the user can open it) and a "could not verify, try again" message with a retry link. See `docs/LEVEL-PREREQUISITES.md`.
+
+### Changed
+
+- The launch assertion and the course page honour the gate when it is on: no assertion and no iframe until the previous level is complete
+  in Moodle; a check that cannot run fails closed. Editors and administrators are never blocked. With the switch off, nothing changes.
+  Run the upgrade and purge caches after deploying.
+
 ## 0.7.1
 
 ### Fixed

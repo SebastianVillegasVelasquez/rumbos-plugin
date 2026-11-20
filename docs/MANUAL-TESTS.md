@@ -468,3 +468,21 @@ or with `dev/sign-test-statement.php`. Check the gradebook, the course completio
 
 **Not verified here:** the certificate (it is a third-party plugin that was not installed), the real backend sender and its
 clock, and Moodle 5.3.
+
+## Level prerequisites
+
+**NOT RUN yet.** The PHPUnit tests cover the decision, the assertion and the rendered page; nothing below has been done in a browser. Fill in
+the table when it is. Set up: chain `A1,A2` (two courses with ID numbers, completion criteria in A1), switch on, a running Rumbos app.
+
+| Case | Expected | Chrome | Safari | Small phone |
+| --- | --- | --- | --- | --- |
+| Student enrolled in A1 and A2, A1 **not** complete | A2 shows "This level is locked" with a link to A1; no iframe | not run | not run | not run |
+| Same student after A1 is marked complete | A2 shows the map after a reload | not run | not run | not run |
+| Student enrolled in A2 only | Locked message, **no link** to A1 | not run | not run | not run |
+| Editing teacher of A2 | Map as always | not run | not run | not run |
+| Administrator (not enrolled) | Map as always; after "Switch role to Student" the locked message | not run | not run | not run |
+| Student with the exception role in A2 | Map opens; A3 (if any) still locked | not run | not run | not run |
+| Predecessor without criteria (or completion off) | Retry message, **Reintentar** reloads; error in the server log | not run | not run | not run |
+| Switch off | Everybody gets the map, as before | not run | not run | not run |
+
+Also check on a phone: the message and the buttons are readable without horizontal scrolling, and the activity list stays collapsed.

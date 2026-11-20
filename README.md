@@ -96,6 +96,19 @@ Signed with RS256. The header carries the key id (`kid`). The claims are:
 
 The assertion contains no name, email address or other personal data.
 
+## Level prerequisites
+
+Optional and **off by default**. Students may be enrolled in any level but see the Rumbos content of a level only after completing the
+previous level in Moodle. Set the ordered course ID numbers (`levelchain`, for example `1000,1001,<B1>,1002`) and the switch
+(`levelgate`) under Site administration > Plugins > Course formats > Rumbos. Review who would be blocked first, without enabling anything:
+
+```
+php public/course/format/rumbos/cli/level_report.php
+```
+
+Editors and administrators are never blocked. For one student with a legitimate exception, assign a role holding the capability
+`format/rumbos:skiplevelcheck` in that course. Audit, limits, rollout and how to turn it off: [docs/LEVEL-PREREQUISITES.md](docs/LEVEL-PREREQUISITES.md).
+
 ## Requirements
 
 - Moodle 5.2 or 5.3. Since Moodle 5.1 plugins live under the `public/` directory; the

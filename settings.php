@@ -26,6 +26,7 @@ defined('MOODLE_INTERNAL') || die();
 
 use format_rumbos\admin\setting_appurl;
 use format_rumbos\admin\setting_height;
+use format_rumbos\admin\setting_levelchain;
 use format_rumbos\admin\setting_newtabmodules;
 use format_rumbos\admin\setting_registration;
 use format_rumbos\admin\setting_resultkeys;
@@ -122,6 +123,25 @@ if ($ADMIN->fulltree) {
         'format_rumbos/tutor_url',
         get_string('tutorurl', 'format_rumbos'),
         get_string('tutorurl_desc', 'format_rumbos')
+    ));
+
+    $settings->add(new admin_setting_heading(
+        'format_rumbos/levelheading',
+        get_string('levelheading', 'format_rumbos'),
+        get_string('levelheading_desc', 'format_rumbos')
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'format_rumbos/levelgate',
+        new lang_string('levelgate', 'format_rumbos'),
+        new lang_string('levelgate_desc', 'format_rumbos'),
+        0
+    ));
+
+    $settings->add(new setting_levelchain(
+        'format_rumbos/levelchain',
+        get_string('levelchain', 'format_rumbos'),
+        get_string('levelchain_desc', 'format_rumbos')
     ));
 
     $settings->add(new admin_setting_heading(

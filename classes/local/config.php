@@ -126,6 +126,26 @@ class config {
     }
 
     /**
+     * Whether students must complete the previous level before they can open the next one.
+     *
+     * Off by default: until an administrator turns it on, every launch behaves as it always did.
+     *
+     * @return bool
+     */
+    public static function is_level_gate_enabled(): bool {
+        return (bool) get_config('format_rumbos', 'levelgate');
+    }
+
+    /**
+     * The ordered chain of level course ID numbers, first level first.
+     *
+     * @return string[]
+     */
+    public static function get_level_chain(): array {
+        return level_chain::parse((string) get_config('format_rumbos', 'levelchain'));
+    }
+
+    /**
      * Fewest tracked students a statistic may describe before it is shown.
      *
      * Below this number the counts of an activity could point at one or two people, so the host sends none.

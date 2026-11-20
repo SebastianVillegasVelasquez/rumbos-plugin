@@ -22,6 +22,8 @@ use format_rumbos\local\access;
 use format_rumbos\local\app_url;
 use format_rumbos\local\config;
 use format_rumbos\local\course_name;
+use format_rumbos\local\level_decision;
+use format_rumbos\local\level_gate;
 use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
 use renderer_base;
@@ -60,7 +62,7 @@ class content extends content_base {
      * @return \stdClass
      */
     public function export_for_template(renderer_base $output) {
-        global $CFG, $PAGE;
+        global $CFG, $PAGE, $USER;
 
         $data = parent::export_for_template($output);
 
@@ -70,9 +72,21 @@ class content extends content_base {
         // course page: never nest the app inside the popup.
         $showrumbos = config::is_usable() && access::can_use($context) && !popup::is_popup_request($_SERVER);
 
+        // A student who has not completed the previous level gets no iframe and no launch: a message instead. The standard
+        // content below stays as it is; the gate only covers the Rumbos launch (see docs/LEVEL-PREREQUISITES.md).
+        $locked = false;
+        if ($showrumbos) {
+            $decision = level_gate::check($courseid, (int) $USER->id);
+            if (!$decision->is_open()) {
+                $showrumbos = false;
+                $locked = true;
+                $this->export_level_message($data, $decision, $context);
+            }
+        }
+
         $data->showrumbos = $showrumbos;
         $data->courseid = $courseid;
-        $data->collapselist = $showrumbos && !$this->format->show_editor();
+        $data->collapselist = ($showrumbos || $locked) && !$this->format->show_editor();
         $editing = (bool) $PAGE->user_is_editing();
         $data->suggestediting = $showrumbos && access::should_suggest_editing($context, $editing);
 
@@ -103,5 +117,41 @@ class content extends content_base {
         }
 
         return $data;
+    }
+
+    /**
+     * Fills in the message shown instead of the map when the level is locked or the check could not run.
+     *
+     * Students are told which level to complete first, with a link to it only when they can open that course. Nothing else
+     * is revealed: no ID numbers and no reason for a failed check.
+     *
+     * @param \stdClass $data Template data, extended in place.
+     * @param level_decision $decision A closed decision.
+     * @param context_course $context
+     */
+    private function export_level_message(\stdClass $data, level_decision $decision, context_course $context): void {
+        global $PAGE;
+
+        if ($decision->status !== level_decision::LOCKED || $decision->prerequisite === null) {
+            $data->levelerror = true;
+            $data->levelmessage = get_string('levelerror_body', 'format_rumbos');
+            $data->levelretrytext = get_string('levelerror_retry', 'format_rumbos');
+            $data->levelretryurl = $PAGE->url->out(false);
+            return;
+        }
+
+        $previous = $decision->prerequisite;
+        $previouscontext = context_course::instance($previous->id);
+        $previousname = format_string($previous->fullname, true, ['context' => $previouscontext]);
+        $data->levellocked = true;
+        $data->leveltitle = get_string('levellocked_title', 'format_rumbos');
+        $data->levelmessage = get_string('levellocked_body', 'format_rumbos', (object) [
+            'level' => format_string($this->format->get_course()->fullname, true, ['context' => $context]),
+            'previous' => $previousname,
+        ]);
+        if (can_access_course($previous)) {
+            $data->levellink = (new \moodle_url('/course/view.php', ['id' => $previous->id]))->out(false);
+            $data->levellinktext = get_string('levellocked_link', 'format_rumbos', $previousname);
+        }
     }
 }
