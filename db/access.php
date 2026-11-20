@@ -54,4 +54,12 @@ $capabilities = [
             'manager' => CAP_ALLOW,
         ],
     ],
+
+    // An exception for one student: opens a level without having completed the previous one (see the level prerequisites).
+    // Nobody holds it by default. Staff never need it: editors and administrators are never blocked.
+    'format/rumbos:skiplevelcheck' => [
+        'captype' => 'read',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes' => [],
+    ],
 ];
