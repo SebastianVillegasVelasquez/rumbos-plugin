@@ -24,6 +24,8 @@ use core_external\external_value;
 use format_rumbos\local\access;
 use format_rumbos\local\config;
 use format_rumbos\local\launch_assertion;
+use format_rumbos\local\level_decision;
+use format_rumbos\local\level_gate;
 
 /**
  * External function issuing a short-lived launch assertion for the current user.
@@ -48,7 +50,8 @@ class get_launch_assertion extends external_api {
      * Signs an assertion for the current user in the course.
      *
      * Only for courses that use the Rumbos format, while Rumbos is enabled
-     * and an app URL is configured, and only for participants of the course.
+     * and an app URL is configured, only for participants of the course, and, when
+     * the level prerequisites are on, only to users who may open this level.
      *
      * @param int $courseid
      * @return array
@@ -68,6 +71,13 @@ class get_launch_assertion extends external_api {
         }
         if (!access::can_use($context)) {
             throw new \required_capability_exception($context, 'format/rumbos:editmap', 'nopermissions', '');
+        }
+
+        // A student who has not completed the previous level gets no assertion, and neither does a check that could not run.
+        $decision = level_gate::check($params['courseid'], (int) $USER->id);
+        if (!$decision->is_open()) {
+            $error = $decision->status === level_decision::LOCKED ? 'errorlevellocked' : 'errorlevelcheck';
+            throw new \moodle_exception($error, 'format_rumbos');
         }
 
         $assertion = launch_assertion::create($params['courseid'], (int) $USER->id);

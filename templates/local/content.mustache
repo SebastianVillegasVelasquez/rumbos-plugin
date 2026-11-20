@@ -22,11 +22,19 @@
     disclosure control (works without JavaScript and is keyboard accessible);
     teachers in editing mode get the core course editor expanded below the map.
 
+    When the previous level is not complete (levellocked), or that could not be checked (levelerror), a message
+    replaces the map and the container is not rendered, so the app is never loaded.
+
     Example context (json):
     {
-        "showrumbos": true,
+        "showrumbos": false,
         "collapselist": true,
         "suggestediting": false,
+        "levellocked": true,
+        "leveltitle": "This level is locked",
+        "levelmessage": "To open B1 you first need to complete A2.",
+        "levellink": "https://lms.example.com/course/view.php?id=3",
+        "levellinktext": "Go to A2",
         "courseid": 2,
         "embedurl": "https://rumbos.example.com/embed?host=https%3A%2F%2Flms.example.com",
         "title": "Course title example",
@@ -39,6 +47,21 @@
 {{#showrumbos}}
     {{> format_rumbos/embed }}
 {{/showrumbos}}
+{{#levellocked}}
+<div class="alert alert-info mb-3" role="status" data-region="rumbos-level-locked">
+    <h2 class="h5 alert-heading">{{leveltitle}}</h2>
+    <p class="mb-2">{{levelmessage}}</p>
+    {{#levellink}}
+    <a class="btn btn-primary" href="{{levellink}}">{{levellinktext}}</a>
+    {{/levellink}}
+</div>
+{{/levellocked}}
+{{#levelerror}}
+<div class="alert alert-warning mb-3" role="alert" data-region="rumbos-level-error">
+    <p class="mb-2">{{levelmessage}}</p>
+    <a class="btn btn-primary" href="{{levelretryurl}}">{{levelretrytext}}</a>
+</div>
+{{/levelerror}}
 {{#collapselist}}
 <details class="format-rumbos-list mb-3" id="format-rumbos-list" data-region="rumbos-activity-list">
     <summary class="btn btn-secondary">{{#str}} showactivitylist, format_rumbos {{/str}}</summary>
