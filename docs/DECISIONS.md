@@ -61,3 +61,35 @@ still works: see the privacy provider, which is a draft **pending legal review**
 
 There is no server to server channel from the plugin to the backend and none was invented. Erasure in
 Moodle erases what Moodle holds; the backend's operator erases what the backend holds.
+
+## Level prerequisites
+
+Full audit and runbook: [LEVEL-PREREQUISITES.md](LEVEL-PREREQUISITES.md).
+
+### D10. The gate reads Moodle's course completion at launch, and fails closed
+
+Moodle is the source of truth for "completed". The plugin asks `completion_info::is_course_complete()` when the course page renders and
+when an assertion is requested; if the answer is no, it signs nothing and renders no iframe. If the check cannot run (missing or duplicated
+ID number, completion off, a predecessor without criteria, an exception) the content stays closed and the student sees "No pudimos verificar
+tu avance, inténtalo de nuevo" with a retry link; the precise cause goes to the error log. Showing the content on failure would turn every
+misconfiguration into a silent bypass. Switch off = today's behaviour.
+
+### D11. The manual exception is a capability, assigned as a role
+
+`format/rumbos:skiplevelcheck`, held by nobody by default, given to one student in one course through a role. Moodle already records who
+assigned what to whom and when (`role_assigned` / `role_unassigned` events), shows it in Participants and Check permissions, and
+needs no admin page. A plugin table would have added a schema, a privacy export and a screen to build for the same audit trail. The
+exception covers that level only.
+
+### D12. Staff are never blocked; an administrator who role-switches is judged as a student
+
+Anybody holding `format/rumbos:editmap` (editing teachers, managers) and site administrators bypass the gate, so staff can preview and
+test every level. The check is `has_capability()`, which honours role switching: an administrator who switches to "Student" sees the locked
+screen, which is how it can be tested.
+
+### D13. The locked page keeps the standard content; direct URLs stay open
+
+The message replaces the map only. The standard section list stays below, collapsed as it already was; direct activity URLs and the
+web service listing are governed by enrolment and are not closed. Closing them needs a native Moodle restriction (Moodle 5.2 has no
+cross-course condition), which is the owner's decision. Also note the real window after a lock: the backend swaps the 60-second assertion
+for an access token that lasts 1800 s by default, so a student already inside keeps access up to that long.
