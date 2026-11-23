@@ -145,7 +145,10 @@ final class result_statement_test extends \format_rumbos\result_testcase {
         $user = $this->getDataGenerator()->create_user();
         $jws = $this->sign($this->claims($course, $user));
 
-        $tampered = substr($jws, 0, -1) . (substr($jws, -1) === 'A' ? 'B' : 'A');
+        // Change the first character of the signature: the last one of a base64 text can carry padding bits that a
+        // decoder ignores, so changing it sometimes changes nothing.
+        [$header, $payload, $signature] = explode('.', $jws);
+        $tampered = $header . '.' . $payload . '.' . ($signature[0] === 'A' ? 'B' : 'A') . substr($signature, 1);
         try {
             result_statement::verify($tampered, $this->now);
             $this->fail('a tampered statement was accepted');
