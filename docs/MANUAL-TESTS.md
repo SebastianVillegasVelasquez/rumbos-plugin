@@ -516,3 +516,26 @@ completion, one restricted SCORM that tracks completion, `student1` enrolled, `t
 | Closing flow: complete the final exam step after the escape (same revision) | The row stays `fallback` | |
 | Privacy export and erase for `student1` | The closing rows are in the export and gone after the erase | |
 
+## Native quiz mirror
+
+Run on the development site (Moodle 5.2.4, PostgreSQL 17) with real HTTP posts to `mirror.php` and `passback.php`, signed
+by `dev/sign-test-mirror.php` and `dev/sign-test-statement.php`, on enrolled test students, for the check-in and the final.
+The messages are **fixtures**: the service's export contract does not exist yet. Not run on staging.
+
+| # | Scenario | Result (dev site) |
+| --- | --- | --- |
+| 1 | Definition of a published version, check-in and final | `200 created`; a hidden quiz, grade 0, no completion, no grade item; a student has neither the attempt nor the view capability |
+| 2 | The same definition again | `200 already_mirrored`; still one quiz |
+| 3 | Attempts below (79.76), at (80.00) and above (80.10) the threshold | `200 written`; quiz attempts finished, not preview, numbered 1, 2, 3, totals 79.7619, 80.0000 and 80.0952 of 100 |
+| 4 | The same attempt again | `200 already_written`; no second quiz attempt |
+| 5 | New content version | `200 created`; a second quiz; the old attempts stay in the first |
+| 6 | Tampered signature | `401 bad_signature`; nothing written |
+| 7 | A teacher's attempt | `422 role_not_allowed` |
+| 8 | A student the course does not have | `422 unknown_user` |
+| 9 | Mirror at 80.00 (service: fail) and at 80.10 (service: pass), then the passback of each | After the mirror alone the course is **not** complete and no result is recorded; the passback `recorded` the 80.00 and `completed` the 80.10; the gradebook has only the course total and "Rumbos result" |
+| 10 | Upgrade step: drop the four tables, lower the version, run the CLI upgrade | The tables are back at 2026112300 |
+
+**Not verified here:** the responses report rendered in a browser, a real enrolled student opening the quiz URL in a
+browser, backup and restore of a course with mirror quizzes, the real backend as sender and its retry behaviour, and
+Moodle 5.3. The two bugs this matrix found (the engine call that is only for unit tests, and a transaction left open after
+a failure) were invisible to PHPUnit.

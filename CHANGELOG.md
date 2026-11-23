@@ -4,6 +4,12 @@
 
 ### Added
 
+- Native quiz mirror (off by default; setting "Mirror exams in native quizzes"): a hidden native quiz per published exam
+  version and a finished native attempt with the real answers per Rumbos attempt, so Moodle's statistics and responses
+  report work. It adds no grade and no completion: the passback stays the only thing that grants them. New script
+  `mirror.php` (signed `exam_definition` and `exam_attempt` messages, **provisional wire format**), an admin status page,
+  four tables (run the upgrade), privacy export and erase, and `dev/sign-test-mirror.php`. See
+  `docs/NATIVE-QUIZ-MIRROR.md`.
 - Launch assertion: the optional signed claim `uid` (the Moodle user id, an integer), behind the admin setting "Send the
   Moodle user id in launch assertions", **off by default**. Turn it on only after the Rumbos service accepts it. The
   privacy declaration lists it and is marked for legal review. See `docs/FINAL-EXAM-GATE.md`.
@@ -11,6 +17,11 @@
   refuses unless config.php of the site sets `$CFG->format_rumbos_staging_tools = true`.
 - `docs/FINAL-EXAM-GATE.md`: the capabilities the service account needs to read completion, the verification, the override
   path and the deploy order. No schema change, no new capability.
+
+### Fixed
+
+- A result statement whose payload is not JSON now gets `401 bad_signature` instead of a retryable `500`.
+- A flaky test of the signature check (it changed a base64 character that can carry no information).
 
 ## 0.8.0
 
