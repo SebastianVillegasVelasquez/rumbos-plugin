@@ -138,3 +138,16 @@ read it already makes. The plugin adds nothing. A bulk override on production is
 It ships with the plugin (`cli/`), so a production site has the file. It therefore refuses unless `$CFG` carries
 `format_rumbos_staging_tools === true`, a line only a staging site has; there is no flag on the command line. It uses
 Moodle's override as the administrator, is a dry run unless `--apply` is given, and accepts only an active student.
+
+### D26. The locked message defaults to the text that is true today, and the override is plain text
+
+The owner proposed a text that promises completing the level by its diagnostic. A locked student cannot reach the
+diagnostic (no launch assertion, no iframe), so that text would be false. The product owner decides the copy; until the
+diagnostic-only mode exists the default is Variant 1 ("Debes completar el nivel anterior para acceder a este nivel"), with
+the previous level's name added in parentheses because the task asks for it. The override is one site-wide plain text
+(`levellockedtext`), no HTML, 500 characters, with `{previous}` and `{level}` replaced in a single pass, and escaped when
+shown, so an administrator cannot add markup and a course name that contains a placeholder is not expanded again. One text,
+not one per language: the language packs are not editable from the plugin, and a second setting per language would be
+two places to keep in step. The web service answer uses the same text so the page and the app do not disagree.
+Course names are now taken unescaped from `format_string()` (`escape => false`) because the template escapes once;
+before, a name with `&` was shown as `&amp;`.
