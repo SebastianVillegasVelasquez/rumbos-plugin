@@ -58,6 +58,21 @@ final class exam {
     /** @var string The pattern of every identifier. */
     private const ID = '/^[A-Za-z0-9._-]{1,64}$/';
 
+    /** @var string The service's exam form id. */
+    public string $formid;
+
+    /** @var string The content version of the form. */
+    public string $version;
+
+    /** @var string The title. */
+    public string $title;
+
+    /** @var string The purpose. */
+    public string $purpose;
+
+    /** @var array The sections: each `key`, `weight`, `delivery` and `items` (validated item arrays). */
+    public array $sections;
+
     /**
      * Use {@see self::from_array()}.
      *
@@ -67,18 +82,12 @@ final class exam {
      * @param string $purpose `check_in` or `final`.
      * @param array $sections Each `key`, `weight`, `delivery` and `items` (validated item arrays).
      */
-    private function __construct(
-        /** @var string The service's exam form id. */
-        public readonly string $formid,
-        /** @var string The content version of the form. */
-        public readonly string $version,
-        /** @var string The title. */
-        public readonly string $title,
-        /** @var string The purpose. */
-        public readonly string $purpose,
-        /** @var array The sections. */
-        public readonly array $sections
-    ) {
+    private function __construct(string $formid, string $version, string $title, string $purpose, array $sections) {
+        $this->formid = $formid;
+        $this->version = $version;
+        $this->title = $title;
+        $this->purpose = $purpose;
+        $this->sections = $sections;
     }
 
     /**
@@ -299,6 +308,10 @@ final class exam {
             }
             $options[] = ['id' => $oid, 'text' => self::text($option['text'] ?? null, $itemid . '.option.text', 1000)];
         }
+        if (count(array_unique(array_column($options, 'text'))) !== count($options)) {
+            // Moodle shows the answers by their text, and the response summary names them by it.
+            throw self::invalid($itemid . '.options');
+        }
         return $options;
     }
 
@@ -334,6 +347,10 @@ final class exam {
                 throw self::invalid($itemid . '.places');
             }
             $choices[$pid] = self::text($place['text'] ?? null, $itemid . '.place.text', 1000);
+        }
+        if (count(array_unique($choices)) !== count($choices)) {
+            // Moodle merges choices that have the same text.
+            throw self::invalid($itemid . '.places');
         }
         $right = [];
         foreach ($key as $pair) {

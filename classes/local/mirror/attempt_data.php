@@ -32,6 +32,33 @@ final class attempt_data {
     /** @var string The pattern of every identifier. */
     private const ID = '/^[A-Za-z0-9._-]{1,64}$/';
 
+    /** @var string The service's attempt id: the idempotency key. */
+    public string $attemptid;
+
+    /** @var string The exam form. */
+    public string $formid;
+
+    /** @var string The content version the attempt was taken on. */
+    public string $version;
+
+    /** @var string `check_in` or `final`. */
+    public string $purpose;
+
+    /** @var int When the student began (Unix time). */
+    public int $started;
+
+    /** @var int When the student finished (Unix time). */
+    public int $finished;
+
+    /** @var string The percent the service decided, two decimals. */
+    public string $percent;
+
+    /** @var bool What the service decided. Moodle never recomputes it. */
+    public bool $passed;
+
+    /** @var array Item id => `points`, `response` and `comment`. */
+    public array $items;
+
     /**
      * Use {@see self::from_array()}.
      *
@@ -42,29 +69,29 @@ final class attempt_data {
      * @param int $started When the student began (Unix time).
      * @param int $finished When the student finished (Unix time).
      * @param string $percent The percent the service decided, two decimals.
-     * @param bool $passed What the service decided. Moodle never recomputes it.
+     * @param bool $passed What the service decided.
      * @param array $items Item id => `points`, `response` and `comment`.
      */
     private function __construct(
-        /** @var string The service's attempt id. */
-        public readonly string $attemptid,
-        /** @var string The exam form. */
-        public readonly string $formid,
-        /** @var string The content version. */
-        public readonly string $version,
-        /** @var string The purpose. */
-        public readonly string $purpose,
-        /** @var int When it began. */
-        public readonly int $started,
-        /** @var int When it finished. */
-        public readonly int $finished,
-        /** @var string The service's percent. */
-        public readonly string $percent,
-        /** @var bool The service's decision. */
-        public readonly bool $passed,
-        /** @var array Item id => points, response and comment. */
-        public readonly array $items
+        string $attemptid,
+        string $formid,
+        string $version,
+        string $purpose,
+        int $started,
+        int $finished,
+        string $percent,
+        bool $passed,
+        array $items
     ) {
+        $this->attemptid = $attemptid;
+        $this->formid = $formid;
+        $this->version = $version;
+        $this->purpose = $purpose;
+        $this->started = $started;
+        $this->finished = $finished;
+        $this->percent = $percent;
+        $this->passed = $passed;
+        $this->items = $items;
     }
 
     /**

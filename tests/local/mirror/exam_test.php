@@ -19,6 +19,8 @@ namespace format_rumbos\local\mirror;
 use format_rumbos\local\result_rejection;
 use format_rumbos\mirror_fixture;
 
+defined('MOODLE_INTERNAL') || die();
+
 require_once(__DIR__ . '/../../fixtures/mirror_fixture.php');
 
 /**
@@ -172,6 +174,12 @@ final class exam_test extends \advanced_testcase {
             'a repeated option id' => [self::changed_form(function (&$d) {
                 $d['sections'][1]['items'][0]['options'][1]['id'] = 'a';
             }), 'invalid_definition:r-01.options'],
+            'two options with the same text' => [self::changed_form(function (&$d) {
+                $d['sections'][1]['items'][0]['options'][1]['text'] = 'first';
+            }), 'invalid_definition:r-01.options'],
+            'two places with the same text' => [self::changed_form(function (&$d) {
+                $d['sections'][0]['items'][2]['places'][1]['text'] = 'chaired negotiation';
+            }), 'invalid_definition:l-11.places'],
             'a matching key that repeats a clip' => [self::changed_form(function (&$d) {
                 $d['sections'][0]['items'][2]['key'][4] = [3, 'p4'];
             }), 'invalid_definition:l-11.key'],
