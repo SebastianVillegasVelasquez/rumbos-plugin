@@ -70,13 +70,19 @@ class mirror_quiz {
             mirror_store::delete_quiz((int) $row->id);
         }
 
+        $transaction = $DB->start_delegated_transaction();
         try {
-            $transaction = $DB->start_delegated_transaction();
             $row = self::make($course, $exam, $now);
             $transaction->allow_commit();
-        } catch (\dml_write_exception $e) {
+        } catch (\Throwable $e) {
+            try {
+                $transaction->rollback($e);
+            } catch (\Throwable $rolledback) {
+                $e = $rolledback;
+            }
             // Another request made the same version at the same moment and won.
-            $row = mirror_store::find_quiz((int) $course->id, $exam->formid, $exam->version);
+            $row = $e instanceof \dml_write_exception
+                ? mirror_store::find_quiz((int) $course->id, $exam->formid, $exam->version) : null;
             if ($row === null) {
                 throw $e;
             }

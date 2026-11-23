@@ -75,9 +75,8 @@ class mirror_attempts {
             throw new result_rejection(503, 'exam_not_mirrored');
         }
 
-        $diverged = false;
+        $transaction = $DB->start_delegated_transaction();
         try {
-            $transaction = $DB->start_delegated_transaction();
             $diverged = service_identity::run(function () use (
                 $mirror,
                 $exam,
@@ -87,16 +86,22 @@ class mirror_attempts {
                 $courseid,
                 $userid,
                 $now
-) {
+            ) {
                 $quizattemptid = self::create($mirror, $exam, $attempt, $resolved, $items, $userid);
                 $diverged = self::total_differs($quizattemptid, $attempt->percent);
                 mirror_store::insert_attempt((int) $mirror->id, $attempt, $courseid, $userid, $quizattemptid, $diverged, $now);
                 return $diverged;
             });
             $transaction->allow_commit();
-        } catch (\dml_write_exception $e) {
-            // The same attempt arrived twice at the same moment and the other request wrote it.
-            if (mirror_store::find_attempt($attempt->attemptid) !== null) {
+        } catch (\Throwable $e) {
+            // Nothing is half-written, and the database is usable again before anybody logs or reads.
+            try {
+                $transaction->rollback($e);
+            } catch (\Throwable $rolledback) {
+                $e = $rolledback;
+            }
+            if ($e instanceof \dml_write_exception && mirror_store::find_attempt($attempt->attemptid) !== null) {
+                // The same attempt arrived twice at the same moment and the other request wrote it.
                 return ['written' => false, 'diverged' => false];
             }
             throw $e;
@@ -232,7 +237,7 @@ class mirror_attempts {
     private static function set_marks(quiz_attempt $attemptobj, array $items, array $resolved, attempt_data $attempt): void {
         global $DB;
 
-        $quba = $attemptobj->get_question_usage();
+        $quba = \question_engine::load_questions_usage_by_activity((int) $attemptobj->get_attempt()->uniqueid);
         $changed = false;
         foreach ($items as $itemid => $item) {
             $expected = round($item->maxmark * $resolved[$itemid]['points'] / $item->units, 7);
