@@ -68,14 +68,17 @@ class result_statement {
     }
 
     /**
-     * Verifies the signature, the expiry, the issuer, the audience and the tenant, and validates the claims.
+     * Verifies the signature and the expiry of a signed message and returns its claims as they are.
+     *
+     * Nothing about the claims is checked here except what the signature library checks (`exp`, `nbf`, `iat`).
+     * {@see self::verify()} and {@see self::verify_envelope()} add the checks of their own message.
      *
      * @param string $jws The compact serialization.
      * @param int $now The current time.
-     * @return array The normalised claims (see {@see self::normalise()}).
-     * @throws result_rejection 400 when malformed, 401 when not authentic, expired or not for this site.
+     * @return \stdClass The decoded claims.
+     * @throws result_rejection 400 when malformed, 401 when not authentic or expired.
      */
-    public static function verify(string $jws, int $now): array {
+    public static function decode(string $jws, int $now): \stdClass {
         $kid = self::key_id($jws);
         $keys = result_config::keys();
         if ($kid === '' || !isset($keys[$kid])) {
@@ -87,7 +90,7 @@ class result_statement {
         JWT::$leeway = self::LEEWAY;
         JWT::$timestamp = $now;
         try {
-            $claims = JWT::decode($jws, [$kid => new Key($keys[$kid], self::ALGORITHM)]);
+            return JWT::decode($jws, [$kid => new Key($keys[$kid], self::ALGORITHM)]);
         } catch (ExpiredException $e) {
             throw new result_rejection(401, 'expired');
         } catch (BeforeValidException $e) {
@@ -99,19 +102,66 @@ class result_statement {
             JWT::$leeway = $leeway;
             JWT::$timestamp = $timestamp;
         }
+    }
 
-        $claims = self::normalise($claims, $now);
+    /**
+     * Verifies the signature, the expiry, the issuer, the audience and the tenant, and validates the claims.
+     *
+     * @param string $jws The compact serialization.
+     * @param int $now The current time.
+     * @return array The normalised claims (see {@see self::normalise()}).
+     * @throws result_rejection 400 when malformed, 401 when not authentic, expired or not for this site.
+     */
+    public static function verify(string $jws, int $now): array {
+        $claims = self::normalise(self::decode($jws, $now), $now);
+        self::check_parties($claims['iss'], $claims['aud'], $claims['tenant']);
+        return $claims;
+    }
 
-        if (!hash_equals(result_config::issuer(), $claims['iss'])) {
+    /**
+     * Verifies a signed message that is not a result statement: the signature, the expiry, who sent it, to whom and for
+     * which tenant, and the claims every message of the service carries (`jti`, `iat`, `exp`).
+     *
+     * The caller checks the rest of the claims.
+     *
+     * @param string $jws The compact serialization.
+     * @param int $now The current time.
+     * @return \stdClass The decoded claims.
+     * @throws result_rejection 400 when malformed, 401 when not authentic, expired or not for this site.
+     */
+    public static function verify_envelope(string $jws, int $now): \stdClass {
+        $claims = self::decode($jws, $now);
+        $valid = is_string($claims->iss ?? null) && $claims->iss !== ''
+            && is_string($claims->aud ?? null) && $claims->aud !== ''
+            && is_string($claims->tenant ?? null) && $claims->tenant !== ''
+            && is_string($claims->jti ?? null) && preg_match('/^[A-Za-z0-9._-]{1,64}$/', $claims->jti) === 1
+            && is_int($claims->iat ?? null) && is_int($claims->exp ?? null)
+            && $claims->exp > $claims->iat && $claims->exp - $claims->iat <= self::MAX_LIFETIME;
+        if (!$valid) {
+            throw new result_rejection(400, 'malformed');
+        }
+        self::check_parties($claims->iss, $claims->aud, $claims->tenant);
+        return $claims;
+    }
+
+    /**
+     * Checks that a message is from the configured issuer, for this site and for the configured tenant.
+     *
+     * @param string $iss
+     * @param string $aud
+     * @param string $tenant
+     * @throws result_rejection 401 when one does not match.
+     */
+    private static function check_parties(string $iss, string $aud, string $tenant): void {
+        if (!hash_equals(result_config::issuer(), $iss)) {
             throw new result_rejection(401, 'bad_issuer');
         }
-        if (!hash_equals(launch_assertion::issuer(), $claims['aud'])) {
+        if (!hash_equals(launch_assertion::issuer(), $aud)) {
             throw new result_rejection(401, 'bad_audience');
         }
-        if (!hash_equals(result_config::tenant(), $claims['tenant'])) {
+        if (!hash_equals(result_config::tenant(), $tenant)) {
             throw new result_rejection(401, 'bad_tenant');
         }
-        return $claims;
     }
 
     /**

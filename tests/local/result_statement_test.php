@@ -283,4 +283,49 @@ final class result_statement_test extends \format_rumbos\result_testcase {
         $this->assertSame(result_statement::payload_hash($one), result_statement::payload_hash($again));
         $this->assertNotSame(result_statement::payload_hash($one), result_statement::payload_hash($other));
     }
+
+    /**
+     * Signs envelope claims (no result claims) and returns what verify_envelope concludes or the refusal.
+     *
+     * @param array $override Claims to change; a null value removes the claim.
+     * @param string|null $kid
+     * @return \stdClass|result_rejection
+     */
+    private function envelope_outcome(array $override = [], ?string $kid = null): \stdClass|result_rejection {
+        $claims = array_filter($override + [
+            'iss' => 'rumbos-test', 'aud' => launch_assertion::issuer(), 'tenant' => 'tenant-1', 'jti' => 'env-1',
+            'iat' => $this->now, 'exp' => $this->now + 120, 'kind' => 'anything', 'data' => ['x' => 1],
+        ], fn($value) => $value !== null);
+        try {
+            return result_statement::verify_envelope($this->sign($claims, $kid), $this->now);
+        } catch (result_rejection $rejection) {
+            return $rejection;
+        }
+    }
+
+    /**
+     * Any other signed message of the service passes the same signature, expiry and party checks and keeps its claims.
+     */
+    public function test_an_envelope_is_verified_and_keeps_its_own_claims(): void {
+        $claims = $this->envelope_outcome();
+
+        $this->assertInstanceOf(\stdClass::class, $claims);
+        $this->assertSame('anything', $claims->kind);
+        $this->assertSame(1, $claims->data->x);
+    }
+
+    /**
+     * The envelope refuses what a result statement refuses: parties, signature, expiry and a lifetime over five minutes.
+     */
+    public function test_an_envelope_is_refused_like_a_statement(): void {
+        $this->assert_refused($this->envelope_outcome(['iss' => 'someone-else']), 401, 'bad_issuer');
+        $this->assert_refused($this->envelope_outcome(['aud' => 'https://another.example']), 401, 'bad_audience');
+        $this->assert_refused($this->envelope_outcome(['tenant' => 'tenant-2']), 401, 'bad_tenant');
+        $this->assert_refused($this->envelope_outcome(['iat' => $this->now - 600, 'exp' => $this->now - 300]), 401, 'expired');
+        $this->assert_refused($this->envelope_outcome([], 'ffffffffffffffff'), 401, 'unknown_key');
+        $this->assert_refused($this->envelope_outcome(['exp' => $this->now + 301]), 400, 'malformed');
+        $this->assert_refused($this->envelope_outcome(['jti' => null]), 400, 'malformed');
+        $this->assert_refused($this->envelope_outcome(['jti' => 'has space']), 400, 'malformed');
+        $this->assert_refused($this->envelope_outcome(['tenant' => null]), 400, 'malformed');
+    }
 }
