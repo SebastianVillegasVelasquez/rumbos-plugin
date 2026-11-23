@@ -113,6 +113,18 @@ class config {
     }
 
     /**
+     * Whether launch assertions also carry the Moodle user id (the signed claim "uid").
+     *
+     * Off by default: the Rumbos service must accept the claim before a site turns it on, so deploying the
+     * plugin first can never change what the service receives.
+     *
+     * @return bool
+     */
+    public static function sends_moodle_userid(): bool {
+        return (bool) get_config('format_rumbos', 'launchuid');
+    }
+
+    /**
      * How long the page waits for the app before showing the standard content, in milliseconds.
      *
      * It has no admin setting: 8 seconds is right for users. Tests that play the app's part

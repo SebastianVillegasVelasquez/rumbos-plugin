@@ -103,6 +103,7 @@ class provider implements
 
         $collection->add_external_location_link('rumbos', [
             'userid' => 'privacy:metadata:rumbos:userid',
+            'uid' => 'privacy:metadata:rumbos:uid',
             'courseid' => 'privacy:metadata:rumbos:courseid',
             'role' => 'privacy:metadata:rumbos:role',
             'ipaddress' => 'privacy:metadata:rumbos:ipaddress',

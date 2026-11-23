@@ -104,22 +104,27 @@ class get_assertion_preview extends external_api {
         $header = json_decode(\Firebase\JWT\JWT::urlsafeB64Decode($parts[0]), true);
         $claims = json_decode(\Firebase\JWT\JWT::urlsafeB64Decode($parts[1]), true);
 
+        $decoded = [
+            'iss' => (string) $claims['iss'],
+            'aud' => (string) $claims['aud'],
+            'sub' => (string) $claims['sub'],
+            'course' => (int) $claims['course'],
+            'role' => (string) $claims['role'],
+            'iat' => (int) $claims['iat'],
+            'exp' => (int) $claims['exp'],
+            'jti' => (string) $claims['jti'],
+        ];
+        if (isset($claims['uid'])) {
+            $decoded['uid'] = (int) $claims['uid'];
+        }
+
         return [
             'header' => [
                 'alg' => (string) $header['alg'],
                 'typ' => (string) $header['typ'],
                 'kid' => (string) $header['kid'],
             ],
-            'claims' => [
-                'iss' => (string) $claims['iss'],
-                'aud' => (string) $claims['aud'],
-                'sub' => (string) $claims['sub'],
-                'course' => (int) $claims['course'],
-                'role' => (string) $claims['role'],
-                'iat' => (int) $claims['iat'],
-                'exp' => (int) $claims['exp'],
-                'jti' => (string) $claims['jti'],
-            ],
+            'claims' => $decoded,
             'lifetime' => (int) $claims['exp'] - (int) $claims['iat'],
         ];
     }
@@ -145,6 +150,7 @@ class get_assertion_preview extends external_api {
                 'iat' => new external_value(PARAM_INT, 'Issued at'),
                 'exp' => new external_value(PARAM_INT, 'Expires at'),
                 'jti' => new external_value(PARAM_ALPHANUM, 'Unique id of the assertion'),
+                'uid' => new external_value(PARAM_INT, 'Moodle user id, only when the setting is on', VALUE_OPTIONAL),
             ]),
             'lifetime' => new external_value(PARAM_INT, 'Seconds between issue and expiry'),
         ]);

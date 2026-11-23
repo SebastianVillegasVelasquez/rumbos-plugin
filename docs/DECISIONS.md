@@ -93,3 +93,48 @@ The message replaces the map only. The standard section list stays below, collap
 web service listing are governed by enrolment and are not closed. Closing them needs a native Moodle restriction (Moodle 5.2 has no
 cross-course condition), which is the owner's decision. Also note the real window after a lock: the backend swaps the 60-second assertion
 for an access token that lasts 1800 s by default, so a student already inside keeps access up to that long.
+
+## Final-exam gate support (the `uid` claim, the closing flow, the override, the staging helper)
+
+Audit before building, from `main` at `8ac6428`. The reasoning and the set-up are in
+[FINAL-EXAM-GATE.md](FINAL-EXAM-GATE.md).
+
+### D14. `uid` is a signed claim behind a setting that is off
+
+The service has to ask Moodle about one user and `sub` cannot be turned back into an id. The agreed approach is one
+signed claim. It is behind an admin setting, default off, instead of always on: the order "service first" is then
+enforced by the administrator's tick box and a rollback is unticking it. The service's code (`app/auth/launch.py`)
+accepts an extra claim, but that is the source of a branch, not proof of what is deployed. The privacy cost is real:
+with `uid` the pseudonym no longer hides the Moodle account from the service. The declaration says so and is marked
+for legal review.
+
+### D15. The closing flow uses the welcome flow's table unchanged
+
+`format_rumbos_flow` is keyed by course, user, map and step key; it has no flow column. The service refuses a step key
+shared by the two flows, and the closing app writes through the same messages. A `flow` column would need an upgrade
+step, a new unique key, a change in the app and in the service, and would buy nothing the key does not already give. So
+nothing was added to the schema, and tests pin the use (`tests/local/closing_flow_test.php`). "Seen" and "completed" are
+not distinguished; a recorded escape is `fallback` (or `unavailable`) and is kept against a later `completed`.
+
+### D16. The request assumed an audit trail and a backup that the welcome flow does not have
+
+The welcome flow logs no event and its table is not in a course backup. The closing flow is "audited like the welcome
+flow" (the row) and has no backup, for the same reason: a restored course is a new course and a new map. Neither was
+invented for one flow only.
+
+**Known debt (handed over, not fixed here).** The welcome flow has no audit trail beyond its row (no Moodle event) and
+its progress is not part of a course backup or restore. The owner decided not to change the welcome flow's behaviour
+for this; the closing flow inherits both gaps. If either is wanted later, it should be done for both flows at once.
+
+### D17. The override is Moodle's own, not a plugin feature
+
+A plugin flag would only change the gate if the service learned it through a new signal, a second source of truth that
+could drift from the course's completion. Moodle's "Override" in the activity completion report already records who did
+it (`overrideby`), logs an event, needs `moodle/course:overridecompletion`, and the service sees it through the same
+read it already makes. The plugin adds nothing. A bulk override on production is a reviewed one-off, not a shipped tool.
+
+### D18. The staging helper is inert unless config.php opts in
+
+It ships with the plugin (`cli/`), so a production site has the file. It therefore refuses unless `$CFG` carries
+`format_rumbos_staging_tools === true`, a line only a staging site has; there is no flag on the command line. It uses
+Moodle's override as the administrator, is a dry run unless `--apply` is given, and accepts only an active student.

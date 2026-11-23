@@ -69,6 +69,13 @@ if ($ADMIN->fulltree) {
         '/^[A-Za-z0-9._:\/-]{1,128}$/'
     ));
 
+    $settings->add(new admin_setting_configcheckbox(
+        'format_rumbos/launchuid',
+        new lang_string('launchuid', 'format_rumbos'),
+        new lang_string('launchuid_desc', 'format_rumbos'),
+        0
+    ));
+
     $settings->add(new setting_newtabmodules(
         'format_rumbos/newtabmodules',
         get_string('newtabmodules', 'format_rumbos'),
