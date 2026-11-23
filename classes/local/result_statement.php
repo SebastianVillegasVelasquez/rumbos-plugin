@@ -95,8 +95,9 @@ class result_statement {
             throw new result_rejection(401, 'expired');
         } catch (BeforeValidException $e) {
             throw new result_rejection(401, 'not_yet_valid');
-        } catch (\UnexpectedValueException $e) {
-            // Includes SignatureInvalidException, a key that does not fit the algorithm and an unreadable payload.
+        } catch (\UnexpectedValueException | \DomainException $e) {
+            // Includes SignatureInvalidException, a key that does not fit the algorithm and an unreadable payload (the
+            // library throws DomainException for bytes that are not JSON).
             throw new result_rejection(401, 'bad_signature');
         } finally {
             JWT::$leeway = $leeway;

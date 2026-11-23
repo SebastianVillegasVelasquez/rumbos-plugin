@@ -156,6 +156,17 @@ final class result_statement_test extends \format_rumbos\result_testcase {
             $this->assertSame([401, 'bad_signature'], [$rejection->status, $rejection->reason]);
         }
 
+        // A payload that is not JSON is a bad statement, not a server error the sender would retry.
+        // A control character inside a string is what makes the JWT library throw DomainException.
+        $badjson = rtrim(strtr(base64_encode("{\"iss\":\"\x01\"}"), '+/', '-_'), '=');
+        $broken = $header . '.' . $badjson . '.' . $signature;
+        try {
+            result_statement::verify($broken, $this->now);
+            $this->fail('a broken payload was accepted');
+        } catch (result_rejection $rejection) {
+            $this->assertSame([401, 'bad_signature'], [$rejection->status, $rejection->reason]);
+        }
+
         // Signed with another key but claiming the trusted key's id.
         $other = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
         openssl_pkey_export($other, $otherpem);
