@@ -98,10 +98,12 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $this->assertInstanceOf(\core_privacy\local\metadata\types\external_location::class, $location);
         $this->assertSame('rumbos', $location->get_name());
         $this->assertEqualsCanonicalizing(
-            ['userid', 'courseid', 'role', 'ipaddress', 'practice', 'assessment', 'progress'],
+            ['userid', 'uid', 'courseid', 'role', 'ipaddress', 'practice', 'assessment', 'progress'],
             array_keys($location->get_privacy_fields())
         );
         $this->assertTrue($strings->string_exists($location->get_summary(), 'format_rumbos'));
+        // The Moodle user id is declared, and the declaration is marked for legal review.
+        $this->assertStringContainsString('NEEDS LEGAL REVIEW', get_string('privacy:metadata:rumbos:uid', 'format_rumbos'));
         // Retention is not decided: the text says so until legal review replaces it.
         $this->assertStringContainsString('NEEDS LEGAL REVIEW', get_string('privacy:metadata:rumbos', 'format_rumbos'));
         foreach (['format_rumbos_result', 'format_rumbos_audit'] as $name) {

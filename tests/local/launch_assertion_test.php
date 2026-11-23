@@ -203,6 +203,70 @@ final class launch_assertion_test extends \advanced_testcase {
     }
 
     /**
+     * Until the administrator turns the setting on, the assertion has no uid: deploying the plugin first changes nothing.
+     */
+    public function test_there_is_no_uid_by_default(): void {
+        [$course, $user] = $this->enrolled('student');
+
+        $claims = $this->verify(launch_assertion::create($course->id, $user->id)['token']);
+
+        $this->assertObjectNotHasProperty('uid', $claims);
+    }
+
+    /**
+     * With the setting on, uid is the Moodle user id as an integer, next to the pseudonym and the other claims.
+     */
+    public function test_uid_is_the_integer_user_id_when_the_setting_is_on(): void {
+        set_config('launchuid', 1, 'format_rumbos');
+        [$course, $user] = $this->enrolled('student');
+
+        $token = launch_assertion::create($course->id, $user->id)['token'];
+        $claims = $this->verify($token);
+
+        $this->assertEqualsCanonicalizing(
+            ['iss', 'aud', 'sub', 'course', 'role', 'iat', 'exp', 'jti', 'uid'],
+            array_keys((array) $claims)
+        );
+        $this->assertSame((int) $user->id, $claims->uid);
+        $this->assertSame(pseudonym::for_user($user->id), $claims->sub);
+        // It is a JSON number, not a string, in the payload the service reads.
+        $this->assertMatchesRegularExpression(
+            '/"uid":' . (int) $user->id . '[,}]/',
+            JWT::urlsafeB64Decode(explode('.', $token)[1])
+        );
+    }
+
+    /**
+     * The uid is covered by the signature: swapping it for another user's id breaks the token.
+     */
+    public function test_uid_cannot_be_changed_without_breaking_the_signature(): void {
+        set_config('launchuid', 1, 'format_rumbos');
+        [$course, $user] = $this->enrolled('student');
+        $other = $this->getDataGenerator()->create_user();
+
+        [$header, $payload, $signature] = explode('.', launch_assertion::create($course->id, $user->id)['token']);
+        $claims = json_decode(JWT::urlsafeB64Decode($payload), true);
+        $claims['uid'] = (int) $other->id;
+        $forged = $header . '.' . JWT::urlsafeB64Encode(json_encode($claims)) . '.' . $signature;
+
+        $this->expectException(\Firebase\JWT\SignatureInvalidException::class);
+        $this->verify($forged);
+    }
+
+    /**
+     * The uid belongs to the user the assertion is for, editors included.
+     */
+    public function test_uid_follows_the_user_the_assertion_is_for(): void {
+        set_config('launchuid', 1, 'format_rumbos');
+        [$course, $teacher] = $this->enrolled('editingteacher');
+
+        $claims = $this->verify(launch_assertion::create($course->id, $teacher->id)['token']);
+
+        $this->assertSame((int) $teacher->id, $claims->uid);
+        $this->assertSame('editor', $claims->role);
+    }
+
+    /**
      * The assertion carries no personal data.
      */
     public function test_no_personal_data(): void {

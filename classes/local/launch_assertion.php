@@ -56,8 +56,9 @@ class launch_assertion {
     /**
      * Signs an assertion for a user in a course.
      *
-     * Claims: iss, aud, sub (pseudonym), course, role, iat, exp, jti. No name,
-     * email or any other personal data is included.
+     * Claims: iss, aud, sub (pseudonym), course, role, iat, exp, jti, and, only when the site setting
+     * "launchuid" is on, uid (the Moodle user id, an integer, so the service can ask Moodle about this user).
+     * No name, email or any other personal data is included.
      *
      * @param int $courseid
      * @param int $userid
@@ -79,6 +80,10 @@ class launch_assertion {
             'exp' => $now + self::LIFETIME,
             'jti' => bin2hex(random_bytes(16)),
         ];
+
+        if (config::sends_moodle_userid()) {
+            $claims['uid'] = $userid;
+        }
 
         $token = JWT::encode($claims, key_manager::get_private_key(), self::ALGORITHM, key_manager::get_kid());
 

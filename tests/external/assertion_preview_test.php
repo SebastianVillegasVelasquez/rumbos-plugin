@@ -77,6 +77,19 @@ final class assertion_preview_test extends \advanced_testcase {
     }
 
     /**
+     * The sample shows uid when the site sends it, and only then.
+     */
+    public function test_the_sample_shows_uid_only_when_the_site_sends_it(): void {
+        global $USER;
+        $this->setAdminUser();
+
+        $this->assertArrayNotHasKey('uid', $this->preview()['claims']);
+
+        set_config('launchuid', 1, 'format_rumbos');
+        $this->assertSame((int) $USER->id, $this->preview()['claims']['uid']);
+    }
+
+    /**
      * The sample has the expected lifetime.
      */
     public function test_the_lifetime_is_sixty_seconds(): void {
