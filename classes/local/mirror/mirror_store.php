@@ -104,6 +104,38 @@ class mirror_store {
     }
 
     /**
+     * Forgets everything the mirror knows about a course: its quizzes, items, attempts and log lines. The native quizzes
+     * and attempts are Moodle's and go with the course.
+     *
+     * @param int $courseid
+     */
+    public static function erase_course(int $courseid): void {
+        global $DB;
+
+        $mirrors = $DB->get_fieldset_select(self::QUIZZES, 'id', 'courseid = ?', [$courseid]);
+        foreach ($mirrors as $mirrorid) {
+            $DB->delete_records(self::ITEMS, ['mirrorid' => $mirrorid]);
+        }
+        $DB->delete_records(self::ATTEMPTS, ['courseid' => $courseid]);
+        $DB->delete_records(self::QUIZZES, ['courseid' => $courseid]);
+        $DB->delete_records(self::LOG, ['courseid' => $courseid]);
+    }
+
+    /**
+     * Forgets which Rumbos attempts of a user were mirrored, in one course or in all. The quiz attempts are Moodle's own
+     * data and are erased by the quiz's privacy provider.
+     *
+     * @param int $userid
+     * @param int|null $courseid
+     */
+    public static function erase_user(int $userid, ?int $courseid = null): void {
+        global $DB;
+
+        $where = ['userid' => $userid] + ($courseid === null ? [] : ['courseid' => $courseid]);
+        $DB->delete_records(self::ATTEMPTS, $where);
+    }
+
+    /**
      * Records where an item of the exam is in the quiz.
      *
      * @param int $mirrorid
