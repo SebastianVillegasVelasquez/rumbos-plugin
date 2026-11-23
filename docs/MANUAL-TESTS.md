@@ -487,6 +487,21 @@ the table when it is. Set up: chain `A1,A2` (two courses with ID numbers, comple
 
 Also check on a phone: the message and the buttons are readable without horizontal scrolling, and the activity list stays collapsed.
 
+### The locked message and its override
+
+**NOT RUN yet.** The PHPUnit tests cover the default, the override, escaping and the names. Set up as above.
+
+| Case | Expected | Chrome | Small phone |
+| --- | --- | --- | --- |
+| Student enrolled in B2 only, default text | "Debes completar el nivel anterior (name) para acceder a este nivel.", no link, no iframe | not run | not run |
+| Same student after the previous level is marked complete | The map, after a reload | not run | not run |
+| Student enrolled in both, previous not complete | Same text, with the link button to the previous course | not run | not run |
+| Editing teacher or administrator | The map; never the message | not run | not run |
+| Text saved as `Primero termina {previous}.` | That text with the name, on the page and in the answer of the launch web service | not run | not run |
+| Text with `<b>x</b>` typed in the setting | The setting refuses to save it | not run | not run |
+| Setting emptied | The default text again | not run | not run |
+| Long text (500 characters) on a small phone | Wraps, no horizontal scrolling | not run | not run |
+
 ## Final-exam gate support: `uid`, the closing flow, the override, the staging helper
 
 **Status: not yet run by hand.** The PHPUnit tests ran on Moodle 5.2.4, PostgreSQL 17 (see the report of the change); this

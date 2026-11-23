@@ -157,9 +157,37 @@ backend exchanges the assertion for its own access token, whose default lifetime
 access to the Rumbos content for up to that long after the check would start failing, and the gate runs only when a page loads or a
 launch is requested. If the effective window of 30 minutes is not acceptable, shorten it in the backend; it is outside this plugin.
 
+## The locked message
+
+A student who has not completed the previous level reads, by default (**Variant 1**):
+
+- Spanish: *Debes completar el nivel anterior (NAME) para acceder a este nivel.*
+- English: *You need to complete the previous level (NAME) to open this level.*
+
+`NAME` is the full name of the previous course. A link to that course is shown only when the student can open it
+(`can_access_course()`); no ID number and no reason for a failed check is ever shown. The same text is what the
+`format_rumbos_get_launch_assertion` web service answers to a locked student.
+
+**Changing the text.** Site administration > Plugins > Course formats > Rumbos > Level prerequisites > **Message for a
+locked level** (`levellockedtext`). Plain text, at most 500 characters, no HTML (saving refuses markup). It is one text for
+every language of the site. It may use `{previous}` (name of the previous level) and `{level}` (name of the level being
+opened). Empty means the default above. The text is escaped when it is shown, so it can never become markup. The "could
+not check your progress" message is not affected. Command line, for a text without the interface:
+
+```
+php admin/cli/cfg.php --component=format_rumbos --name=levellockedtext --set="Debes completar {previous} para acceder a {level}."
+php admin/cli/cfg.php --component=format_rumbos --name=levellockedtext --set=""     # back to the default
+php admin/cli/purge_caches.php
+```
+
+**Variant 2** (the owner's text, "...o la evaluación diagnóstica...") is **not true today**: a locked student gets no iframe
+and cannot reach the diagnostic. Do not set it until the diagnostic-only mode exists and is deployed
+([DESIGN-diagnostic-only-level.md](DESIGN-diagnostic-only-level.md) says what that needs). When it does, replace the
+text in the same field; no code change is needed.
+
 ## Decisions
 
-See D10 to D13 in [DECISIONS.md](DECISIONS.md).
+See D10 to D13 and D26 in [DECISIONS.md](DECISIONS.md).
 
 ## Rollout, step by step
 

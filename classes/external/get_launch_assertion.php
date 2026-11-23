@@ -26,6 +26,7 @@ use format_rumbos\local\config;
 use format_rumbos\local\launch_assertion;
 use format_rumbos\local\level_decision;
 use format_rumbos\local\level_gate;
+use format_rumbos\local\level_message;
 
 /**
  * External function issuing a short-lived launch assertion for the current user.
@@ -76,8 +77,13 @@ class get_launch_assertion extends external_api {
         // A student who has not completed the previous level gets no assertion, and neither does a check that could not run.
         $decision = level_gate::check($params['courseid'], (int) $USER->id);
         if (!$decision->is_open()) {
-            $error = $decision->status === level_decision::LOCKED ? 'errorlevellocked' : 'errorlevelcheck';
-            throw new \moodle_exception($error, 'format_rumbos');
+            if ($decision->status === level_decision::LOCKED && $decision->prerequisite !== null) {
+                $options = ['context' => $context, 'escape' => false];
+                $previous = format_string($decision->prerequisite->fullname, true, $options);
+                $level = format_string(get_course($params['courseid'])->fullname, true, $options);
+                throw new \moodle_exception('errorlevellocked', 'format_rumbos', '', level_message::locked_text($previous, $level));
+            }
+            throw new \moodle_exception('errorlevelcheck', 'format_rumbos');
         }
 
         $assertion = launch_assertion::create($params['courseid'], (int) $USER->id);

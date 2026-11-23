@@ -4,6 +4,12 @@
 
 ### Added
 
+- Level prerequisites: the message a locked student reads can be replaced in the settings ("Message for a locked level",
+  plain text, 500 characters, `{previous}` and `{level}` available). The default now reads "Debes completar el nivel
+  anterior (NAME) para acceder a este nivel." and the launch web service answers with the same text. See
+  `docs/LEVEL-PREREQUISITES.md`.
+- `docs/DESIGN-diagnostic-only-level.md`: an audit, with cost estimates, of a mode that would let a locked student open
+  the welcome flow and its check-in. Not implemented.
 - Launch assertion: the optional signed claim `uid` (the Moodle user id, an integer), behind the admin setting "Send the
   Moodle user id in launch assertions", **off by default**. Turn it on only after the Rumbos service accepts it. The
   privacy declaration lists it and is marked for legal review. See `docs/FINAL-EXAM-GATE.md`.
