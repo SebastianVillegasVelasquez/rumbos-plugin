@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Launch assertion: the optional signed claim `uid` (the Moodle user id, an integer), behind the admin setting "Send the
+  Moodle user id in launch assertions", **off by default**. Turn it on only after the Rumbos service accepts it. The
+  privacy declaration lists it and is marked for legal review. See `docs/FINAL-EXAM-GATE.md`.
+- `cli/staging_completion.php`: marks a test student's SCORM activities complete or incomplete, for staging only. It
+  refuses unless config.php of the site sets `$CFG->format_rumbos_staging_tools = true`.
+- `docs/FINAL-EXAM-GATE.md`: the capabilities the service account needs to read completion, the verification, the override
+  path and the deploy order. No schema change, no new capability.
+
 ## 0.8.0
 
 ### Added

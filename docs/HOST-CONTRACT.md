@@ -212,6 +212,15 @@ quiz has `finishedAttempts: 0`. The usual cause is not a bug: Moodle records the
 **For support.** The state behind a result can be read without the app with the administrator's command line script
 `cli/quiz_check.php` (see the README). It is read only: it logs and stores nothing.
 
+### `uid` in the launch assertion (additive, optional)
+
+The launch assertion (the `assertion` of `rumbos:host-init` and `rumbos:host-launch`) can carry one more signed claim,
+`uid`: the Moodle user id as a JSON integer. It is **additive** and **off by default**: with the setting off the
+claims are exactly `iss, aud, sub, course, role, iat, exp, jti` as before, and no message of this protocol changes.
+A service that does not read `uid` ignores it. The app never sees the claim as such; it only forwards the assertion.
+The service must accept the claim before a site turns it on (deploy order: service first). Why it exists and how it is
+used: [FINAL-EXAM-GATE.md](FINAL-EXAM-GATE.md).
+
 ### `courseName` in `rumbos:host-init` (v5.6)
 
 `courseName` is the course full name as the user sees it, as **plain text**: the site's string

@@ -93,8 +93,10 @@ Signed with RS256. The header carries the key id (`kid`). The claims are:
 | `role` | `editor` if the user has `format/rumbos:editmap` in the course, otherwise `student` |
 | `iat`, `exp` | Issue time and expiry, 60 seconds apart |
 | `jti` | 128-bit random identifier, new for every assertion |
+| `uid` | **Optional, off by default.** The Moodle user id, as an integer. Present only when the administrator turns on "Send the Moodle user id in launch assertions", after the Rumbos service accepts it. See [docs/FINAL-EXAM-GATE.md](docs/FINAL-EXAM-GATE.md) |
 
-The assertion contains no name, email address or other personal data.
+The assertion contains no name, email address or other personal data. With `uid` on, it does carry the Moodle user id, which
+links the pseudonym `sub` to a Moodle account (privacy declaration pending legal review).
 
 ## Level prerequisites
 
@@ -229,6 +231,7 @@ the service. The contract is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md#we
 | Course option "Entry quiz result threshold (%)" | In the course settings, 0 to 100, default 80. 0 means no branching on the result. Only someone who may update the course can change it. |
 | External functions | `format_rumbos_get_flow_progress`, `_set_flow_step_done`, `_reset_flow_progress`, `_get_quiz_result`. AJAX only, always about the current user; writes are limited to 30 a minute per user. |
 | Quiz result fields of v5.9 | `previewAttempts`, `canAttempt` and `reason` (`ok`, `no_attempts`, `in_progress`, `preview_only`, `cannot_attempt`, `not_graded_yet`), added to the v5.8 fields, which are unchanged. Derived when read; nothing is stored. |
+| `cli/staging_completion.php` | **Staging only.** Marks a test student's SCORM activities complete or incomplete to try the final-exam gate; refuses unless config.php of the site sets `$CFG->format_rumbos_staging_tools = true;`. See [docs/FINAL-EXAM-GATE.md](docs/FINAL-EXAM-GATE.md). |
 | `cli/quiz_check.php` | Read-only command line check, for the site administrator, of why a user's quiz result is what it is. See below. |
 
 Progress is not stored for a guest, for somebody who used "Log in as" and for a user who takes no part in the course

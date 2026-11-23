@@ -486,3 +486,33 @@ the table when it is. Set up: chain `A1,A2` (two courses with ID numbers, comple
 | Switch off | Everybody gets the map, as before | not run | not run | not run |
 
 Also check on a phone: the message and the buttons are readable without horizontal scrolling, and the activity list stays collapsed.
+
+## Final-exam gate support: `uid`, the closing flow, the override, the staging helper
+
+**Status: not yet run by hand.** The PHPUnit tests ran on Moodle 5.2.4, PostgreSQL 17 (see the report of the change); this
+matrix needs a staging site, a real enrolled test student and the deployed Rumbos service, which the development
+environment did not have. Fill in the result column when it is run. Order matters: the service first, see
+[FINAL-EXAM-GATE.md](FINAL-EXAM-GATE.md).
+
+Setup: a staging site with `$CFG->format_rumbos_staging_tools = true;` in config.php, a Rumbos course with completion
+enabled and three SCORM activities (two that track completion, one that does not), one hidden SCORM that tracks
+completion, one restricted SCORM that tracks completion, `student1` enrolled, `teacher1` editing teacher.
+
+| Case | Expected | Result |
+| --- | --- | --- |
+| Setting "Send the Moodle user id" off (default): admin preview | Claims are `iss aud sub course role iat exp jti`, no `uid` | |
+| Setting on: admin preview | The same plus `uid`, an integer equal to the administrator's id | |
+| Setting on: open the course as `student1`, decode the assertion the service received | `uid` is `student1`'s id, `role` is `student` | |
+| Setting on, assertion edited to another `uid` | The service refuses it (bad signature) | |
+| Setting turned off again | The next assertion has no `uid` | |
+| Service account, call (a) and (b) of the verification | `True`; every tracked SCORM listed, including the hidden and the restricted one | |
+| Staging helper, dry run, `--state=complete` | Lists the tracked SCORM activities, changes nothing | |
+| Staging helper, `--apply`, then call (b) | Every tracked SCORM `state` 1; `overrideby` is the administrator | |
+| Staging helper, `--state=incomplete --apply`, then call (b) | `state` 0 | |
+| Staging helper on the production site (no flag) | Refuses, exit code 3, nothing changed | |
+| Staging helper with `teacher1`, with a user who is not enrolled, with a suspended student | Refuses each | |
+| As a teacher, *Reports > Activity completion > Override* one SCORM for `student1` | The service reads `state` 1 for it on its next call; the Moodle log has the completion event naming the teacher | |
+| Closing flow: finish two content steps, escape the final exam step, reload | Rows `completed`, `completed`, `fallback`; the app shows the same after reload | |
+| Closing flow: complete the final exam step after the escape (same revision) | The row stays `fallback` | |
+| Privacy export and erase for `student1` | The closing rows are in the export and gone after the erase | |
+
