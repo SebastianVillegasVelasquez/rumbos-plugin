@@ -35,8 +35,18 @@ use format_rumbos\admin\setting_tutorurl;
 use format_rumbos\local\config;
 use format_rumbos\local\launch_assertion;
 use format_rumbos\local\map_size;
+use format_rumbos\local\mirror\mirror_config;
 use format_rumbos\local\popup;
 use format_rumbos\local\result_config;
+
+// The status page of the native quiz mirror.
+$ADMIN->add('formatsettings', new admin_externalpage(
+    'format_rumbos_mirrorstatus',
+    get_string('mirrorstatus', 'format_rumbos'),
+    new moodle_url('/course/format/rumbos/mirrorstatus.php'),
+    'moodle/site:config',
+    true
+));
 
 // The rotation confirmation page lives outside the settings page but inside the admin tree.
 $ADMIN->add('formatsettings', new admin_externalpage(
@@ -254,6 +264,22 @@ if ($ADMIN->fulltree) {
         PARAM_RAW,
         '60',
         '10'
+    ));
+
+    $settings->add(new admin_setting_heading(
+        'format_rumbos/mirrorheading',
+        get_string('mirrorheading', 'format_rumbos'),
+        get_string('mirrorheading_desc', 'format_rumbos', (object) [
+            'url' => mirror_config::endpoint_url(),
+            'status' => (new moodle_url('/course/format/rumbos/mirrorstatus.php'))->out(false),
+        ])
+    ));
+
+    $settings->add(new admin_setting_configcheckbox(
+        'format_rumbos/mirrorenabled',
+        new lang_string('mirrorenabled', 'format_rumbos'),
+        new lang_string('mirrorenabled_desc', 'format_rumbos'),
+        0
     ));
 
     $settings->add(new setting_registration(
