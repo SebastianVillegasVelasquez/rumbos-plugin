@@ -17,6 +17,7 @@
 namespace format_rumbos\external;
 
 use format_rumbos\level_fixture;
+use format_rumbos\local\level_message;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -54,7 +55,24 @@ final class level_launch_test extends \advanced_testcase {
         $this->setUser($this->student($a1, $a2));
 
         $this->expectException(\moodle_exception::class);
-        $this->expectExceptionMessage(get_string('errorlevellocked', 'format_rumbos'));
+        $this->expectExceptionMessage(get_string(
+            'levellocked_body',
+            'format_rumbos',
+            (object) ['previous' => 'Level 1000', 'level' => 'Level 1001']
+        ));
+        get_launch_assertion::execute($a2->id);
+    }
+
+    /**
+     * The saved text is the one the web service answers with, so the page and the app say the same.
+     */
+    public function test_the_override_is_the_answer_to_a_locked_student(): void {
+        [$a1, $a2] = $this->two_levels();
+        set_config(level_message::SETTING, 'Primero {previous}', 'format_rumbos');
+        $this->setUser($this->student($a1, $a2));
+
+        $this->expectException(\moodle_exception::class);
+        $this->expectExceptionMessage('Primero Level 1000');
         get_launch_assertion::execute($a2->id);
     }
 

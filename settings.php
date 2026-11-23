@@ -27,6 +27,8 @@ defined('MOODLE_INTERNAL') || die();
 use format_rumbos\admin\setting_appurl;
 use format_rumbos\admin\setting_height;
 use format_rumbos\admin\setting_levelchain;
+use format_rumbos\admin\setting_lockedmessage;
+use format_rumbos\local\level_message;
 use format_rumbos\admin\setting_newtabmodules;
 use format_rumbos\admin\setting_registration;
 use format_rumbos\admin\setting_resultkeys;
@@ -149,6 +151,12 @@ if ($ADMIN->fulltree) {
         'format_rumbos/levelchain',
         get_string('levelchain', 'format_rumbos'),
         get_string('levelchain_desc', 'format_rumbos')
+    ));
+
+    $settings->add(new setting_lockedmessage(
+        'format_rumbos/' . level_message::SETTING,
+        get_string('levellockedtext', 'format_rumbos'),
+        get_string('levellockedtext_desc', 'format_rumbos')
     ));
 
     $settings->add(new admin_setting_heading(

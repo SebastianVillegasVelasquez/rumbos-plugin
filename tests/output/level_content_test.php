@@ -17,6 +17,7 @@
 namespace format_rumbos\output;
 
 use format_rumbos\level_fixture;
+use format_rumbos\local\level_message;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -169,5 +170,109 @@ final class level_content_test extends \advanced_testcase {
 
         $this->assertSame(1, $xpath->query('//iframe[@data-region="rumbos-frame"]')->length);
         $this->assertSame(0, $this->count_region($xpath, 'rumbos-level-locked'));
+    }
+
+    /**
+     * The default text is Variant 1: complete the previous level, and it names that level.
+     */
+    public function test_default_text_names_the_previous_level(): void {
+        $this->start_levels();
+        $a1 = $this->level('1000');
+        $a2 = $this->level('1001');
+        $this->gate_on(['1000', '1001']);
+        $user = $this->student($a1, $a2);
+
+        $xpath = $this->render($a2, $user);
+
+        $text = $xpath->query('//*[@data-region="rumbos-level-locked"]//p')->item(0)->textContent;
+        $this->assertSame('You need to complete the previous level (Level 1000) to open this level.', trim($text));
+    }
+
+    /**
+     * An administrator's text replaces the default, with the level names filled in.
+     */
+    public function test_the_override_replaces_the_default(): void {
+        $this->start_levels();
+        $a1 = $this->level('1000');
+        $a2 = $this->level('1001');
+        $this->gate_on(['1000', '1001']);
+        set_config(level_message::SETTING, 'Primero termina {previous}, luego abres {level}.', 'format_rumbos');
+        $user = $this->student($a1, $a2);
+
+        $xpath = $this->render($a2, $user);
+
+        $text = $xpath->query('//*[@data-region="rumbos-level-locked"]//p')->item(0)->textContent;
+        $this->assertSame('Primero termina Level 1000, luego abres Level 1001.', trim($text));
+        $this->assertSame(1, $xpath->query('//*[@data-region="rumbos-level-locked"]//a')->length);
+    }
+
+    /**
+     * Markup in the saved text or in a course name never becomes markup on the page.
+     */
+    public function test_markup_is_escaped(): void {
+        global $DB;
+
+        $this->start_levels();
+        $a1 = $this->level('1000');
+        $a2 = $this->level('1001');
+        $this->gate_on(['1000', '1001']);
+        $DB->set_field('course', 'fullname', 'Nivel <b>A1</b> & Co', ['id' => $a1->id]);
+        // The setting refuses markup, but the value could have been written some other way.
+        set_config(level_message::SETTING, '<script>alert(1)</script> Completa {previous}', 'format_rumbos');
+        $user = $this->student($a1, $a2);
+
+        $xpath = $this->render($a2, $user);
+
+        $box = '//*[@data-region="rumbos-level-locked"]';
+        $this->assertSame(0, $xpath->query('//script')->length);
+        $this->assertSame(0, $xpath->query($box . '//b')->length);
+        $text = $xpath->query($box . '//p')->item(0)->textContent;
+        $this->assertStringContainsString('<script>alert(1)</script>', $text);
+        // Moodle strips the tags of a course name; what is left is shown as text.
+        $this->assertStringContainsString('Completa Nivel A1 & Co', $text);
+    }
+
+    /**
+     * Setting an override changes nothing for an open student, a teacher or a switched-off gate.
+     */
+    public function test_the_override_does_not_change_who_is_blocked(): void {
+        $this->start_levels();
+        $a1 = $this->level('1000');
+        $a2 = $this->level('1001');
+        $this->gate_on(['1000', '1001']);
+        set_config(level_message::SETTING, 'Custom text', 'format_rumbos');
+        $user = $this->student($a1, $a2);
+        $this->complete($a1, $user);
+        $teacher = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($teacher->id, $a2->id, 'editingteacher');
+
+        foreach ([$user, $teacher] as $who) {
+            $xpath = $this->render($a2, $who);
+            $this->assertSame(1, $xpath->query('//iframe[@data-region="rumbos-frame"]')->length);
+            $this->assertSame(0, $this->count_region($xpath, 'rumbos-level-locked'));
+        }
+
+        set_config('levelgate', 0, 'format_rumbos');
+        $locked = $this->student($a1, $a2);
+        $xpath = $this->render($a2, $locked);
+        $this->assertSame(1, $xpath->query('//iframe[@data-region="rumbos-frame"]')->length);
+        $this->assertSame(0, $this->count_region($xpath, 'rumbos-level-locked'));
+    }
+
+    /**
+     * The check that could not run keeps its own message, whatever the override says.
+     */
+    public function test_the_override_does_not_replace_the_retry_message(): void {
+        $this->start_levels();
+        $a2 = $this->level('1001');
+        $this->gate_on(['1000', '1001']);
+        set_config(level_message::SETTING, 'Custom text', 'format_rumbos');
+        $user = $this->student($a2);
+
+        $xpath = $this->render($a2, $user);
+
+        $this->assertSame(1, $this->count_region($xpath, 'rumbos-level-error'));
+        $text = $xpath->query('//*[@data-region="rumbos-level-error"]')->item(0)->textContent;
+        $this->assertStringNotContainsString('Custom text', $text);
     }
 }

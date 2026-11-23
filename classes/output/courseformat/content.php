@@ -24,6 +24,7 @@ use format_rumbos\local\config;
 use format_rumbos\local\course_name;
 use format_rumbos\local\level_decision;
 use format_rumbos\local\level_gate;
+use format_rumbos\local\level_message;
 use format_rumbos\local\map_size;
 use format_rumbos\local\popup;
 use renderer_base;
@@ -142,13 +143,13 @@ class content extends content_base {
 
         $previous = $decision->prerequisite;
         $previouscontext = context_course::instance($previous->id);
-        $previousname = format_string($previous->fullname, true, ['context' => $previouscontext]);
+        $previousname = format_string($previous->fullname, true, ['context' => $previouscontext, 'escape' => false]);
         $data->levellocked = true;
         $data->leveltitle = get_string('levellocked_title', 'format_rumbos');
-        $data->levelmessage = get_string('levellocked_body', 'format_rumbos', (object) [
-            'level' => format_string($this->format->get_course()->fullname, true, ['context' => $context]),
-            'previous' => $previousname,
-        ]);
+        $data->levelmessage = level_message::locked_text(
+            $previousname,
+            format_string($this->format->get_course()->fullname, true, ['context' => $context, 'escape' => false])
+        );
         if (can_access_course($previous)) {
             $data->levellink = (new \moodle_url('/course/view.php', ['id' => $previous->id]))->out(false);
             $data->levellinktext = get_string('levellocked_link', 'format_rumbos', $previousname);
