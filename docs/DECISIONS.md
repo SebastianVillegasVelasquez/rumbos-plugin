@@ -151,3 +151,28 @@ not one per language: the language packs are not editable from the plugin, and a
 two places to keep in step. The web service answer uses the same text so the page and the app do not disagree.
 Course names are now taken unescaped from `format_string()` (`escape => false`) because the template escapes once;
 before, a name with `&` was shown as `&amp;`.
+
+### D27. Moodle activities in a flow reuse the map popup, and the messages keep the `rumbos:` names
+
+The proposal named the messages `activities.list` and `activity.open`. The contract already speaks `rumbos:kebab-case`
+(and a bare `tutor.open` was once dropped in silence because the app sent `rumbos:tutor-open`), so the new ones are
+`rumbos:request-activities`, `rumbos:activity-open` and `rumbos:host-activities`, `rumbos:host-activity-opened`,
+`rumbos:host-activity-open-failed`, `rumbos:host-activity-closed`. The shape is the proposal's. The overlay is the existing
+activity popup, not a third copy of the tutor overlay: it already has the close button, focus trap, Escape, focus
+restore, inert background and scroll lock, and it is what drops the site chrome on the framed page. The tutor overlay is
+the pattern it follows. No new dependency.
+
+### D28. A file resource is shown inline by a plugin page that calls the module's own `resource_view()`
+
+Three display modes (new window, force download, in pop-up) and the frameset mode show nothing useful in a frame. For a PDF or
+a web image the overlay loads `resource.php` instead of `view.php`; it does the same access checks, calls `resource_view()`
+(the view event and completion on view, which is how Moodle records a view, so a "view the activity" rule still works) and
+redirects to the file without the forced download. This is not a completion write of the plugin's own: the rule that
+decides is the resource's. The alternative, redirecting straight to the file, would have skipped the view and broken
+"must view" completion. The resource itself and its course link stay as the teacher set them.
+
+### D29. A failure to open an activity is `not_found`
+
+The proposal gives three reasons. A network or server failure is none of them; it is reported as `not_found` (or
+`forbidden` when Moodle says the capability is missing) rather than inventing a fourth reason the app does not know.
+The detail goes to the browser console at debug level.
