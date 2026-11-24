@@ -85,6 +85,11 @@ class result_receiver {
         $replay = self::replay($claims);
         if ($replay !== null) {
             self::write_audit($now, 200, 'already_applied', ['userid' => (int) $replay->userid] + $known, true);
+            // A delivery that arrives again is also the retry of an auto-completion that failed the first time. It
+            // does nothing when everything is complete, or when the setting is off.
+            if ((int) $replay->passed === 1) {
+                content_autocomplete::after_result((int) $replay->courseid, (int) $replay->userid, (string) $replay->jti);
+            }
             return self::reply(200, false, 'already_applied');
         }
 
@@ -100,6 +105,10 @@ class result_receiver {
 
         try {
             $reason = result_applier::apply($course, $userid, $claims, $now, $known);
+            // After the commit, so that nothing in it can undo the result or change the answer to the sender.
+            if ($claims['passed']) {
+                content_autocomplete::after_result((int) $course->id, $userid, (string) $claims['jti']);
+            }
         } catch (\dml_write_exception $e) {
             // Two requests for the same attempt arrived together and the other one won.
             $replay = self::replay($claims);

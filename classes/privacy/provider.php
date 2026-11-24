@@ -101,6 +101,8 @@ class provider implements
             'policy' => 'privacy:metadata:format_rumbos_audit:policy',
         ], 'privacy:metadata:format_rumbos_audit');
 
+        $collection->add_subsystem_link('core_completion', [], 'privacy:metadata:autocomplete');
+
         $collection->add_external_location_link('rumbos', [
             'userid' => 'privacy:metadata:rumbos:userid',
             'uid' => 'privacy:metadata:rumbos:uid',

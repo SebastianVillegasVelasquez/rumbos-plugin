@@ -63,7 +63,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
     public function test_metadata_declares_the_table_and_the_external_location(): void {
         $items = provider::get_metadata(new collection('format_rumbos'))->get_collection();
 
-        $this->assertCount(4, $items);
+        $this->assertCount(5, $items);
         $strings = get_string_manager();
 
         $table = $items[0];
@@ -94,7 +94,13 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
             $this->assertArrayNotHasKey($field, $audit->get_privacy_fields());
         }
 
-        $location = $items[3];
+        // Auto-completion writes Moodle's own completion data: declared, and marked for legal review.
+        $completion = $items[3];
+        $this->assertInstanceOf(\core_privacy\local\metadata\types\subsystem_link::class, $completion);
+        $this->assertSame('core_completion', $completion->get_name());
+        $this->assertStringContainsString('NEEDS LEGAL REVIEW', get_string('privacy:metadata:autocomplete', 'format_rumbos'));
+
+        $location = $items[4];
         $this->assertInstanceOf(\core_privacy\local\metadata\types\external_location::class, $location);
         $this->assertSame('rumbos', $location->get_name());
         $this->assertEqualsCanonicalizing(
