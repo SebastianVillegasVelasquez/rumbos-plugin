@@ -8,6 +8,7 @@
   activities the student can see as complete, through Moodle's override, with an event per activity and an ad-hoc retry task.
   Only the result receiver can trigger it. The privacy declaration is updated and marked for legal review. See
   `docs/CONTENT-AUTOCOMPLETE.md`.
+- `docs/DESIGN-restart-from-zero.md`: an audit of restarting a student after three failed finals. Not implemented.
 - Host contract v5.11: a flow step can show a Moodle activity (`resource`, `url`, `page`) in the overlay. Capabilities `activities`
   (editors) and `activity`; messages `request-activities`, `activity-open` and their replies. No address travels in any message.
   A PDF resource shows inline in the overlay whatever its display mode. See `docs/HOST-CONTRACT.md`. New external functions

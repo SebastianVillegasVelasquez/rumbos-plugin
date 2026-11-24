@@ -201,3 +201,9 @@ backend's contract and the result was applied, so answering with an error would 
 Moodle already holds. Instead a failure is logged (error log and an event), an ad-hoc task retries with Moodle's backoff,
 and a re-delivery of the statement also retries. Reported to the backend owner: a retry through their outbox needs a new
 reason in `contracts/openapi.json`.
+
+### D33. No reset is built (Part 3)
+
+Resetting a student's SCORM completion needs their tracks deleted: an override to incomplete is not sticky for automatic
+completion and is recalculated from the tracks. That destroys evidence and cannot be undone, and the decision is the
+client's and legal's. See `docs/DESIGN-restart-from-zero.md`: it stays a documented manual procedure.
