@@ -176,3 +176,28 @@ decides is the resource's. The alternative, redirecting straight to the file, wo
 The proposal gives three reasons. A network or server failure is none of them; it is reported as `not_found` (or
 `forbidden` when Moodle says the capability is missing) rather than inventing a fourth reason the app does not know.
 The detail goes to the browser console at debug level.
+
+### D30. Auto-completion is triggered by the verified result row, never by a message, and runs after the commit
+
+The only trigger is the result receiver, and the class reads the verified `format_rumbos_result` row (`passed = 1`, same user
+and course) instead of trusting its caller, so the retry task and a re-delivery justify themselves the same way. It runs
+after the result's transaction has committed: a failure inside it cannot roll the result back or change the answer to the
+sender. Nothing in the browser path can call it, and a test pins that no external function mentions it.
+
+### D31. The set is the SCORM activities the student can see; the actor is the site administrator
+
+"The activities of the map bubbles" is not known to the plugin (the map lives in the backend). The final-exam gate counts
+tracked, visible SCORM activities, so that is the rule, in a constant that a developer can extend. Moodle's override needs a
+current user with `moodle/course:overridecompletion` and the receiver has none, so the administrator is the current user for
+the call. `overrideby` therefore names the administrator, and the reason (statement id and purpose) is in a per-activity
+event. A dedicated service account was considered and rejected: it would be a new user the client has to create and secure,
+and Moodle's report would show it just the same. A "complete with fail" activity is overridden to incomplete first (Moodle
+returns early otherwise), which is the two steps a teacher takes by hand.
+
+### D32. The plugin retries its own failure with an ad-hoc task; the answer to the service does not change
+
+The proposal asks for the existing outbox/retry. The receiver's answer (`applied`, `completed` or `recorded`) is the
+backend's contract and the result was applied, so answering with an error would make the service retry a statement that
+Moodle already holds. Instead a failure is logged (error log and an event), an ad-hoc task retries with Moodle's backoff,
+and a re-delivery of the statement also retries. Reported to the backend owner: a retry through their outbox needs a new
+reason in `contracts/openapi.json`.

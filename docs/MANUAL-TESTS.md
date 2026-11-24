@@ -531,3 +531,28 @@ completion, one restricted SCORM that tracks completion, `student1` enrolled, `t
 | Closing flow: complete the final exam step after the escape (same revision) | The row stays `fallback` | |
 | Privacy export and erase for `student1` | The closing rows are in the export and gone after the erase | |
 
+
+## Moodle activities in a flow and auto-complete (contract v5.11; run on staging first)
+
+Needs a Rumbos course with a PDF file resource in each display mode, a page, a URL, a quiz, a hidden page, `student1`
+enrolled, `teacher1` editing teacher, two tracked SCORM activities, and a way to send a signed result statement
+(`dev/sign-test-statement.php`).
+
+| Case | Expected | Result |
+| --- | --- | --- |
+| As `teacher1` with editing on, send `rumbos:request-activities` | `host-activities` lists the page, URL, PDFs and the hidden page (`visible: false`), not the quiz | |
+| As `student1`, send `rumbos:request-activities` | `host-activities` with `error: "capability"`, and `host-init` had no `activities` | |
+| As `student1`, `rumbos:activity-open` for each PDF display mode | `host-activity-opened`, and the PDF is visible in the overlay every time | |
+| Overlay: Tab, Shift+Tab, Escape, the close button | The focus stays inside, Escape and the button close it, the focus returns to the page, the page does not scroll behind | |
+| After closing | `host-activity-closed` with the same `cmid` | |
+| `activity-open` for the hidden page, the quiz, an id from another course, an id that does not exist | `open-failed` with `forbidden`, `unsupported`, `not_found`, `not_found` | |
+| An `activity-open` with a `url` and no `cmid` | Nothing happens, no reply | |
+| Any message in the browser console log of the host | No address in any message either way | |
+| A PDF resource with "view" completion: open it in the overlay | The activity shows as viewed in the completion report | |
+| Auto-complete off (default): send a signed passing statement | The result is applied, no SCORM changes | |
+| Auto-complete on: send a signed passing statement | Both SCORM are complete, "overridden by" the administrator, one log event each naming the statement | |
+| Send the same statement again | `already_applied`, no new event, no change | |
+| Send a failing statement | No SCORM changes | |
+| Student with a hidden SCORM | It stays incomplete | |
+| Turn auto-complete off again | New passes change nothing; completions already made stay (clear them in the completion report) | |
+| Stop the database write for one activity (staging only) | The result is still applied, an error event appears in the logs, the cron retries | |

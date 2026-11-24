@@ -4,6 +4,10 @@
 
 ### Added
 
+- Auto-complete (off by default, setting `autocompletecontent`): a verified passing result (check-in or final) marks the SCORM
+  activities the student can see as complete, through Moodle's override, with an event per activity and an ad-hoc retry task.
+  Only the result receiver can trigger it. The privacy declaration is updated and marked for legal review. See
+  `docs/CONTENT-AUTOCOMPLETE.md`.
 - Host contract v5.11: a flow step can show a Moodle activity (`resource`, `url`, `page`) in the overlay. Capabilities `activities`
   (editors) and `activity`; messages `request-activities`, `activity-open` and their replies. No address travels in any message.
   A PDF resource shows inline in the overlay whatever its display mode. See `docs/HOST-CONTRACT.md`. New external functions
