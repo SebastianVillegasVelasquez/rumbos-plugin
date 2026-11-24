@@ -105,4 +105,18 @@ $functions = [
         'ajax' => true,
         'loginrequired' => true,
     ],
+    'format_rumbos_list_flow_activities' => [
+        'classname' => \format_rumbos\external\list_flow_activities::class,
+        'description' => 'Lists the activities of the course that a flow step may show, for map editors.',
+        'type' => 'read',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
+    'format_rumbos_resolve_flow_activity' => [
+        'classname' => \format_rumbos\external\resolve_flow_activity::class,
+        'description' => 'Checks that the user may open an activity of a flow step and returns the address to frame.',
+        'type' => 'read',
+        'ajax' => true,
+        'loginrequired' => true,
+    ],
 ];
