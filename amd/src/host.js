@@ -40,6 +40,12 @@ import {createFlight, createSerialQueue} from 'format_rumbos/flow_calls';
 import {
     MESSAGE,
     POPUP_MESSAGE,
+    hostActivities,
+    hostActivitiesError,
+    hostActivityClosed,
+    hostActivityOpenFailed,
+    hostActivityOpened,
+    hostCapabilities,
     hostFlowProgress,
     hostFlowProgressError,
     hostFullscreen,
@@ -57,6 +63,7 @@ import {
     parseAppMessage,
     parsePopupMessage,
     resolveActivityTarget,
+    resolveFlowActivityUrl,
     resolveSettingsUrl,
     resolveTutorUrl,
 } from 'format_rumbos/protocol';
@@ -145,6 +152,8 @@ class RumbosHost {
         this.popupPending = false;
         this.openModname = '';
         this.closing = false;
+        // The activity of a flow step the popup shows right now (contract v5.11), or null.
+        this.flowActivity = null;
 
         this.state = null;
         this.degraded = false;
@@ -174,6 +183,7 @@ class RumbosHost {
         // Moodle checks everything again; this only keeps a chatty app from piling up requests.
         this.flowReads = createFlight({fetch: (mapId) => this.callFlow('get_flow_progress', {mapid: mapId})});
         this.quizReads = createFlight({fetch: (cmid) => this.callQuiz(cmid)});
+        this.activityLists = createFlight({fetch: () => this.callFlow('list_flow_activities', {})});
         this.flowWrites = createSerialQueue();
 
         // The same single-flight reader, so a poll that meets a navigation refresh joins it.
@@ -310,6 +320,21 @@ class RumbosHost {
             case MESSAGE.NO_CONTENT:
                 this.degrade('nocontent', message.reason);
                 break;
+            default:
+                this.onActivityMessage(message);
+        }
+    }
+
+    /**
+     * Handles the messages about the activities of a flow step (contract v5.11).
+     *
+     * @param {{type: string, cmid?: number}} message A validated message from the app.
+     */
+    onActivityMessage(message) {
+        if (message.type === MESSAGE.REQUEST_ACTIVITIES) {
+            this.answerActivities();
+        } else if (message.type === MESSAGE.ACTIVITY_OPEN) {
+            this.openFlowActivity(message.cmid);
         }
     }
 
@@ -495,7 +520,67 @@ class RumbosHost {
      * @returns {Object}
      */
     capabilities() {
-        return this.tutorUrl ? {tutor: true} : {};
+        return hostCapabilities({tutor: Boolean(this.tutorUrl), canEdit: this.canEdit});
+    }
+
+    /**
+     * Answers a request for the activities a flow step may show, for users who may edit the map only (contract v5.11).
+     *
+     * The list comes from the server, which checks the capability again. It goes to the app and nowhere else, and it
+     * carries no address.
+     */
+    answerActivities() {
+        if (!this.canEdit) {
+            this.send(hostActivitiesError('capability'));
+            return;
+        }
+        this.activityLists.request(this.courseId).then((outcome) => {
+            if (outcome.error) {
+                this.send(hostActivitiesError(statsErrorKind(outcome.error)));
+                return false;
+            }
+            this.send(hostActivities(outcome.value) ?? hostActivitiesError('unavailable'));
+            return true;
+        }).catch(() => this.send(hostActivitiesError('unavailable')));
+    }
+
+    /**
+     * Opens an activity of a flow step in the overlay, when the app asks (contract v5.11).
+     *
+     * The app names the activity by its course module id and nothing else. Moodle decides whether this user may open
+     * it and builds the address, which this checks once more and keeps to itself: the app is told only that the
+     * activity opened or why it did not. A request made while another overlay is open is ignored, as the others are.
+     *
+     * @param {number} cmid
+     */
+    async openFlowActivity(cmid) {
+        if (this.popup?.isOpen || this.popupPending || this.tutor?.isOpen) {
+            return;
+        }
+        let reply = null;
+        try {
+            reply = await this.callFlow('resolve_flow_activity', {cmid});
+        } catch (error) {
+            Log.debug(`format_rumbos/host: ${error?.message ?? error}`);
+            this.send(hostActivityOpenFailed(cmid, statsErrorKind(error) === 'capability' ? 'forbidden' : 'not_found'));
+            return;
+        }
+        const url = reply?.error ? null : resolveFlowActivityUrl(reply?.url, {siteOrigin: this.siteOrigin, wwwroot: this.wwwroot});
+        if (!url) {
+            this.send(hostActivityOpenFailed(cmid, reply?.error));
+            return;
+        }
+        // Another overlay may have opened while Moodle was answering.
+        if (this.popup?.isOpen || this.popupPending || this.tutor?.isOpen) {
+            return;
+        }
+        this.flowActivity = cmid;
+        const shown = await this.openPopup({url, title: String(reply.title ?? ''), modname: String(reply.modname ?? ''), cmid});
+        if (shown) {
+            this.send(hostActivityOpened(cmid));
+        } else if (this.flowActivity === cmid) {
+            this.flowActivity = null;
+        }
     }
 
     /**
@@ -658,6 +743,7 @@ class RumbosHost {
      * frame requests the page. If it cannot be stored the popup still opens, only with the chrome.
      *
      * @param {{url: string, title: string, modname: string, cmid: number}} target
+     * @returns {Promise<boolean>} Whether this call showed the popup (false when another one took over meanwhile).
      */
     async openPopup(target) {
         if (!this.popup) {
@@ -676,7 +762,9 @@ class RumbosHost {
         }
         if (token === this.overlayToken) {
             this.showPopup(target);
+            return true;
         }
+        return false;
     }
 
     /**
@@ -769,6 +857,8 @@ class RumbosHost {
             return;
         }
         this.popup.close();
+        const flowActivity = this.flowActivity;
+        this.flowActivity = null;
         if (this.popupSession) {
             Ajax.call([{methodname: 'format_rumbos_end_popup_session', args: {}}])[0]
                 .catch((error) => Log.debug(`format_rumbos/host: ${error?.message ?? error}`));
@@ -776,16 +866,17 @@ class RumbosHost {
         this.poller.stop();
         // Nothing is read on a timer while no overlay is open; the close has its own read below.
         this.refresher.cancel();
-        this.finishClose(this.overlayToken);
+        this.finishClose(this.overlayToken, flowActivity);
     }
 
     /**
      * After closing: the refreshed state first, then the end of the overlay.
      *
      * @param {number} token Which popup was closed.
+     * @param {?number} flowActivity The activity of a flow step the popup showed, to tell the app it closed.
      * @returns {Promise}
      */
-    async finishClose(token) {
+    async finishClose(token, flowActivity = null) {
         try {
             // Not a read that began before the close: the last page of the activity may have changed it.
             this.pushState(await this.refresher.flush());
@@ -795,6 +886,9 @@ class RumbosHost {
         // Another popup may have been opened while the state was loading: that one owns the overlay flag.
         if (token === this.overlayToken) {
             this.send(hostOverlay(false));
+        }
+        if (flowActivity !== null) {
+            this.send(hostActivityClosed(flowActivity));
         }
     }
 

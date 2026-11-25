@@ -2,8 +2,8 @@
 
 What the Moodle page (the host) and the Rumbos app, which runs in an iframe, say to each
 other, and what each side may rely on. The app side is implemented in the Rumbos frontend
-against this document. This is **contract v5.10**: everything from v5 to v5.9 is unchanged
-and v5.10 only adds to it.
+against this document. This is **contract v5.11**: everything from v5 to v5.10 is unchanged
+and v5.11 only adds to it.
 
 All messages are `window.postMessage` objects with `v: 1`. The host ignores any message
 that does not come from the configured app origin **and** from the iframe's own window,
@@ -26,6 +26,8 @@ would follow.
 | app to host | `rumbos:request-quiz-result` | `cmid` | **v5.8.** Ask for the user's own result in a quiz. |
 | app to host | `rumbos:flow-reset` | `mapId` | **v5.8.** Editor mode only: reset the user's own progress on the map, for testing. |
 | app to host | `rumbos:tutor-open` | | **v5.10.** Open the virtual tutor full screen over the page. Only if `capabilities.tutor` was announced. |
+| app to host | `rumbos:request-activities` | | **v5.11.** Ask for the course activities a flow step may show. Only if `capabilities.activities` was announced. |
+| app to host | `rumbos:activity-open` | `cmid` | **v5.11.** Open a course activity in the overlay. Only if `capabilities.activity` was announced. |
 | app to host | `rumbos:error` | `code`, `detail` | The app failed; the host falls back to the standard course content. |
 | app to host | `rumbos:no-content` | `reason` | **v5.5.** The app has nothing to show this user; the host falls back to the standard course content. |
 | app to host | `rumbos:preferred-size` | `aspectRatio` | **v5.5.** The proportions of the level on display; the host applies them only in automatic height mode. |
@@ -38,6 +40,76 @@ would follow.
 | host to app | `rumbos:host-quiz-result` | `result` or `error` | **v5.8.** The answer to `request-quiz-result`. Never sent unasked. `result` gains `previewAttempts`, `canAttempt` and `reason` in v5.9. |
 | host to app | `rumbos:host-overlay` | `open` | An overlay (the activity popup) is above the map or has gone. |
 | host to app | `rumbos:host-tutor-closed` | | **v5.10.** The tutor overlay was closed (button, Escape or the page). Sent only after `rumbos:tutor-open` opened it. |
+| host to app | `rumbos:host-activities` | `items` or `error` | **v5.11.** The answer to `request-activities`. Never sent unasked. |
+| host to app | `rumbos:host-activity-opened` | `cmid` | **v5.11.** The activity is on screen in the overlay. |
+| host to app | `rumbos:host-activity-open-failed` | `cmid`, `reason` | **v5.11.** It could not be opened. |
+| host to app | `rumbos:host-activity-closed` | `cmid` | **v5.11.** The overlay of that activity closed (button, Escape or the page). |
+
+### Moodle activities in a flow (v5.11)
+
+A step of the welcome or the closing flow can point at a plain Moodle activity (a PDF, a link, a page) by its course
+module id instead of a Rumbos upload. The backend stores the bare `cmid` and cannot know whether it exists: **Moodle
+is the authority**, and the page checks it every time.
+
+```
+host -> app: { type: "rumbos:host-init", v: 1, ..., capabilities: { activities: true, activity: true } }
+app -> host: { type: "rumbos:request-activities", v: 1 }
+host -> app: { type: "rumbos:host-activities", v: 1, items: [{ cmid: 41, name: "Guia de inicio", modname: "resource", visible: true }] }
+           | { type: "rumbos:host-activities", v: 1, error: "capability" | "unavailable" }
+app -> host: { type: "rumbos:activity-open", v: 1, cmid: 41 }
+host -> app: { type: "rumbos:host-activity-opened", v: 1, cmid: 41 }
+           | { type: "rumbos:host-activity-open-failed", v: 1, cmid: 41, reason: "not_found" | "forbidden" | "unsupported" }
+host -> app: { type: "rumbos:host-activity-closed", v: 1, cmid: 41 }     // later, whoever closed it
+```
+
+The names follow the existing `rumbos:` family (`activity-open`, `host-activity-opened`, ...) instead of the dotted
+`activity.open` of the proposal; the shape is the proposal's.
+
+- **`capabilities.activity`** is announced to everyone; **`capabilities.activities`** only to users who may edit the map
+  (`format/rumbos:editmap`). An absent key means off; the host never sends `false`.
+- **No address ever travels in a message, in either direction.** `activity-open` carries only `cmid` (anything else is
+  dropped, and a message with a `url` and no `cmid` is ignored). Moodle builds the address from the course module; the
+  host checks it again (same origin, the view page of an allowed module or the plugin's inline page) and keeps it to itself.
+- **`activities`** lists, for map editors only (also checked on the server), the activities of **this** course whose
+  module is in the allow-list **`resource`, `url`, `page`** (constant `flow_activities::ALLOWED_MODULES`; extending it is a
+  code change plus a test, on purpose: an interactive module does not belong in a flow step unseen). `visible: false` means
+  hidden from students, so the editor sees that a step would fail for them. Activities being deleted are not listed.
+  `name` is plain text, at most 255 characters. A repeat of the request while one is in flight joins it.
+- **`activity-open`** is answered after Moodle checked, for the current user: the module belongs to the course
+  (`not_found`, also for an id that does not exist, so ids cannot be probed), is not being deleted, is visible to this user
+  (`forbidden` for hidden, restricted and not-enrolled), is in the allow-list (`unsupported`, for example a quiz) and the
+  user holds the module's view capability (`forbidden`). A failure of the call itself is `not_found`
+  (or `forbidden` when Moodle says the capability is missing). The message is ignored, without a reply, while another overlay
+  is open.
+- **The overlay** is the activity popup of the map (same-origin frame, close button, focus trap, Escape, focus restored,
+  page scroll locked, the rest of the page inert), so a step looks like opening a map activity. `host-overlay` is sent
+  as for any popup, then `activity-opened`; on close the refreshed state, `host-overlay { open: false }` and
+  `activity-closed` follow.
+- **Viewing completion is Moodle's own**: the overlay loads the activity's view page, which records the view. This feature
+  writes no completion.
+
+#### PDF file resource: display modes inside the overlay
+
+A file resource has seven display modes. Measured on Moodle 5.2.4 with a one-page PDF (HTTP headers of the real responses).
+That an inline PDF shows in an unsandboxed same-origin frame in Chrome was verified earlier (`DESIGN-activity-popups.md`);
+it could not be screenshotted again here because the browser tool drops its debugger when a PDF viewer frame appears.
+
+| Display mode | What `view.php` answers | Inside the overlay as is | What the plugin loads instead |
+| --- | --- | --- | --- |
+| Automatic (a PDF) | 303 to the file, `Content-Disposition: inline` | Shows the PDF | Nothing: `view.php` |
+| Embed | Moodle page with the PDF in an `<object>`, `X-Frame-Options: sameorigin` | Shows the PDF (inside Moodle's page, chrome dropped by the popup mode) | Nothing: `view.php` |
+| Open | 303 to the file, inline | Shows the PDF | Nothing: `view.php` |
+| In frame | Frameset: Moodle's top bar and the file | Shows, but nested frames and a second bar | `resource.php` |
+| New window | Page with a link that opens a new tab | **No**: a link, the PDF is not shown | `resource.php` |
+| Force download | 303 to the file, `Content-Disposition: attachment` | **No**: the browser saves it, nothing is shown | `resource.php` |
+| In pop-up | Page whose link runs `window.open` | **No**: a link | `resource.php` |
+
+`resource.php` (the plugin's `/course/format/rumbos/resource.php?id=CMID`, used by the overlay only) applies the resource's
+own login and capability checks, calls Moodle's `resource_view()` (the same call `view.php` makes: the view event and the
+completion-on-view rule, nothing else) and redirects to the file **without** the forced download. Measured: for every mode it answers
+`303` to the file with `Content-Disposition: inline`. It is used only for a PDF or a web image in the four modes marked above;
+any other file (an office document, an archive) keeps the resource's own page, which is no worse than before. The
+resource and its link in the course are not changed. This is what makes a PDF in the closing flow possible without a Rumbos upload.
 
 ### Virtual tutor (v5.10)
 

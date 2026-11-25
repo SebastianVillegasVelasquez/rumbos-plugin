@@ -78,6 +78,13 @@ if ($ADMIN->fulltree) {
         0
     ));
 
+    $settings->add(new admin_setting_configcheckbox(
+        'format_rumbos/autocompletecontent',
+        new lang_string('autocompletecontent', 'format_rumbos'),
+        new lang_string('autocompletecontent_desc', 'format_rumbos'),
+        0
+    ));
+
     $settings->add(new setting_newtabmodules(
         'format_rumbos/newtabmodules',
         get_string('newtabmodules', 'format_rumbos'),

@@ -125,6 +125,17 @@ class config {
     }
 
     /**
+     * Whether a verified passing result marks the course content complete (docs/DECISIONS.md, D30).
+     *
+     * Off by default: it writes completion data for students, so a site turns it on knowingly, after the client reviewed it.
+     *
+     * @return bool
+     */
+    public static function is_autocomplete_enabled(): bool {
+        return (bool) get_config('format_rumbos', 'autocompletecontent');
+    }
+
+    /**
      * How long the page waits for the app before showing the standard content, in milliseconds.
      *
      * It has no admin setting: 8 seconds is right for users. Tests that play the app's part

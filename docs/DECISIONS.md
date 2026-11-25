@@ -151,3 +151,59 @@ not one per language: the language packs are not editable from the plugin, and a
 two places to keep in step. The web service answer uses the same text so the page and the app do not disagree.
 Course names are now taken unescaped from `format_string()` (`escape => false`) because the template escapes once;
 before, a name with `&` was shown as `&amp;`.
+
+### D27. Moodle activities in a flow reuse the map popup, and the messages keep the `rumbos:` names
+
+The proposal named the messages `activities.list` and `activity.open`. The contract already speaks `rumbos:kebab-case`
+(and a bare `tutor.open` was once dropped in silence because the app sent `rumbos:tutor-open`), so the new ones are
+`rumbos:request-activities`, `rumbos:activity-open` and `rumbos:host-activities`, `rumbos:host-activity-opened`,
+`rumbos:host-activity-open-failed`, `rumbos:host-activity-closed`. The shape is the proposal's. The overlay is the existing
+activity popup, not a third copy of the tutor overlay: it already has the close button, focus trap, Escape, focus
+restore, inert background and scroll lock, and it is what drops the site chrome on the framed page. The tutor overlay is
+the pattern it follows. No new dependency.
+
+### D28. A file resource is shown inline by a plugin page that calls the module's own `resource_view()`
+
+Three display modes (new window, force download, in pop-up) and the frameset mode show nothing useful in a frame. For a PDF or
+a web image the overlay loads `resource.php` instead of `view.php`; it does the same access checks, calls `resource_view()`
+(the view event and completion on view, which is how Moodle records a view, so a "view the activity" rule still works) and
+redirects to the file without the forced download. This is not a completion write of the plugin's own: the rule that
+decides is the resource's. The alternative, redirecting straight to the file, would have skipped the view and broken
+"must view" completion. The resource itself and its course link stay as the teacher set them.
+
+### D29. A failure to open an activity is `not_found`
+
+The proposal gives three reasons. A network or server failure is none of them; it is reported as `not_found` (or
+`forbidden` when Moodle says the capability is missing) rather than inventing a fourth reason the app does not know.
+The detail goes to the browser console at debug level.
+
+### D30. Auto-completion is triggered by the verified result row, never by a message, and runs after the commit
+
+The only trigger is the result receiver, and the class reads the verified `format_rumbos_result` row (`passed = 1`, same user
+and course) instead of trusting its caller, so the retry task and a re-delivery justify themselves the same way. It runs
+after the result's transaction has committed: a failure inside it cannot roll the result back or change the answer to the
+sender. Nothing in the browser path can call it, and a test pins that no external function mentions it.
+
+### D31. The set is the SCORM activities the student can see; the actor is the site administrator
+
+"The activities of the map bubbles" is not known to the plugin (the map lives in the backend). The final-exam gate counts
+tracked, visible SCORM activities, so that is the rule, in a constant that a developer can extend. Moodle's override needs a
+current user with `moodle/course:overridecompletion` and the receiver has none, so the administrator is the current user for
+the call. `overrideby` therefore names the administrator, and the reason (statement id and purpose) is in a per-activity
+event. A dedicated service account was considered and rejected: it would be a new user the client has to create and secure,
+and Moodle's report would show it just the same. A "complete with fail" activity is overridden to incomplete first (Moodle
+returns early otherwise), which is the two steps a teacher takes by hand.
+
+### D32. The plugin retries its own failure with an ad-hoc task; the answer to the service does not change
+
+The proposal asks for the existing outbox/retry. The receiver's answer (`applied`, `completed` or `recorded`) is the
+backend's contract and the result was applied, so answering with an error would make the service retry a statement that
+Moodle already holds. Instead a failure is logged (error log and an event), an ad-hoc task retries with Moodle's backoff,
+and a re-delivery of the statement also retries. Reported to the backend owner: a retry through their outbox needs a new
+reason in `contracts/openapi.json`.
+
+### D33. No reset is built (Part 3)
+
+Resetting a student's SCORM completion needs their tracks deleted: an override to incomplete is not sticky for automatic
+completion and is recalculated from the tracks. That destroys evidence and cannot be undone, and the decision is the
+client's and legal's. See `docs/DESIGN-restart-from-zero.md`: it stays a documented manual procedure.

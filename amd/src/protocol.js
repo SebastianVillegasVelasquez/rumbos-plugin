@@ -14,7 +14,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.10).
+ * Pure helpers for the host <-> Rumbos app postMessage protocol (contract v5, up to v5.11).
  *
  * Nothing here touches the DOM or Moodle APIs, so it can be unit tested with
  * plain Node (see tests/js).
@@ -39,6 +39,8 @@ export const MESSAGE = {
     REQUEST_QUIZ_RESULT: 'rumbos:request-quiz-result',
     FLOW_RESET: 'rumbos:flow-reset',
     TUTOR_OPEN: 'rumbos:tutor-open',
+    REQUEST_ACTIVITIES: 'rumbos:request-activities',
+    ACTIVITY_OPEN: 'rumbos:activity-open',
     ERROR: 'rumbos:error',
     NO_CONTENT: 'rumbos:no-content',
     PREFERRED_SIZE: 'rumbos:preferred-size',
@@ -51,6 +53,10 @@ export const MESSAGE = {
     HOST_FLOW_PROGRESS: 'rumbos:host-flow-progress',
     HOST_QUIZ_RESULT: 'rumbos:host-quiz-result',
     TUTOR_CLOSED: 'rumbos:host-tutor-closed',
+    HOST_ACTIVITIES: 'rumbos:host-activities',
+    HOST_ACTIVITY_OPENED: 'rumbos:host-activity-opened',
+    HOST_ACTIVITY_OPEN_FAILED: 'rumbos:host-activity-open-failed',
+    HOST_ACTIVITY_CLOSED: 'rumbos:host-activity-closed',
 };
 
 /**
@@ -81,6 +87,18 @@ export const QUIZ_ERRORS = ['not_found', 'unavailable', 'capability'];
 
 /** Why a quiz result is what it is: the values of its `reason` (contract v5.9). */
 export const QUIZ_REASONS = ['ok', 'no_attempts', 'in_progress', 'preview_only', 'cannot_attempt', 'not_graded_yet'];
+
+/** Why an activity of a flow step could not be opened (contract v5.11). */
+export const ACTIVITY_OPEN_REASONS = ['not_found', 'forbidden', 'unsupported'];
+
+/** Errors the host may answer an activity list request with (contract v5.11). */
+export const ACTIVITIES_ERRORS = ['capability', 'unavailable'];
+
+/** The modules a flow step may show: what the server lists and opens (contract v5.11). */
+export const ACTIVITY_MODULES = ['resource', 'url', 'page'];
+
+/** The longest name of an activity the host passes on (characters). */
+export const MAX_ACTIVITY_NAME_LENGTH = 255;
 
 /** A map id is a UUID; the host treats it as opaque text (contract v5.8). */
 export const MAP_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -184,6 +202,9 @@ const APP_MESSAGE_PARSERS = {
     [MESSAGE.FLOW_RESET]: (data) => isMapId(data.mapId) ? {type: data.type, mapId: data.mapId} : null,
     // No fields at all (contract v5.10): the address of the tutor is never the app's to give.
     [MESSAGE.TUTOR_OPEN]: (data) => ({type: data.type}),
+    // Contract v5.11: no fields on the list request; the activity is only ever named by its id, never by an address.
+    [MESSAGE.REQUEST_ACTIVITIES]: (data) => ({type: data.type}),
+    [MESSAGE.ACTIVITY_OPEN]: (data) => isCmid(data.cmid) ? {type: data.type, cmid: data.cmid} : null,
     [MESSAGE.ERROR]: (data) => ERROR_CODES.includes(data.code)
         ? {type: data.type, code: data.code, detail: cleanDetail(data.detail)}
         : null,
@@ -410,6 +431,83 @@ export const hostQuizResultError = (cmid, error) => ({
 export const hostTutorClosed = () => ({type: MESSAGE.TUTOR_CLOSED, v: PROTOCOL_VERSION});
 
 /**
+ * The host-activities message: the activities of the course a flow step may show (contract v5.11).
+ *
+ * It is built field by field from what Moodle answered, and carries no address of any kind.
+ *
+ * @param {Object} reply What format_rumbos_list_flow_activities returned.
+ * @returns {?Object} Null when the reply is not well formed.
+ */
+export const hostActivities = (reply) => {
+    if (!Array.isArray(reply?.items)) {
+        return null;
+    }
+    const items = [];
+    for (const item of reply.items) {
+        if (!isCmid(item?.cmid) || typeof item.name !== 'string' || item.name.length > MAX_ACTIVITY_NAME_LENGTH ||
+                !ACTIVITY_MODULES.includes(item.modname) || typeof item.visible !== 'boolean') {
+            return null;
+        }
+        items.push({cmid: item.cmid, name: item.name, modname: item.modname, visible: item.visible});
+    }
+    return {type: MESSAGE.HOST_ACTIVITIES, v: PROTOCOL_VERSION, items};
+};
+
+/**
+ * The host-activities message when there is no list to give.
+ *
+ * @param {string} error One of ACTIVITIES_ERRORS.
+ * @returns {Object}
+ */
+export const hostActivitiesError = (error) => ({
+    type: MESSAGE.HOST_ACTIVITIES,
+    v: PROTOCOL_VERSION,
+    error: ACTIVITIES_ERRORS.includes(error) ? error : 'unavailable',
+});
+
+/**
+ * The message that tells the app an activity opened in the overlay (contract v5.11).
+ *
+ * @param {number} cmid
+ * @returns {Object}
+ */
+export const hostActivityOpened = (cmid) => ({type: MESSAGE.HOST_ACTIVITY_OPENED, v: PROTOCOL_VERSION, cmid});
+
+/**
+ * The message that tells the app an activity could not be opened (contract v5.11).
+ *
+ * @param {number} cmid
+ * @param {string} reason One of ACTIVITY_OPEN_REASONS; anything else is "not_found".
+ * @returns {Object}
+ */
+export const hostActivityOpenFailed = (cmid, reason) => ({
+    type: MESSAGE.HOST_ACTIVITY_OPEN_FAILED,
+    v: PROTOCOL_VERSION,
+    cmid,
+    reason: ACTIVITY_OPEN_REASONS.includes(reason) ? reason : 'not_found',
+});
+
+/**
+ * The message that tells the app the overlay of an activity closed (contract v5.11).
+ *
+ * @param {number} cmid
+ * @returns {Object}
+ */
+export const hostActivityClosed = (cmid) => ({type: MESSAGE.HOST_ACTIVITY_CLOSED, v: PROTOCOL_VERSION, cmid});
+
+/**
+ * What the host can do for the app, for host-init (contract v5.10 and v5.11): only the features that are on.
+ *
+ * @param {{tutor: boolean, canEdit: boolean}} features Whether the tutor is configured, and whether the user may edit the map.
+ * @returns {Object} Never has a key set to false: an absent key means off.
+ */
+export const hostCapabilities = ({tutor, canEdit}) => ({
+    ...(tutor ? {tutor: true} : {}),
+    ...(canEdit ? {activities: true} : {}),
+    activity: true,
+});
+
+/**
  * Path of the Moodle site without a trailing slash ("" for a site at the root of its host).
  *
  * @param {URL} root The wwwroot URL.
@@ -549,6 +647,35 @@ export const resolveTutorUrl = (href, {siteOrigin}) => {
     try {
         const url = new URL(href);
         return url.protocol === 'https:' && url.origin === siteOrigin && !url.username && !url.password ? url.href : null;
+    } catch (error) {
+        return null;
+    }
+};
+
+/**
+ * Whether an address Moodle answered for an activity of a flow step is one the host may frame in the overlay.
+ *
+ * Moodle builds the address from the course module; this is a second check on what came back, so a wrong answer can
+ * never put another site in the overlay. It must be on this page's own origin and be either the view page of one of
+ * the allowed modules or the plugin's own inline page for a file.
+ *
+ * @param {*} href
+ * @param {{siteOrigin: string, wwwroot: string}} site Where the page is running.
+ * @returns {?string} The normalised address, or null when it must not be framed.
+ */
+export const resolveFlowActivityUrl = (href, {siteOrigin, wwwroot}) => {
+    if (typeof href !== 'string' || href === '') {
+        return null;
+    }
+    try {
+        const root = new URL(wwwroot);
+        const url = new URL(href);
+        const base = rootPath(root);
+        const allowed = [...ACTIVITY_MODULES.map((module) => `${base}/mod/${module}/view.php`),
+            `${base}/course/format/rumbos/resource.php`];
+        const ok = url.protocol === 'https:' || url.protocol === 'http:';
+        return ok && url.origin === siteOrigin && url.origin === root.origin && !url.username && !url.password &&
+            allowed.includes(url.pathname) && /^[1-9]\d*$/.test(url.searchParams.get('id') ?? '') ? url.href : null;
     } catch (error) {
         return null;
     }
