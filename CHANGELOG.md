@@ -13,6 +13,12 @@ the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it
   the threshold no longer passes, and with a threshold of 100 nobody passes (the setting takes whole numbers). Nothing
   stored changes; the value is computed when it is read.
 
+### Fixed
+
+- The staging tools refused every real site: Moodle turns `true` from config.php into the string `"1"` in `$CFG` while it
+  starts, and the check wants the boolean. It now reads the value config.php held, so
+  `$CFG->format_rumbos_staging_tools = true;` works and nothing but config.php can allow the tools.
+
 ### Added
 
 - **Staging only:** `cli/reset_test_student.php` resets a test student without deleting evidence (dry run by default). It

@@ -48,7 +48,7 @@ final class test_student_reset_test extends \advanced_testcase {
         global $CFG;
         $this->resetAfterTest();
         $this->preventResetByRollback();
-        $CFG->{staging_completion::CONFIG_FLAG} = true;
+        $CFG->config_php_settings[staging_completion::CONFIG_FLAG] = true;
         set_config('enabled_stores', 'logstore_standard', 'tool_log');
         set_config('buffersize', 0, 'logstore_standard');
         set_config('logguests', 1, 'logstore_standard');
@@ -104,7 +104,7 @@ final class test_student_reset_test extends \advanced_testcase {
         $rows = $DB->count_records(flow_progress::TABLE);
 
         foreach ([null, false, 1, '1'] as $flag) {
-            $CFG->{staging_completion::CONFIG_FLAG} = $flag;
+            $CFG->config_php_settings[staging_completion::CONFIG_FLAG] = $flag;
             foreach (['plan', 'apply'] as $method) {
                 try {
                     test_student_reset::$method($course->id, $student->id);

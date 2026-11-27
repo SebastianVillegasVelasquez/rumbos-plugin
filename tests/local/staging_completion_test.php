@@ -50,27 +50,44 @@ final class staging_completion_test extends \advanced_testcase {
         global $CFG;
         $this->resetAfterTest();
 
-        unset($CFG->{staging_completion::CONFIG_FLAG});
+        unset($CFG->config_php_settings[staging_completion::CONFIG_FLAG]);
         $this->assertNotNull(staging_completion::refusal());
         $this->assertStringContainsString('staging', (string) staging_completion::refusal());
 
         // Only the boolean true counts: a string or a number is not a deliberate opt-in.
         foreach (['1', 1, 'true', 'yes', false, null] as $value) {
-            $CFG->{staging_completion::CONFIG_FLAG} = $value;
+            $CFG->config_php_settings[staging_completion::CONFIG_FLAG] = $value;
             $this->assertNotNull(staging_completion::refusal(), var_export($value, true));
         }
     }
 
     /**
-     * A site whose config.php opts in is allowed.
+     * A site whose config.php opts in is allowed, although Moodle has by then turned the value in $CFG into a string:
+     * it loads the core settings over $CFG while it starts, the config.php ones included.
      */
     public function test_a_site_marked_as_staging_is_allowed(): void {
         global $CFG;
         $this->resetAfterTest();
+        $CFG->config_php_settings[staging_completion::CONFIG_FLAG] = true;
+        // What lib/setup.php leaves behind (initialise_cfg()).
+        $CFG->{staging_completion::CONFIG_FLAG} = get_config('core', staging_completion::CONFIG_FLAG);
+
+        $this->assertSame('1', $CFG->{staging_completion::CONFIG_FLAG});
+        $this->assertNull(staging_completion::refusal());
+    }
+
+    /**
+     * Only config.php can opt in: a setting in the database, or a value set while running, does not.
+     */
+    public function test_nothing_but_config_php_can_allow_it(): void {
+        global $CFG;
+        $this->resetAfterTest();
+
+        set_config(staging_completion::CONFIG_FLAG, 1);
+        $this->assertNotNull(staging_completion::refusal(), 'a database setting');
 
         $CFG->{staging_completion::CONFIG_FLAG} = true;
-
-        $this->assertNull(staging_completion::refusal());
+        $this->assertNotNull(staging_completion::refusal(), 'set while running');
     }
 
     /**

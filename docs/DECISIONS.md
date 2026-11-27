@@ -237,3 +237,11 @@ type, so what is left out is a choice: completing a quiz, an assignment or a for
 do. `book`, `folder` and `imscp` are content too and were left out because nobody asked for them. The service's gate still
 counts SCORM only, so the added types change what the map shows, and possibly course completion, not whether the final
 exam opens. A site that already has the setting on completes more activities from the next passing statement.
+
+### D37. The staging flag is read from config.php's own values
+
+Found by running the tools on a real site: they refused although config.php set the flag to `true`.
+`initialise_cfg()` loads the core settings over `$CFG` as strings, config.php's included, so `$CFG` held `"1"` and the
+strict check failed on every site; the tests set `$CFG` while running, where it stays a boolean. The check now reads
+`$CFG->config_php_settings`, which keeps what config.php held. Accepting `"1"` was rejected: it would let a database
+setting enable the tools. Read this way the rule is as strict as intended, and stricter: only config.php counts.

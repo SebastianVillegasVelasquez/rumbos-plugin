@@ -46,15 +46,17 @@ class staging_completion {
     /**
      * Why the helper must not run on this site, or null when it may.
      *
-     * Only the exact value true allows it: a missing flag, "1" or any other value refuses, so the default of every
-     * site, production included, is to refuse.
+     * Only the exact value true in config.php allows it: a missing flag, "1" or any other value refuses, so the default
+     * of every site, production included, is to refuse. It is read from the values config.php held
+     * ($CFG->config_php_settings): while starting, Moodle loads the core settings over $CFG as strings, so $CFG itself
+     * holds "1" for true. A setting in the database or a value set while running does not count.
      *
      * @return string|null
      */
     public static function refusal(): ?string {
         global $CFG;
 
-        if (($CFG->{self::CONFIG_FLAG} ?? false) !== true) {
+        if (($CFG->config_php_settings[self::CONFIG_FLAG] ?? false) !== true) {
             return 'This is a staging-only tool and this site is not marked as a staging site. Add '
                 . '$CFG->' . self::CONFIG_FLAG . ' = true; to config.php of a staging site to allow it. '
                 . 'Never add that line to a production site.';
