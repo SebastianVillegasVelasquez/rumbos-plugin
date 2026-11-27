@@ -228,3 +228,12 @@ while it still stands as recorded: complete, by the recorded account, and not mo
 accepted because each one makes the reset do less: with logging off or purged nothing is recognised, and any later
 change to the row makes it be left alone. Flow rows are deleted through `flow_progress::reset_map()`. Nothing that is
 evidence is deleted, so a reset student is not a new student: automatic completion can come back from the tracks.
+
+### D36. Auto-complete covers SCORM and the plain content the overlay shows
+
+The list becomes `scorm`, `resource`, `url`, `page` (it replaces the SCORM-only set of D31; the visibility rule and the
+actor stay). It stays a constant behind the same setting, off by default. The override works on every installed module
+type, so what is left out is a choice: completing a quiz, an assignment or a forum would record work the student did not
+do. `book`, `folder` and `imscp` are content too and were left out because nobody asked for them. The service's gate still
+counts SCORM only, so the added types change what the map shows, and possibly course completion, not whether the final
+exam opens. A site that already has the setting on completes more activities from the next passing statement.

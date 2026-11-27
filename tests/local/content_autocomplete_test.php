@@ -245,7 +245,7 @@ final class content_autocomplete_test extends \format_rumbos\result_testcase {
         ]);
         $deleting = $gen->create_module('scorm', ['course' => $course->id, 'completion' => COMPLETION_TRACKING_MANUAL]);
         $untracked = $gen->create_module('scorm', ['course' => $course->id, 'completion' => COMPLETION_TRACKING_NONE]);
-        $page = $gen->create_module('page', ['course' => $course->id, 'completion' => COMPLETION_TRACKING_MANUAL]);
+        $forum = $gen->create_module('forum', ['course' => $course->id, 'completion' => COMPLETION_TRACKING_MANUAL]);
         $DB->set_field('course_modules', 'deletioninprogress', 1, ['id' => $deleting->cmid]);
         rebuild_course_cache((int) $course->id, true);
         // The student completed B by themselves before: it is already complete and must stay as it is.
@@ -262,11 +262,59 @@ final class content_autocomplete_test extends \format_rumbos\result_testcase {
         $this->assertSame(COMPLETION_INCOMPLETE, $this->state($course, (int) $hidden->cmid, $student), 'hidden');
         $this->assertSame(COMPLETION_INCOMPLETE, $this->state($course, (int) $deleting->cmid, $student), 'being deleted');
         $this->assertSame(COMPLETION_INCOMPLETE, $this->state($course, (int) $untracked->cmid, $student), 'tracks nothing');
-        $this->assertSame(COMPLETION_INCOMPLETE, $this->state($course, (int) $page->cmid, $student), 'not a content module');
+        $this->assertSame(COMPLETION_INCOMPLETE, $this->state($course, (int) $forum->cmid, $student), 'not a content module');
         $row = $DB->get_record('course_modules_completion', ['coursemoduleid' => $b, 'userid' => $student->id]);
         $this->assertNull($row->overrideby, 'completed by the student, left alone');
         $events = array_filter($sink->get_events(), fn($e) => $e instanceof content_autocompleted);
         $this->assertSame([$a], array_values(array_map(fn($e) => (int) $e->objectid, $events)));
+    }
+
+    /**
+     * A file, a link and a page are content too, with manual or with view completion, and the completion then holds when the
+     * student opens one. Activities that stand for the student's own work stay as they are.
+     */
+    public function test_plain_content_is_completed_and_assessed_work_is_not(): void {
+        global $DB;
+        [$course, $student] = $this->setup_content();
+        $this->setAdminUser();
+        $gen = $this->getDataGenerator();
+        $manual = ['course' => $course->id, 'completion' => COMPLETION_TRACKING_MANUAL];
+        $onview = ['course' => $course->id, 'completion' => COMPLETION_TRACKING_AUTOMATIC, 'completionview' => 1];
+        $content = [];
+        foreach (['resource', 'url', 'page'] as $modname) {
+            $content[] = (int) $gen->create_module($modname, $manual)->cmid;
+            $content[] = (int) $gen->create_module($modname, $onview)->cmid;
+        }
+        $work = [];
+        foreach (['quiz', 'assign', 'forum'] as $modname) {
+            $work[$modname] = (int) $gen->create_module($modname, $manual)->cmid;
+        }
+        $this->setUser(null);
+        set_config('autocompletecontent', 1, 'format_rumbos');
+
+        $this->assert_reply($this->send($this->claims($course, $student)), 200, 'completed');
+
+        foreach ($content as $cmid) {
+            $this->assertSame(COMPLETION_COMPLETE, $this->state($course, $cmid, $student), "content $cmid");
+        }
+        foreach ($work as $modname => $cmid) {
+            $this->assertSame(COMPLETION_INCOMPLETE, $this->state($course, $cmid, $student), $modname);
+        }
+        // The student opens a page with view completion: the override stays.
+        $info = new \completion_info(get_course($course->id));
+        $cm = get_fast_modinfo($course->id, $student->id)->get_cm($content[5]);
+        $info->set_module_viewed($cm, (int) $student->id);
+        $row = $DB->get_record('course_modules_completion', ['coursemoduleid' => $content[5], 'userid' => $student->id]);
+        $this->assertEquals(COMPLETION_COMPLETE, $row->completionstate);
+        $this->assertSame((string) get_admin()->id, (string) $row->overrideby);
+    }
+
+    /**
+     * Everything the activity overlay shows is content that a pass completes.
+     */
+    public function test_what_the_overlay_shows_is_in_the_set(): void {
+        $this->assertSame(['scorm', 'resource', 'url', 'page'], content_autocomplete::MODULES);
+        $this->assertSame([], array_diff(flow_activities::ALLOWED_MODULES, content_autocomplete::MODULES));
     }
 
     /**
