@@ -41,6 +41,18 @@ class result_statement {
     /** @var int Seconds an ES256 time may be in the future. The service assumes the clocks differ by less. */
     public const FUTURE_SKEW = 300;
 
+    /** @var string The audience the service writes in every statement. */
+    public const SERVICE_AUDIENCE = 'moodle';
+
+    /** @var string A statement or attempt id: what the table columns hold. */
+    public const ID_PATTERN = '/^[A-Za-z0-9._-]{1,64}$/D';
+
+    /** @var string The user reference of a launch assertion, which `sub` repeats. */
+    private const SUBJECT_PATTERN = '/^[0-9a-f]{32}$/D';
+
+    /** @var string A percent: two decimals, 0.00 to 100.00. */
+    private const PERCENT_PATTERN = '/^(100\.00|\d{1,2}\.\d{2})$/D';
+
     /** @var int Seconds of clock difference tolerated, for iat and exp. */
     public const LEEWAY = 60;
 
@@ -189,26 +201,222 @@ class result_statement {
     }
 
     /**
-     * Verifies the signature, the times, the issuer, the audience and the tenant, and validates the claims.
+     * Verifies the signature, the times, the issuer, the audience and the tenant, and validates a result statement.
+     *
+     * Which claims are required depends on the algorithm of the key: ES256 is the service's contract
+     * ({@see self::normalise_service()}), RS256 the development signer's ({@see self::normalise()}).
      *
      * @param string $jws The compact serialization.
      * @param int $now The current time.
-     * @return array The normalised claims (see {@see self::normalise()}).
-     * @throws result_rejection 400 when malformed, 401 when not authentic, expired or not for this site.
+     * @return array The normalised claims.
+     * @throws result_rejection 400 when malformed, 401 when not authentic, expired or not for this site, 422 when it
+     *     is not a result.
      */
     public static function verify(string $jws, int $now): array {
-        $claims = self::normalise(self::decode($jws, $now), $now);
+        return self::result_claims(self::decode($jws, $now), self::algorithm_of($jws), $now);
+    }
 
-        if (!hash_equals(result_config::issuer(), $claims['iss'])) {
+    /**
+     * Verifies a signed message that need not be a result: the signature, the times, who sent it, to whom and for which
+     * tenant, and the claims every message carries (`jti` and `iat`; with RS256 also a short `exp`).
+     *
+     * The caller checks the rest of the claims.
+     *
+     * @param string $jws The compact serialization.
+     * @param int $now The current time.
+     * @return \stdClass The decoded claims.
+     * @throws result_rejection 400 when malformed, 401 when not authentic, expired or not for this site.
+     */
+    public static function verify_envelope(string $jws, int $now): \stdClass {
+        $claims = self::decode($jws, $now);
+        self::check_envelope($claims, self::algorithm_of($jws));
+        return $claims;
+    }
+
+    /**
+     * The algorithm of the configured key that a statement names. Only meaningful once {@see self::decode()} accepted it.
+     *
+     * @param string $jws The compact serialization.
+     * @return string
+     * @throws result_rejection 401 when no configured key has that id.
+     */
+    public static function algorithm_of(string $jws): string {
+        $keys = result_config::keys();
+        $kid = self::key_id($jws);
+        if (!isset($keys[$kid])) {
+            throw new result_rejection(401, 'unknown_key');
+        }
+        return result_config::algorithm($keys[$kid]);
+    }
+
+    /**
+     * The checks of {@see self::verify_envelope()} on claims whose signature is verified.
+     *
+     * @param \stdClass $claims
+     * @param string $algorithm The algorithm of the key that signed them.
+     * @throws result_rejection 400 or 401.
+     */
+    public static function check_envelope(\stdClass $claims, string $algorithm): void {
+        $valid = is_string($claims->iss ?? null) && $claims->iss !== ''
+            && is_string($claims->aud ?? null) && $claims->aud !== ''
+            && is_string($claims->tenant ?? null) && $claims->tenant !== ''
+            && is_string($claims->jti ?? null) && preg_match(self::ID_PATTERN, $claims->jti) === 1
+            && is_int($claims->iat ?? null);
+        if ($valid && $algorithm === self::ALGORITHM) {
+            $valid = is_int($claims->exp ?? null)
+                && $claims->exp > $claims->iat && $claims->exp - $claims->iat <= self::MAX_LIFETIME;
+        }
+        if (!$valid) {
+            throw new result_rejection(400, 'malformed');
+        }
+        self::check_parties($claims->iss, $claims->aud, $claims->tenant, $algorithm);
+    }
+
+    /**
+     * Validates verified claims as a result statement and checks who it is from and for.
+     *
+     * @param \stdClass $claims
+     * @param string $algorithm The algorithm of the key that signed them.
+     * @param int $now
+     * @return array The normalised claims.
+     * @throws result_rejection 400, 401 or 422.
+     */
+    public static function result_claims(\stdClass $claims, string $algorithm, int $now): array {
+        $normalised = $algorithm === self::SERVICE_ALGORITHM
+            ? self::normalise_service($claims, $now)
+            : self::normalise($claims, $now);
+        self::check_parties($normalised['iss'], $normalised['aud'], $normalised['tenant'], $algorithm);
+        return $normalised;
+    }
+
+    /**
+     * Checks that a message is from the configured issuer, for this audience and for the configured tenant.
+     *
+     * The service addresses every statement to "moodle", whatever the site. What ties its statement to one site is the
+     * tenant, and for a result also `sub`, an HMAC with a secret of the site. The development signer addresses the
+     * site's own issuer.
+     *
+     * @param string $iss
+     * @param string $aud
+     * @param string $tenant
+     * @param string $algorithm
+     * @throws result_rejection 401 when one does not match.
+     */
+    private static function check_parties(string $iss, string $aud, string $tenant, string $algorithm): void {
+        if (!hash_equals(result_config::issuer(), $iss)) {
             throw new result_rejection(401, 'bad_issuer');
         }
-        if (!hash_equals(launch_assertion::issuer(), $claims['aud'])) {
+        $audience = $algorithm === self::SERVICE_ALGORITHM ? self::SERVICE_AUDIENCE : launch_assertion::issuer();
+        if (!hash_equals($audience, $aud)) {
             throw new result_rejection(401, 'bad_audience');
         }
-        if (!hash_equals(result_config::tenant(), $claims['tenant'])) {
+        if (!hash_equals(result_config::tenant(), $tenant)) {
             throw new result_rejection(401, 'bad_tenant');
         }
-        return $claims;
+    }
+
+    /**
+     * Checks the claims of a result statement of the service and returns them in a fixed form.
+     *
+     * It is the service's schema 1 result statement (no `schema` claim), or its schema 2 attempt record, which holds
+     * the same claims and more. Extra claims are dropped. The idempotency key of the attempt is `jti`. There is no
+     * `exp`, `attempt_id` or `policy`. The pass rule (`pass_percent` and `pass_operator`) is only recorded, so it may
+     * be absent, but not half there or wrong. `completes_course` is required: it is false when the student passed and
+     * the rule in force did not exempt them from the course.
+     *
+     * @param \stdClass $claims The decoded claims.
+     * @param int $now The current time.
+     * @return array The claims, with `attempt_id` set to the `jti` and `finished_at` as a Unix time (the `iat` when
+     *     the statement has none).
+     * @throws result_rejection 400 when a claim is missing or of the wrong form, 401 when it is from the future, 422
+     *     when it is another kind of statement.
+     */
+    public static function normalise_service(\stdClass $claims, int $now): array {
+        $get = fn(string $name) => $claims->{$name} ?? null;
+        $string = fn($value, string $pattern): bool => is_string($value) && preg_match($pattern, $value) === 1;
+
+        $isresult = !property_exists($claims, 'kind') && (!property_exists($claims, 'schema') || $get('schema') === 1);
+        $isattempt = $get('kind') === 'attempt' && $get('schema') === 2;
+        if (!$isresult && !$isattempt) {
+            throw new result_rejection(422, 'unknown_kind');
+        }
+
+        $passpercent = $get('pass_percent');
+        $operator = $get('pass_operator');
+        $hasrule = property_exists($claims, 'pass_percent') || property_exists($claims, 'pass_operator');
+
+        $valid = is_string($get('iss')) && $get('iss') !== ''
+            && is_string($get('aud')) && $get('aud') !== ''
+            && is_string($get('tenant')) && $get('tenant') !== ''
+            && $string($get('jti'), self::ID_PATTERN)
+            && $string($get('sub'), self::SUBJECT_PATTERN)
+            && is_int($get('course_id')) && $get('course_id') > 0
+            && in_array($get('purpose'), self::PURPOSES, true)
+            && $string($get('percent'), self::PERCENT_PATTERN)
+            && is_bool($get('passed'))
+            && is_bool($get('completes_course'))
+            && (!$hasrule || (self::is_pass_percent($passpercent) && in_array($operator, self::OPERATORS, true)))
+            && (!property_exists($claims, 'iat') || is_int($claims->iat))
+            && (property_exists($claims, 'iat') || property_exists($claims, 'finished_at'));
+        $finished = property_exists($claims, 'finished_at') ? self::finished_at($claims->finished_at) : $get('iat');
+        if (!$valid || $finished === null) {
+            throw new result_rejection(400, 'malformed');
+        }
+        // The `iat` was checked with the signature.
+        if ($finished > $now + self::FUTURE_SKEW) {
+            throw new result_rejection(401, 'not_yet_valid');
+        }
+
+        return [
+            'iss' => $get('iss'),
+            'aud' => $get('aud'),
+            'tenant' => $get('tenant'),
+            'jti' => $get('jti'),
+            'iat' => $get('iat'),
+            'sub' => $get('sub'),
+            'course_id' => $get('course_id'),
+            'purpose' => $get('purpose'),
+            'attempt_id' => $get('jti'),
+            'percent' => $get('percent'),
+            'passed' => $get('passed'),
+            'completes_course' => $get('completes_course'),
+            'pass_percent' => $hasrule ? self::pass_percent_text($passpercent) : null,
+            'pass_operator' => $hasrule ? $operator : null,
+            'finished_at' => $finished,
+        ];
+    }
+
+    /**
+     * Whether a pass of these claims completes the course (and, with it, the content when auto-complete is on).
+     *
+     * @param array $claims Normalised claims.
+     * @return bool
+     */
+    public static function completes(array $claims): bool {
+        // The development signer's statements have no completes_course: there, passing completes.
+        return $claims['passed'] && ($claims['completes_course'] ?? true);
+    }
+
+    /**
+     * Whether a claim is a usable pass percent: a number or a decimal string, 0 to 100.
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    private static function is_pass_percent(mixed $value): bool {
+        $number = is_int($value) || is_float($value)
+            || (is_string($value) && preg_match('/^\d{1,3}(\.\d{1,4})?$/D', $value) === 1);
+        return $number && (float) $value >= 0 && (float) $value <= 100;
+    }
+
+    /**
+     * A pass percent as it is recorded.
+     *
+     * @param int|float|string $value
+     * @return string
+     */
+    private static function pass_percent_text(int|float|string $value): string {
+        return rtrim(rtrim(number_format((float) $value, 4, '.', ''), '0'), '.');
     }
 
     /**
@@ -223,9 +431,9 @@ class result_statement {
     }
 
     /**
-     * Checks the shape of the claims and returns them in a fixed form.
+     * Checks the shape of the claims of an RS256 statement (the development signer's) and returns them in a fixed form.
      *
-     * Extra claims are dropped. Every claim of docs/RESULT-PASSBACK.md must be present and of its type.
+     * Extra claims are dropped. Every claim of this form in docs/RESULT-PASSBACK.md must be present and of its type.
      *
      * @param \stdClass $claims The decoded claims.
      * @param int $now The current time.
@@ -235,7 +443,7 @@ class result_statement {
     public static function normalise(\stdClass $claims, int $now): array {
         $get = fn(string $name) => $claims->{$name} ?? null;
         $string = fn($value, string $pattern): bool => is_string($value) && preg_match($pattern, $value) === 1;
-        $id = '/^[A-Za-z0-9._-]{1,64}$/';
+        $id = self::ID_PATTERN;
         $malformed = new result_rejection(400, 'malformed');
 
         $policy = $get('policy');
@@ -248,15 +456,14 @@ class result_statement {
             && is_string($get('tenant')) && $get('tenant') !== ''
             && $string($get('jti'), $id)
             && is_int($get('iat')) && is_int($get('exp'))
-            && $string($get('sub'), '/^[0-9a-f]{32}$/')
+            && $string($get('sub'), self::SUBJECT_PATTERN)
             && is_int($get('course_id')) && $get('course_id') > 0
             && in_array($get('purpose'), self::PURPOSES, true)
             && $string($get('attempt_id'), $id)
-            && $string($get('percent'), '/^(100\.00|\d{1,2}\.\d{2})$/')
+            && $string($get('percent'), self::PERCENT_PATTERN)
             && is_bool($get('passed'))
             && $policy !== null
-            && (is_int($passpercent) || is_float($passpercent) || $string($passpercent, '/^\d{1,3}(\.\d{1,4})?$/'))
-            && (float) $passpercent >= 0 && (float) $passpercent <= 100
+            && self::is_pass_percent($passpercent)
             && in_array($operator, self::OPERATORS, true);
         if (!$valid) {
             throw $malformed;
@@ -282,7 +489,7 @@ class result_statement {
             'attempt_id' => $get('attempt_id'),
             'percent' => $get('percent'),
             'passed' => $get('passed'),
-            'pass_percent' => rtrim(rtrim(number_format((float) $passpercent, 4, '.', ''), '0'), '.'),
+            'pass_percent' => self::pass_percent_text($passpercent),
             'pass_operator' => $operator,
             'finished_at' => $finished,
         ];

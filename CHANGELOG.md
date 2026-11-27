@@ -24,6 +24,13 @@ the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it
 - The result receiver verifies **ES256**, the algorithm the Rumbos service signs with. The "Result keys" setting takes
   the service's public key as a JWK or a JWKS, several at once for a rotation; `cli/ec_public_jwk.php` makes the JWK
   from a public PEM. The configured key decides the only algorithm accepted. RSA keys in PEM keep working with RS256.
+- The receiver accepts the **statements the Rumbos service sends**: the bare token as the body (`application/jwt`), the
+  audience `moodle`, no `exp`, `attempt_id` or `policy`, `jti` as the attempt id, result (schema 1) and attempt (schema
+  2) records up to 512 KB. The course and the content are completed only when `passed` **and** `completes_course` are
+  true. Before this, no real result could be applied. The development (RS256) form is unchanged. See
+  `docs/RESULT-PASSBACK.md`.
+- Setting `resultsackdefinitions` (off by default): answer success to the service's exam definitions without storing
+  them. While it is off they are answered 503, and the service holds the results of those exams.
 - **Staging only:** `cli/reset_test_student.php` resets a test student without deleting evidence (dry run by default). It
   deletes the student's flow progress rows in the course and sets back to incomplete only the completion overrides the
   plugin recorded. It refuses unless config.php sets `$CFG->format_rumbos_staging_tools = true;`. The staging completion

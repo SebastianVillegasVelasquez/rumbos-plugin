@@ -299,15 +299,19 @@ starts with no progress. The threshold option is, as part of the course settings
 ### Result passback and course completion
 
 The Rumbos app has a native check-in and final exam. **The browser never reports a grade.** The Rumbos service sends this
-site a **signed result statement** (a JWS, RS256, the mirror of the launch assertion) and the plugin verifies it, records the
+site a **signed result statement** (a JWS, ES256) and the plugin verifies it, records the
 result and, on a pass, completes the course in Moodle's own completion system, so Moodle's reports and the certificate keep
 working. The contract the backend follows is [docs/RESULT-PASSBACK.md](docs/RESULT-PASSBACK.md); the audit that led to it,
 with the mechanisms considered and why they were rejected, is [docs/RESULT-PASSBACK-AUDIT.md](docs/RESULT-PASSBACK-AUDIT.md).
 
 1. **Turn the receiver on**: in the Rumbos settings tick *Accept results*, set the *Result issuer* and *Result tenant* the
-   Rumbos service gives you, and paste its public key(s) in *Result keys*. The page shows the address to give the service
-   (`https://<moodle>/course/format/rumbos/passback.php`) and the audience statements must carry. Until a course is set up
-   (step 2) the receiver answers `503` and the service keeps its results.
+   Rumbos service uses, and paste its public key(s) as a JWK or JWKS in *Result keys* (`cli/ec_public_jwk.php` makes
+   one from a PEM). The page shows the address to give the service
+   (`https://<moodle>/course/format/rumbos/passback.php`). Until a course is set up (step 2) the receiver answers `503`
+   and the service keeps its results. The service sends a published exam's results only after its **definition** is
+   accepted, which this plugin cannot store: see
+   [Exam definitions](docs/RESULT-PASSBACK.md#exam-definitions). The steps for production, with how to verify them, are
+   in [the same document](docs/RESULT-PASSBACK.md#production-configure-the-key-and-verify-with-a-real-statement).
 2. **Set a course up** with the administrator's command. It is a **dry run unless `--apply` is given**, and nothing is
    configured on install or upgrade:
 
@@ -332,8 +336,8 @@ with the mechanisms considered and why they were rejected, is [docs/RESULT-PASSB
 Only a student can complete the course: a teacher, a manager, a site administrator and anybody who may edit the map are
 refused with `422 role_not_allowed`, even when also enrolled as a student, and a role switched to Student in a browser is
 invisible to the receiver. Every statement, accepted or refused, writes a row to `format_rumbos_audit` (time, status,
-reason, the pseudonymous reference, the score; no name, email or address), and the receiver is idempotent on `attempt_id` and
-replay protected on `jti`. Neither table is purged by the plugin; the retention is a decision for the site owner and
+reason, the pseudonymous reference, the score; no name, email or address), and the receiver applies each attempt once
+(the service's `jti`). Neither table is purged by the plugin; the retention is a decision for the site owner and
 legal advice.
 
 ### Size of the area

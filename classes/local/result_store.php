@@ -130,7 +130,7 @@ class result_store {
             'purpose' => $claims['purpose'],
             'percent' => $claims['percent'],
             'passed' => $claims['passed'],
-            'policy' => $claims['pass_operator'] . ':' . $claims['pass_percent'],
+            'policy' => $claims['pass_operator'] === null ? null : $claims['pass_operator'] . ':' . $claims['pass_percent'],
         ];
     }
 

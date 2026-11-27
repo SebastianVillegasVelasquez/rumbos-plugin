@@ -138,27 +138,17 @@ what Moodle can reset, and both recommend not shipping a restart before 2026-11-
 
 | Point | The service's proposal | The plugin today |
 | --- | --- | --- |
-| How the reset reaches Moodle | A signed `cycle.restart` statement through its outbox. | Nothing handles it. A claim set shaped like the proposal's is refused as `400 malformed`. What the plugin may do on receiving it is not decided; this audit recommends an administrator's command with a backup and a dry run, not an automatic reaction. |
+| How the reset reaches Moodle | A signed `cycle.restart` statement through its outbox. | Nothing handles it. A statement of an unknown `kind` is refused (`422 unknown_kind`). What the plugin may do on receiving it is not decided; this audit recommends an administrator's command with a backup and a dry run, not an automatic reaction. |
 | When the new cycle opens | After the statement is `sent`. | `sent` would prove delivery only, not that completion stayed reset, which with tracks it would not. |
 | A manual way that destroys nothing | Raise `assessments.final.maxAttempts`, for every student of the map; no content is redone. | Nothing to do in Moodle. This is not "from zero". |
 | A manual way "from zero" | This document's safe procedure, then the same service setting. | The same. Overriding the completion cells alone is not enough for a student with tracks. |
 | Moodle's course reset | Never. | The same. |
 
-**The service's open question** was whether the plugin accepts an extra claim or a new `kind`. Extra claims are dropped
-(`result_statement::normalise()`). There is no `kind` handling: a statement is accepted only with all the claims of
-`docs/RESULT-PASSBACK.md`.
+**The service's open question** was whether the plugin accepts an extra claim or a new `kind`. Extra claims are dropped.
+A new `kind` is refused: only a result, a schema 2 attempt and a definition are known.
 
-**A larger mismatch, which is not about the restart:** the result statements the service signs today are **not accepted
-by this plugin**. Its `contracts/signing-vectors/README.md` says so and asks for the plugin to change.
-
-| | The service signs | The plugin requires |
-| --- | --- | --- |
-| Algorithm | `ES256` | `RS256` only |
-| `exp` | never sent | required, at most 300 seconds after `iat` |
-| `attempt_id` | not sent (`jti` is the attempt id) | required |
-| Pass rule | `pass_percent` and `pass_operator` at the top level | a `policy` object holding both |
-
-Checked on 2026-11-27 with the service's `result.json` vector, its placeholder `sub` replaced by a 32-character one: the
-plugin's claim check refuses it, and accepts it only when `exp`, `attempt_id` and `policy` are all added. The algorithm
-difference is read from both codes. Until one side changes, a real result cannot be applied, so neither completion nor
-auto-completion happens from the real service. Nothing was changed for it here: it is a contract decision.
+**A larger mismatch, which is not about the restart:** when this was written, the result statements the service signs
+were not accepted by this plugin (`ES256`, no `exp`, `attempt_id` or `policy`; and also, not noticed then, the audience
+`moodle` and a bare token as the body). The plugin has since been changed to accept them: see
+[RESULT-PASSBACK.md](RESULT-PASSBACK.md#the-services-statements-es256). That does not add the restart: a `cycle.restart`
+statement is a kind the plugin does not know and is refused (`422 unknown_kind` for an `ES256` statement).

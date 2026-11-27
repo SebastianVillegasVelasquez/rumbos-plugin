@@ -260,3 +260,38 @@ RFC 7518 section 3.4 would not be refused for it. `es256` converts to DER itself
 An EC key is configured as a JWK (or a JWKS), not as PEM: the id the service puts in `kid` is the operator's own choice
 (`passback-1` by default) and cannot be derived from the key, and a JWK carries both. `cli/ec_public_jwk.php` makes it
 from the public PEM, because the service has no command that prints it. Several keys by `kid` are what rotation needs.
+
+### D39. The claim rules follow the algorithm of the key
+
+An ES256 key is the service's and gets the service's contract; an RSA key is the development signer's and keeps every
+old rule, `exp` and its five minute lifetime included. One merged set of optional claims would have loosened the old
+form for nothing. For ES256, `jti` is the attempt id and any `attempt_id` is ignored. `exp` is not required and there
+is no age limit, because the outbox retries for days and `jti` is applied once; `exp` and `nbf` are honoured when
+present. The future skew is 300 seconds, not the 60 of the old leeway: the service's contract assumes clocks within five
+minutes, and a refusal is permanent for it, so a tighter limit would park real results. `policy` only ever fed the
+audit; it is now taken from `pass_percent` and `pass_operator`, optional together. The normalised claims of the old form
+are unchanged, so the payload hashes already stored still match.
+
+### D40. The audience of an ES256 statement is "moodle"
+
+The service writes the constant `moodle` in every statement and its contract tells the receiver to require it. The
+plugin required its own issuer URL, so every real statement would have been refused as `bad_audience`. For ES256 the
+audience must be `moodle` and nothing else; for RS256 it stays the site's issuer. **This is a weaker binding than
+before**: the audience no longer names the site. The signature, the tenant and, for a result, the `sub` (an HMAC with a
+secret of the site) still do. A per site audience from the service would restore it.
+
+### D41. Completion needs `passed` and `completes_course`
+
+`completes_course` is false when the attempt passed under a rule without the exemption. The plugin ignored it and would
+have completed the course on `passed` alone. It is required for ES256, and the course and the auto-completed content
+need both. This only withholds. The grade is recorded either way, and the development form, which has no such claim,
+completes on `passed` as before.
+
+### D42. Definitions are refused with a retry unless the administrator says otherwise
+
+The service posts definitions to the same address and holds an exam's results until its definition is accepted; it can
+only send over HTTP to a tenant with that address, so refusing definitions outright (400, permanent) would have stopped
+every result of a published exam. Storing them is the exam mirror, which is on another branch and out of scope.
+Answering success loses data the sender then believes is stored, so it is not the default: the default is a retryable
+503, which loses nothing and delivers nothing, and `resultsackdefinitions` is the explicit choice. When the mirror is
+merged, it should take over this branch of the receiver and the setting should go.

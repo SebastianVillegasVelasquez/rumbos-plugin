@@ -49,9 +49,10 @@ To decide or fix first:
    - Grunt: stylelint refuses an `!important` in `styles.css`.
 
    The steps after a failed one run too, so read the whole run, not only these.
-2. **Result passback with the real service does not work**: the signing algorithm and claims differ (see
-   [DESIGN-restart-from-zero.md](DESIGN-restart-from-zero.md#together-with-the-services-restart-document)). Decide whether
-   to release without it.
+2. **Result passback with the real service** now accepts the service's signed statements, but it was verified only
+   with the golden vectors and locally, not with the deployed service. Before relying on it, follow
+   [the production steps](RESULT-PASSBACK.md#production-configure-the-key-and-verify-with-a-real-statement) on staging,
+   and decide about [exam definitions](RESULT-PASSBACK.md#exam-definitions), which the plugin does not store.
 3. **Run the manual tests** of v5.11 in [MANUAL-TESTS.md](MANUAL-TESTS.md) on staging, with the app. What was not run is
    marked there.
 4. **Legal review** of auto-completion and of the `uid` claim. Both settings are off by default.
