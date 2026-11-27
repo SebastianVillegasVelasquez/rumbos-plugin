@@ -207,3 +207,14 @@ reason in `contracts/openapi.json`.
 Resetting a student's SCORM completion needs their tracks deleted: an override to incomplete is not sticky for automatic
 completion and is recalculated from the tracks. That destroys evidence and cannot be undone, and the decision is the
 client's and legal's. See `docs/DESIGN-restart-from-zero.md`: it stays a documented manual procedure.
+
+## Journey test tooling (2026-11-27)
+
+### D34. The entry quiz passes strictly above the threshold
+
+`passedThreshold` was `percent >= threshold`, while the product rule and the service pass only strictly above. It is now
+`percent > threshold`, on the percentage rounded to two decimals as it is sent, with tests at 79.99, exactly 80 and 80.01.
+**Behaviour change:** a student with exactly the threshold no longer passes. The value is computed on read, so it applies to
+past attempts too. With a threshold of 100 nothing passes. The range stays 0 to 100 and stored values are not rewritten:
+rejecting a stored 100 would make it count as the default of 80, which silently lowers the bar. If a course ever needs
+"at or above", it must be an explicit per-map option, off by default; it is not built.

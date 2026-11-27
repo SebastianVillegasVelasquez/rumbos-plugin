@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+- **Behaviour change:** the welcome flow's entry quiz now passes only **strictly above** the course's threshold
+  (`passedThreshold` is `percent > quizThreshold`, it was `>=`), the product rule and the service's. A student with exactly
+  the threshold no longer passes, and with a threshold of 100 nobody passes (the setting takes whole numbers). Nothing
+  stored changes; the value is computed when it is read.
+
 ### Added
 
 - Auto-complete (off by default, setting `autocompletecontent`): a verified passing result (check-in or final) marks the SCORM

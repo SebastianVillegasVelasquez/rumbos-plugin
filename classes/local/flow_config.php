@@ -19,10 +19,10 @@ namespace format_rumbos\local;
 /**
  * The course settings of the welcome flow.
  *
- * Only the threshold of the entry quiz so far: the percentage of the quiz grade at or above which the student
- * counts as having passed. Zero means the flow does not branch on the result. The option is part of the course
- * format options, so only someone who may update the course can change it, and it holds no ids, so a backup
- * carries it to the restored course as it is.
+ * Only the threshold of the entry quiz so far: the student counts as having passed when the percentage of the quiz
+ * grade is strictly above it, so nothing passes 100. Zero means the flow does not branch on the result. The option
+ * is part of the course format options, so only someone who may update the course can change it, and it holds no
+ * ids, so a backup carries it to the restored course as it is.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
