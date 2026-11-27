@@ -73,6 +73,20 @@
         <INDEX NAME="attemptid" UNIQUE="false" FIELDS="attemptid"/>
       </INDEXES>
     </TABLE>
+    <TABLE NAME="format_rumbos_mirror_def" COMMENT="The exam definitions the Rumbos service sent for the native quiz mirror, one per form and definition hash; they hold the answer key and no user data">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="formid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The exam form of the Rumbos service"/>
+        <FIELD NAME="hash" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The definition hash, which attempts name"/>
+        <FIELD NAME="contentversion" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The version of the content pack it came from"/>
+        <FIELD NAME="definition" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="The definition object as JSON"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When it arrived"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="formhash" TYPE="unique" FIELDS="formid, hash"/>
+      </KEYS>
+    </TABLE>
     <TABLE NAME="format_rumbos_mirror_quiz" COMMENT="The native Moodle quiz that mirrors one version of a Rumbos exam in a course: one row per course, form and content version">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>

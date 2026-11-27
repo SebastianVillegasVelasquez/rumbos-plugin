@@ -19,356 +19,311 @@ namespace format_rumbos\local\mirror;
 use format_rumbos\local\result_rejection;
 
 /**
- * An exam definition as the mirror needs it: the sections with their weights and the items that are scored.
+ * An exam definition of the Rumbos service, as the mirror needs it.
  *
- * It is the one place that decides how many marks an item is worth, with the rule of the Rumbos service: the total is
- * the sum over sections of `weight x points earned / points available`, as a percentage, and a matching item counts as
- * one point per pair. The quiz it makes has a total of exactly 100 marks, so a Moodle total reads as a percentage.
+ * It reads the `definition` object of the service's definition statement (schema 1). The service has already split the
+ * exam into **questions**, one per scorable unit: a choice item is one, a matching item is one per pair, a written task
+ * is one. Each question says what it is worth, `weight_points`, as an exact fraction of the 100 of the total, so this
+ * class scores nothing: it checks the shape and hands the questions on in order.
  *
- * The wire format that fills this class is NOT agreed yet: the service has not published its export contract. Only
- * {@see self::from_array()} reads the provisional shape (the one of the service's form files, see
- * docs/NATIVE-QUIZ-MIRROR.md); everything else works on the validated object.
+ * It is the one place that reads that shape. The definition holds the answer key; it never holds a rubric or a
+ * listening transcript.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class exam {
-    /** @var string[] The item types that are mirrored and are answered by choosing. */
-    public const CHOICE_TYPES = ['listen_choose', 'mcq', 'gap_choice'];
+    /** @var int The version of the definition object this class reads. */
+    public const SCHEMA = 1;
 
-    /** @var string[] The item types that are answered by writing, and graded by the service's rubric. */
+    /** @var string[] The question types that are answered by choosing one option. */
+    public const CHOICE_TYPES = ['listen_choose', 'mcq', 'gap_choice', self::MATCH_TYPE];
+
+    /** @var string One pair of a matching item: the options are the places. */
+    public const MATCH_TYPE = 'match_pair';
+
+    /** @var string[] The question types that are answered by writing, and scored by the service's rubric. */
     public const WRITTEN_TYPES = ['written_answers', 'template_text', 'form_fields'];
-
-    /** @var string The matching item. */
-    public const MATCH_TYPE = 'match_audio';
 
     /** @var string[] The purposes an exam may have. */
     public const PURPOSES = ['check_in', 'final'];
 
-    /** @var int Most sections, items and options accepted: a form has 5 sections and 44 items. */
-    public const MAX_SECTIONS = 12;
+    /** @var string The pattern of a definition hash: SHA-256 in lower-case hexadecimal. */
+    public const HASH_PATTERN = '/^[0-9a-f]{64}$/D';
 
-    /** @var int Most items in an exam. */
-    public const MAX_ITEMS = 200;
+    /** @var int Most sections accepted: a form of the service has 5. */
+    public const MAX_SECTIONS = 20;
+
+    /** @var int Most questions accepted: the largest form of the service has 48. */
+    public const MAX_QUESTIONS = 300;
 
     /** @var int Longest text accepted in any field, in characters. */
-    public const MAX_TEXT = 8000;
+    public const MAX_TEXT = 20000;
 
-    /** @var string The pattern of every identifier. */
-    private const ID = '/^[A-Za-z0-9._-]{1,64}$/';
+    /** @var string The pattern of an identifier. A matching question's id is `<item id>:<clip index>`. */
+    private const ID = '/^[A-Za-z0-9._:-]{1,64}$/D';
+
+    /** @var float How far the weights may be from adding up to 100: they are fractions read into floats. */
+    private const WEIGHT_TOLERANCE = 0.000001;
 
     /** @var string The service's exam form id. */
     public string $formid;
 
-    /** @var string The content version of the form. */
+    /** @var string The definition hash: the version of the exam the mirror keeps one quiz for. */
     public string $version;
 
     /** @var string The title. */
     public string $title;
 
-    /** @var string The purpose. */
+    /** @var string `check_in` or `final`. */
     public string $purpose;
 
-    /** @var array The sections: each `key`, `weight`, `delivery` and `items` (validated item arrays). */
-    public array $sections;
+    /**
+     * @var array[] The questions in order. Each: `id`, `item_id`, `type`, `prompt`, `max_points`, `weight` (its share
+     *      of 100), `section`, `instructions`, `shared` (null or `title`, `text`, `alt_text`, `image_id`), `audio_id`,
+     *      `gap_label`, `clip`, and either `options` and `correct` or `written`.
+     */
+    public array $questions;
 
     /**
-     * Use {@see self::from_array()}.
+     * Use {@see self::from_definition()}.
      *
-     * @param string $formid The service's exam form id.
-     * @param string $version The content version of the form (a hash in the service).
+     * @param string $formid
+     * @param string $version
      * @param string $title
-     * @param string $purpose `check_in` or `final`.
-     * @param array $sections Each `key`, `weight`, `delivery` and `items` (validated item arrays).
+     * @param string $purpose
+     * @param array[] $questions
      */
-    private function __construct(string $formid, string $version, string $title, string $purpose, array $sections) {
+    private function __construct(string $formid, string $version, string $title, string $purpose, array $questions) {
         $this->formid = $formid;
         $this->version = $version;
         $this->title = $title;
         $this->purpose = $purpose;
-        $this->sections = $sections;
+        $this->questions = $questions;
     }
 
     /**
-     * Validates a definition and builds it.
+     * Validates a definition object and builds the exam.
      *
-     * @param array $data The definition, decoded from JSON as an associative array.
+     * Nothing in it is evaluated: the text is only ever stored and shown escaped.
+     *
+     * @param array $data The `definition` claim, decoded from JSON as an associative array.
+     * @param string $hash The `definition_hash` claim that names it.
      * @return self
      * @throws result_rejection 422 `invalid_definition:<where>` when anything is missing, of the wrong type or
-     *      inconsistent. Nothing is trusted: the text is only ever stored, never evaluated.
+     *      inconsistent.
      */
-    public static function from_array(array $data): self {
+    public static function from_definition(array $data, string $hash): self {
+        if (preg_match(self::HASH_PATTERN, $hash) !== 1) {
+            throw self::invalid('definition_hash');
+        }
+        if (($data['schema'] ?? null) !== self::SCHEMA) {
+            throw self::invalid('schema');
+        }
         $formid = self::id($data['form_id'] ?? null, 'form_id');
-        $version = self::id($data['content_version'] ?? null, 'content_version');
-        $title = self::text($data['title'] ?? null, 'title', 255);
+        $title = self::text($data['title'] ?? null, 'title');
         $purpose = $data['purpose'] ?? null;
         if (!in_array($purpose, self::PURPOSES, true)) {
             throw self::invalid('purpose');
         }
-        $rawsections = $data['sections'] ?? null;
-        if (
-            !is_array($rawsections) || !array_is_list($rawsections) || $rawsections === []
-                || count($rawsections) > self::MAX_SECTIONS
-        ) {
-            throw self::invalid('sections');
-        }
 
-        $sections = [];
-        $seen = [];
-        $weights = 0;
-        $count = 0;
-        foreach ($rawsections as $rawsection) {
-            if (!is_array($rawsection)) {
-                throw self::invalid('sections');
-            }
-            $key = self::id($rawsection['key'] ?? null, 'section.key');
-            $weight = $rawsection['weight'] ?? null;
-            if (!is_int($weight) || $weight < 1 || $weight > 100) {
-                throw self::invalid('section.weight');
-            }
-            $rawitems = $rawsection['items'] ?? null;
-            if (!is_array($rawitems) || !array_is_list($rawitems) || $rawitems === []) {
-                throw self::invalid('section.items');
-            }
-            $items = [];
-            foreach ($rawitems as $rawitem) {
-                $item = self::validate_item($rawitem);
-                if (isset($seen[$item['item_id']])) {
-                    throw self::invalid('item_id.duplicate');
+        $questions = [];
+        $weights = 0.0;
+        foreach (self::items_of($data['sections'] ?? null, 'sections', self::MAX_SECTIONS) as $section) {
+            $key = self::id($section['key'] ?? null, 'section.key');
+            foreach (self::items_of($section['parts'] ?? null, 'section.parts', self::MAX_QUESTIONS) as $part) {
+                $context = [
+                    'section' => $key,
+                    'instructions' => self::optional_text($part['instructions'] ?? null, 'part.instructions'),
+                    'shared' => self::shared($part['shared'] ?? null),
+                ];
+                foreach (self::items_of($part['questions'] ?? null, 'part.questions', self::MAX_QUESTIONS) as $raw) {
+                    $question = self::question($raw) + $context;
+                    if (isset($questions[$question['id']])) {
+                        throw self::invalid('question_id.duplicate');
+                    }
+                    $questions[$question['id']] = $question;
+                    $weights += $question['weight'];
+                    if (count($questions) > self::MAX_QUESTIONS) {
+                        throw self::invalid('questions');
+                    }
                 }
-                $seen[$item['item_id']] = true;
-                $items[] = $item;
-                $count++;
             }
-            if ($count > self::MAX_ITEMS) {
-                throw self::invalid('items');
-            }
-            $delivery = $rawsection['delivery'] ?? null;
-            if ($delivery !== null && !is_string($delivery)) {
-                throw self::invalid('section.delivery');
-            }
-            $sections[] = ['key' => $key, 'weight' => $weight, 'delivery' => $delivery, 'items' => $items];
-            $weights += $weight;
         }
-        if ($weights !== 100) {
+        if ($questions === [] || abs($weights - 100) > self::WEIGHT_TOLERANCE) {
             throw self::invalid('weights');
         }
-        return new self($formid, $version, $title, $purpose, $sections);
+        return new self($formid, $hash, $title, $purpose, array_values($questions));
     }
 
     /**
-     * The items in order, each with the section it belongs to.
+     * The question with an id.
      *
-     * @return \Generator<int, array{section: array, item: array}>
-     */
-    public function items(): \Generator {
-        foreach ($this->sections as $section) {
-            foreach ($section['items'] as $item) {
-                yield ['section' => $section, 'item' => $item];
-            }
-        }
-    }
-
-    /**
-     * The item with an id.
-     *
-     * @param string $itemid
+     * @param string $questionid
      * @return array|null
      */
-    public function item(string $itemid): ?array {
-        foreach ($this->items() as $pair) {
-            if ($pair['item']['item_id'] === $itemid) {
-                return $pair['item'];
+    public function question_by_id(string $questionid): ?array {
+        foreach ($this->questions as $question) {
+            if ($question['id'] === $questionid) {
+                return $question;
             }
         }
         return null;
     }
 
     /**
-     * How many points an item is worth in the service's scoring: one per pair of a matching item, the rubric's maximum
-     * for a written task, one for anything else.
+     * Whether a question is answered by writing.
      *
-     * @param array $item A validated item.
-     * @return int|float
+     * @param array $question A validated question.
+     * @return bool
      */
-    public static function units(array $item): int|float {
-        return match (true) {
-            $item['type'] === self::MATCH_TYPE => count($item['key']),
-            in_array($item['type'], self::WRITTEN_TYPES, true) => $item['max_points'],
-            default => 1,
-        };
+    public static function is_written(array $question): bool {
+        return in_array($question['type'], self::WRITTEN_TYPES, true);
     }
 
     /**
-     * The points available in a section.
+     * What a question is worth in the mirror quiz: its share of 100, to the seven decimals Moodle stores.
      *
-     * @param array $section
-     * @return int|float
-     */
-    public static function section_units(array $section): int|float {
-        return array_sum(array_map([self::class, 'units'], $section['items']));
-    }
-
-    /**
-     * The marks an item is worth in the mirror quiz: the section's weight shared by points, so that the quiz adds up to
-     * 100. Rounded to seven decimals, which is what Moodle stores for a question.
-     *
-     * @param array $section
-     * @param array $item
+     * @param array $question A validated question.
      * @return float
      */
-    public static function maxmark(array $section, array $item): float {
-        return round($section['weight'] * self::units($item) / self::section_units($section), 7);
+    public static function maxmark(array $question): float {
+        return round($question['weight'], 7);
     }
 
     /**
-     * The percent the points of an attempt come to under the service's rule, to two decimals, half up.
+     * A fraction as the service writes it, `5/3` or `2`.
      *
-     * @param array<string, int|float> $points Points earned by item id; an item that is not there earned nothing.
-     * @return string For example `80.10`.
+     * @param mixed $value
+     * @return float|null Null when it is not one.
      */
-    public function percent(array $points): string {
-        $total = 0.0;
-        foreach ($this->sections as $section) {
-            $earned = 0;
-            foreach ($section['items'] as $item) {
-                $earned += $points[$item['item_id']] ?? 0;
-            }
-            $total += $section['weight'] * $earned / self::section_units($section);
+    public static function fraction(mixed $value): ?float {
+        if (!is_string($value) || preg_match('/^(\d{1,9})(?:\/([1-9]\d{0,8}))?$/D', $value, $parts) !== 1) {
+            return null;
         }
-        return number_format(round($total, 2), 2, '.', '');
+        return (int) $parts[1] / (int) ($parts[2] ?? 1);
     }
 
     /**
-     * Validates one item.
+     * Validates one question.
      *
-     * @param mixed $raw
-     * @return array The item in a fixed form.
-     * @throws result_rejection 422 when it is not valid.
+     * @param array $raw
+     * @return array
+     * @throws result_rejection 422
      */
-    private static function validate_item(mixed $raw): array {
-        if (!is_array($raw)) {
-            throw self::invalid('item');
-        }
-        $id = self::id($raw['item_id'] ?? null, 'item_id');
+    private static function question(array $raw): array {
+        $id = self::id($raw['question_id'] ?? null, 'question_id');
         $type = $raw['type'] ?? null;
-        $item = [
-            'item_id' => $id,
+        $maxpoints = $raw['max_points'] ?? null;
+        $weight = self::fraction($raw['weight_points'] ?? null);
+        if (!is_int($maxpoints) || $maxpoints < 1 || $maxpoints > 100) {
+            throw self::invalid($id . '.max_points');
+        }
+        if ($weight === null || $weight <= 0 || $weight > 100) {
+            throw self::invalid($id . '.weight_points');
+        }
+        $clip = $raw['clip'] ?? null;
+        $question = [
+            'id' => $id,
+            'item_id' => self::id($raw['item_id'] ?? null, $id . '.item_id'),
             'type' => $type,
-            'prompt' => self::text($raw['prompt'] ?? '', 'prompt', self::MAX_TEXT, true),
-            'shared' => self::optional_text($raw['shared'] ?? null, 'shared'),
-            'transcript' => self::optional_text($raw['transcript'] ?? null, 'transcript'),
+            'prompt' => self::text($raw['prompt'] ?? null, $id . '.prompt', true),
+            'max_points' => $maxpoints,
+            'weight' => $weight,
+            'audio_id' => self::optional_text($raw['audio_id'] ?? null, $id . '.audio_id'),
+            'gap_label' => self::optional_text($raw['gap_label'] ?? null, $id . '.gap_label'),
+            'clip' => is_int($clip) ? $clip : null,
         ];
 
         if (in_array($type, self::CHOICE_TYPES, true)) {
-            $options = self::options($raw['options'] ?? null, $id);
-            $key = $raw['key'] ?? null;
-            if (!is_string($key) || !in_array($key, array_column($options, 'id'), true)) {
-                throw self::invalid($id . '.key');
+            $options = [];
+            foreach (self::items_of($raw['options'] ?? null, $id . '.options', 30) as $option) {
+                $oid = self::id($option['id'] ?? null, $id . '.option.id');
+                if (isset($options[$oid])) {
+                    throw self::invalid($id . '.options');
+                }
+                $options[$oid] = ['id' => $oid, 'text' => self::text($option['text'] ?? null, $id . '.option.text')];
             }
-            return $item + ['options' => $options, 'key' => $key];
-        }
-        if ($type === self::MATCH_TYPE) {
-            return $item + self::matching($raw, $id);
+            $correct = $raw['correct'] ?? null;
+            if (count($options) < 2 || !is_string($correct) || !isset($options[$correct])) {
+                throw self::invalid($id . '.correct');
+            }
+            return $question + ['options' => array_values($options), 'correct' => $correct];
         }
         if (in_array($type, self::WRITTEN_TYPES, true)) {
-            $max = $raw['max_points'] ?? null;
-            if (!(is_int($max) || is_float($max)) || $max <= 0 || $max > 100) {
-                throw self::invalid($id . '.max_points');
+            $written = $raw['written'] ?? null;
+            if (!is_array($written)) {
+                throw self::invalid($id . '.written');
             }
-            return $item + [
-                'max_points' => $max,
-                'rubric' => self::text($raw['rubric'] ?? '', 'rubric', 255, true),
-                'template' => self::optional_text($raw['template'] ?? null, 'template'),
-            ];
+            $words = fn($value) => is_int($value) && $value > 0 ? $value : null;
+            return $question + ['written' => [
+                'fields' => self::labels($written['fields'] ?? [], $id . '.written.fields'),
+                'questions' => self::labels($written['questions'] ?? [], $id . '.written.questions'),
+                'template' => self::optional_text($written['template'] ?? null, $id . '.written.template'),
+                'min_words' => $words($written['min_words'] ?? null),
+                'max_words' => $words($written['max_words'] ?? null),
+            ]];
         }
         throw self::invalid($id . '.type');
     }
 
     /**
-     * Validates the options of a choice item.
+     * The fields or questions of a written task, as texts by id.
      *
      * @param mixed $raw
-     * @param string $itemid
-     * @return array[] Each `id` and `text`.
+     * @param string $where
+     * @return array<string, string>
      */
-    private static function options(mixed $raw, string $itemid): array {
-        if (!is_array($raw) || !array_is_list($raw) || count($raw) < 2 || count($raw) > 12) {
-            throw self::invalid($itemid . '.options');
+    private static function labels(mixed $raw, string $where): array {
+        if ($raw === []) {
+            return [];
         }
-        $options = [];
-        foreach ($raw as $option) {
-            if (!is_array($option)) {
-                throw self::invalid($itemid . '.options');
-            }
-            $oid = self::id($option['id'] ?? null, $itemid . '.option.id');
-            if (in_array($oid, array_column($options, 'id'), true)) {
-                throw self::invalid($itemid . '.options');
-            }
-            $options[] = ['id' => $oid, 'text' => self::text($option['text'] ?? null, $itemid . '.option.text', 1000)];
+        $labels = [];
+        foreach (self::items_of($raw, $where, 60) as $label) {
+            $labels[self::id($label['id'] ?? null, $where)] = self::text($label['text'] ?? null, $where, true);
         }
-        if (count(array_unique(array_column($options, 'text'))) !== count($options)) {
-            // Moodle shows the answers by their text, and the response summary names them by it.
-            throw self::invalid($itemid . '.options');
-        }
-        return $options;
+        return $labels;
     }
 
     /**
-     * Validates a matching item: clips (the stems), places (the choices) and the right place of every clip.
+     * The passage or image a part's questions share.
      *
-     * @param array $raw
-     * @param string $itemid
-     * @return array `clips`, `places` and `key` (clip index => place id).
+     * @param mixed $raw
+     * @return array|null
      */
-    private static function matching(array $raw, string $itemid): array {
-        $clips = $raw['clips'] ?? null;
-        $places = $raw['places'] ?? null;
-        $key = $raw['key'] ?? null;
-        if (
-            !is_array($clips) || !array_is_list($clips) || count($clips) < 2 || count($clips) > 12
-                || !is_array($places) || !array_is_list($places) || count($places) < 2 || count($places) > 24
-                || !is_array($key) || count($key) !== count($clips)
-        ) {
-            throw self::invalid($itemid . '.match');
+    private static function shared(mixed $raw): ?array {
+        if ($raw === null) {
+            return null;
         }
-        $stems = [];
-        foreach ($clips as $clip) {
-            $stems[] = self::text(is_array($clip) ? ($clip['transcript'] ?? null) : null, $itemid . '.clip', 1000);
+        if (!is_array($raw)) {
+            throw self::invalid('part.shared');
         }
-        $choices = [];
-        foreach ($places as $place) {
-            if (!is_array($place)) {
-                throw self::invalid($itemid . '.places');
+        $shared = [];
+        foreach (['title', 'text', 'image_id', 'alt_text'] as $name) {
+            $shared[$name] = self::optional_text($raw[$name] ?? null, 'part.shared.' . $name);
+        }
+        return $shared;
+    }
+
+    /**
+     * A list of one or more objects.
+     *
+     * @param mixed $raw
+     * @param string $where
+     * @param int $max Most entries.
+     * @return array[]
+     */
+    private static function items_of(mixed $raw, string $where, int $max): array {
+        if (!is_array($raw) || !array_is_list($raw) || $raw === [] || count($raw) > $max) {
+            throw self::invalid($where);
+        }
+        foreach ($raw as $entry) {
+            if (!is_array($entry)) {
+                throw self::invalid($where);
             }
-            $pid = self::id($place['id'] ?? null, $itemid . '.place.id');
-            if (isset($choices[$pid])) {
-                throw self::invalid($itemid . '.places');
-            }
-            $choices[$pid] = self::text($place['text'] ?? null, $itemid . '.place.text', 1000);
         }
-        if (count(array_unique($choices)) !== count($choices)) {
-            // Moodle merges choices that have the same text.
-            throw self::invalid($itemid . '.places');
-        }
-        $right = [];
-        foreach ($key as $pair) {
-            if (
-                !is_array($pair) || count($pair) !== 2 || !is_int($pair[0] ?? null) || !is_string($pair[1] ?? null)
-                    || $pair[0] < 0 || $pair[0] >= count($clips) || isset($right[$pair[0]])
-                    || !isset($choices[$pair[1]])
-            ) {
-                throw self::invalid($itemid . '.key');
-            }
-            $right[$pair[0]] = $pair[1];
-        }
-        ksort($right);
-        return [
-            'clips' => $stems,
-            'places' => array_map(fn($pid) => ['id' => (string) $pid, 'text' => $choices[$pid]], array_keys($choices)),
-            'key' => $right,
-        ];
+        return $raw;
     }
 
     /**
@@ -390,12 +345,11 @@ final class exam {
      *
      * @param mixed $value
      * @param string $where
-     * @param int $max Most characters.
      * @param bool $mayempty Whether an empty text is acceptable.
      * @return string
      */
-    private static function text(mixed $value, string $where, int $max, bool $mayempty = false): string {
-        if (!is_string($value) || (!$mayempty && trim($value) === '') || \core_text::strlen($value) > $max) {
+    private static function text(mixed $value, string $where, bool $mayempty = false): string {
+        if (!is_string($value) || (!$mayempty && trim($value) === '') || \core_text::strlen($value) > self::MAX_TEXT) {
             throw self::invalid($where);
         }
         return $value;
@@ -409,7 +363,7 @@ final class exam {
      * @return string|null
      */
     private static function optional_text(mixed $value, string $where): ?string {
-        return $value === null || $value === '' ? null : self::text($value, $where, self::MAX_TEXT);
+        return $value === null || $value === '' ? null : self::text($value, $where);
     }
 
     /**

@@ -16,10 +16,9 @@
 
 namespace format_rumbos\local\mirror;
 
-use format_rumbos\local\result_config;
-
 /**
- * Settings of the native quiz mirror: off by default, and it trusts the same issuer, tenant and keys as the passback.
+ * Settings of the native quiz mirror: off by default. Its statements arrive at the result receiver (passback.php), so
+ * it trusts the same issuer, tenant and keys.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
@@ -33,23 +32,5 @@ final class mirror_config {
      */
     public static function is_enabled(): bool {
         return (bool) get_config('format_rumbos', 'mirrorenabled');
-    }
-
-    /**
-     * Whether the mirror is on and the signature settings it shares with the passback are complete.
-     *
-     * @return bool
-     */
-    public static function is_ready(): bool {
-        return self::is_enabled() && result_config::is_ready();
-    }
-
-    /**
-     * The address of the mirror receiver script, as the backend must call it.
-     *
-     * @return string
-     */
-    public static function endpoint_url(): string {
-        return (new \moodle_url('/course/format/rumbos/mirror.php'))->out(false);
     }
 }

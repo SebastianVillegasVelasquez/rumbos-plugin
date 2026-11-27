@@ -38,9 +38,50 @@ final class mirror_store_test extends \advanced_testcase {
         global $DB;
         $this->resetAfterTest();
 
-        foreach ([mirror_store::QUIZZES, mirror_store::ITEMS, mirror_store::ATTEMPTS, mirror_store::LOG] as $table) {
+        $tables = [mirror_store::DEFINITIONS, mirror_store::QUIZZES, mirror_store::ITEMS, mirror_store::ATTEMPTS,
+            mirror_store::LOG];
+        foreach ($tables as $table) {
             $this->assertTrue($DB->get_manager()->table_exists($table), $table);
         }
+    }
+
+    /**
+     * The exam of the fixture.
+     *
+     * @return exam
+     */
+    private function exam(): exam {
+        $definition = mirror_fixture::definition();
+        return exam::from_definition($definition, mirror_fixture::hash($definition));
+    }
+
+    /**
+     * An attempt with nothing right.
+     *
+     * @param string $attemptid
+     * @return attempt_data
+     */
+    private function attempt(string $attemptid): attempt_data {
+        return attempt_data::from_claims(json_decode(json_encode(mirror_fixture::record([]))), [
+            'attempt_id' => $attemptid, 'purpose' => 'check_in', 'finished_at' => 1790000000, 'passed' => false,
+            'percent' => '0.00',
+        ]);
+    }
+
+    /**
+     * A definition is kept once per form and hash.
+     */
+    public function test_a_definition_is_kept_once(): void {
+        $this->resetAfterTest();
+        $hash = str_repeat('a', 64);
+
+        $this->assertNull(mirror_store::find_definition('form', $hash));
+        mirror_store::insert_definition('form', $hash, 'content-1', '{"title":"T"}', 1000);
+
+        $this->assertSame('{"title":"T"}', mirror_store::find_definition('form', $hash)->definition);
+        $this->assertNull(mirror_store::find_definition('other', $hash));
+        $this->expectException(\dml_write_exception::class);
+        mirror_store::insert_definition('form', $hash, 'content-2', '{}', 1001);
     }
 
     /**
@@ -48,17 +89,18 @@ final class mirror_store_test extends \advanced_testcase {
      */
     public function test_a_version_has_one_quiz(): void {
         $this->resetAfterTest();
-        $exam = exam::from_array(mirror_fixture::form());
+        $exam = $this->exam();
+        [$form, $version] = [$exam->formid, $exam->version];
 
-        $this->assertNull(mirror_store::find_quiz(7, 'b2-form-a', 'v1hash'));
+        $this->assertNull(mirror_store::find_quiz(7, $form, $version));
         $id = mirror_store::insert_quiz(7, $exam, 100, 200, 1000);
 
-        $found = mirror_store::find_quiz(7, 'b2-form-a', 'v1hash');
+        $found = mirror_store::find_quiz(7, $form, $version);
         $this->assertSame($id, (int) $found->id);
         $this->assertSame('100', $found->cmid);
         $this->assertSame('check_in', $found->purpose);
-        $this->assertNull(mirror_store::find_quiz(7, 'b2-form-a', 'v2hash'));
-        $this->assertNull(mirror_store::find_quiz(8, 'b2-form-a', 'v1hash'));
+        $this->assertNull(mirror_store::find_quiz(7, $form, str_repeat('b', 64)));
+        $this->assertNull(mirror_store::find_quiz(8, $form, $version));
 
         $this->expectException(\dml_write_exception::class);
         mirror_store::insert_quiz(7, $exam, 101, 201, 1001);
@@ -69,7 +111,7 @@ final class mirror_store_test extends \advanced_testcase {
      */
     public function test_items_are_keyed_by_the_exam_item(): void {
         $this->resetAfterTest();
-        $mirrorid = mirror_store::insert_quiz(7, exam::from_array(mirror_fixture::form()), 100, 200, 1000);
+        $mirrorid = mirror_store::insert_quiz(7, $this->exam(), 100, 200, 1000);
         mirror_store::insert_item($mirrorid, 'l-02', 2, 502, 3.5714286, 1);
         mirror_store::insert_item($mirrorid, 'l-01', 1, 501, 3.5714286, 1);
         mirror_store::insert_item($mirrorid, 'l-11', 3, 503, 17.8571429, 5);
@@ -88,7 +130,7 @@ final class mirror_store_test extends \advanced_testcase {
      */
     public function test_forgetting_a_quiz_forgets_its_items(): void {
         $this->resetAfterTest();
-        $exam = exam::from_array(mirror_fixture::form());
+        $exam = $this->exam();
         $one = mirror_store::insert_quiz(7, $exam, 100, 200, 1000);
         $two = mirror_store::insert_quiz(8, $exam, 101, 201, 1000);
         mirror_store::insert_item($one, 'l-01', 1, 501, 1, 1);
@@ -107,9 +149,8 @@ final class mirror_store_test extends \advanced_testcase {
      */
     public function test_an_attempt_is_written_once(): void {
         $this->resetAfterTest();
-        $form = mirror_fixture::form();
-        $exam = exam::from_array($form);
-        $attempt = attempt_data::from_array(mirror_fixture::attempt($form, 'att-1', [], '0.00', false));
+        $exam = $this->exam();
+        $attempt = $this->attempt('att-1');
         $mirrorid = mirror_store::insert_quiz(7, $exam, 100, 200, 1000);
 
         $this->assertNull(mirror_store::find_attempt('att-1'));
@@ -150,12 +191,10 @@ final class mirror_store_test extends \advanced_testcase {
      */
     public function test_counts(): void {
         $this->resetAfterTest();
-        $form = mirror_fixture::form();
-        $exam = exam::from_array($form);
-        $mirrorid = mirror_store::insert_quiz(7, $exam, 100, 200, 1000);
+        $mirrorid = mirror_store::insert_quiz(7, $this->exam(), 100, 200, 1000);
         mirror_store::insert_attempt(
             $mirrorid,
-            attempt_data::from_array(mirror_fixture::attempt($form, 'att-1', [], '0.00', false)),
+            $this->attempt('att-1'),
             7,
             42,
             900,
@@ -166,6 +205,9 @@ final class mirror_store_test extends \advanced_testcase {
         mirror_store::log('attempt', 'failed', 500, 'internal_error', [], 500);
         mirror_store::log('definition', 'applied', 200, 'created', [], 1500);
 
-        $this->assertSame(['quizzes' => 1, 'attempts' => 1, 'problems' => 1, 'diverged' => 1], mirror_store::counts(1000));
+        $this->assertSame(
+            ['definitions' => 0, 'quizzes' => 1, 'attempts' => 1, 'problems' => 1, 'diverged' => 1],
+            mirror_store::counts(1000)
+        );
     }
 }

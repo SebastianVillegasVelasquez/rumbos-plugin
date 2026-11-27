@@ -33,7 +33,7 @@ final class upgrade_test extends \advanced_testcase {
 
     /** @var string[] The tables the mirror adds. */
     private const TABLES = [
-        'format_rumbos_mirror_quiz', 'format_rumbos_mirror_item', 'format_rumbos_mirror_attempt',
+        'format_rumbos_mirror_def', 'format_rumbos_mirror_quiz', 'format_rumbos_mirror_item', 'format_rumbos_mirror_attempt',
         'format_rumbos_mirror_log',
     ];
 
@@ -88,12 +88,18 @@ final class upgrade_test extends \advanced_testcase {
             $this->assertFalse($manager->table_exists($table));
         }
 
+        // The setting of the ES256 receiver that acknowledged definitions without keeping them.
+        set_config('resultsackdefinitions', 1, 'format_rumbos');
+
         $this->upgrade_from(self::BEFORE_MIRROR);
 
         foreach (self::TABLES as $table) {
             $this->assertTrue($manager->table_exists($table), $table);
             $this->assertSame($installed[$table], $this->shape($table), $table);
         }
+
+        $this->assertFalse(get_config('format_rumbos', 'resultsackdefinitions'));
+        $this->assertEmpty(get_config('format_rumbos', 'mirrorenabled'), 'the mirror is off after the upgrade');
 
         $plugin = new \stdClass();
         require($CFG->dirroot . '/course/format/rumbos/version.php');

@@ -26,8 +26,8 @@ use mod_quiz\quiz_settings;
  * The student never took this quiz in Moodle. The attempt is written the way Moodle's own tests and web services do it
  * (create, start, save the answers, submit, grade), so that it has real question attempt steps and every report that
  * reads them works. Then the marks are made to be the service's: where Moodle's automatic mark differs, and always for a
- * written task, a manual grade sets the service's mark. Moodle's total is therefore a copy of the service's percent and
- * is never what decides anything: not the pass (the service sends `passed`), not the course completion (only the
+ * written task, a manual grade sets the service's mark. The attempt's total is the service's exact percent, and it is
+ * never what decides anything: not the pass (the service sends `passed`), not the course completion (only the
  * passback marks it).
  *
  * @package    format_rumbos
@@ -37,6 +37,9 @@ use mod_quiz\quiz_settings;
 class mirror_attempts {
     /** @var float How far a mark may be from the service's before a manual grade replaces it. */
     private const MARK_TOLERANCE = 0.00000005;
+
+    /** @var float How far the sum of the marks may be from the exact percent: the rounding of up to 300 marks. */
+    private const TOTAL_TOLERANCE = 0.0001;
 
     /**
      * Writes the attempt, once.
@@ -51,7 +54,7 @@ class mirror_attempts {
      * @param int $userid The student, already checked.
      * @param int $now
      * @return array{written: bool, diverged: bool} Whether this call wrote it (false: it was written before) and whether
-     *      the quiz total did not equal the service's percent.
+     *      the marks of the questions did not add up to the service's exact percent.
      * @throws result_rejection 422 when the attempt does not fit the exam, 503 when the quiz is not complete.
      */
     public static function write(
@@ -68,29 +71,19 @@ class mirror_attempts {
         if (mirror_store::find_attempt($attempt->attemptid) !== null) {
             return ['written' => false, 'diverged' => false];
         }
-        $resolved = $attempt->resolve($exam);
+        $attempt->check_against($exam);
         $items = mirror_store::items((int) $mirror->id);
-        if (array_diff(array_keys($resolved), array_keys($items)) !== []) {
+        if (array_diff(array_keys($attempt->entries), array_keys($items)) !== []) {
             // The mapping misses an item: the quiz is not what the exam says. The definition has to come again.
             throw new result_rejection(503, 'exam_not_mirrored');
         }
 
         $transaction = $DB->start_delegated_transaction();
         try {
-            $diverged = service_identity::run(function () use (
-                $mirror,
-                $exam,
-                $attempt,
-                $resolved,
-                $items,
-                $courseid,
-                $userid,
-                $now
-            ) {
-                $quizattemptid = self::create($mirror, $exam, $attempt, $resolved, $items, $userid);
-                $diverged = self::total_differs($quizattemptid, $attempt->percent);
-                mirror_store::insert_attempt((int) $mirror->id, $attempt, $courseid, $userid, $quizattemptid, $diverged, $now);
-                return $diverged;
+            $diverged = service_identity::run(function () use ($mirror, $exam, $attempt, $items, $courseid, $userid, $now) {
+                [$id, $differs] = self::create($mirror, $exam, $attempt, $items, $userid);
+                mirror_store::insert_attempt((int) $mirror->id, $attempt, $courseid, $userid, $id, $differs, $now);
+                return $differs;
             });
             $transaction->allow_commit();
         } catch (\Throwable $e) {
@@ -115,19 +108,17 @@ class mirror_attempts {
      * @param \stdClass $mirror
      * @param exam $exam
      * @param attempt_data $attempt
-     * @param array $resolved Item id => `points`, `response` and `comment` (see {@see attempt_data::resolve()}).
-     * @param \stdClass[] $items The mapping of the quiz by item id.
+     * @param \stdClass[] $items The mapping of the quiz by question id.
      * @param int $userid
-     * @return int The id of the quiz attempt.
+     * @return array{0: int, 1: bool} The id of the quiz attempt, and whether its marks did not add up.
      */
     private static function create(
         \stdClass $mirror,
         exam $exam,
         attempt_data $attempt,
-        array $resolved,
         array $items,
         int $userid
-    ): int {
+    ): array {
         global $DB;
 
         $quizobj = quiz_settings::create((int) $mirror->quizid, $userid);
@@ -140,22 +131,22 @@ class mirror_attempts {
         $quba = \question_engine::make_questions_usage_by_activity('mod_quiz', $quizobj->get_context());
         $quba->set_preferred_behaviour($quiz->preferredbehaviour);
         // Never a preview: the attempt counts as the student's own.
-        $row = quiz_create_attempt($quizobj, $number, $last, $attempt->started, false, $userid);
-        quiz_start_new_attempt($quizobj, $quba, $row, $number, $attempt->started);
+        $row = quiz_create_attempt($quizobj, $number, $last, $attempt->finished, false, $userid);
+        quiz_start_new_attempt($quizobj, $quba, $row, $number, $attempt->finished);
         quiz_attempt_save_started($quizobj, $quba, $row);
-        // Moodle stamps the start with the time of the call: the attempt began when the student began.
-        $DB->set_field('quiz_attempts', 'timestart', $attempt->started, ['id' => $row->id]);
+        // The statement does not say when the student began, so the attempt has no duration.
+        $DB->set_field('quiz_attempts', 'timestart', $attempt->finished, ['id' => $row->id]);
 
         $attemptobj = quiz_attempt::create($row->id);
-        $post = self::answers($attemptobj, $exam, $items, $resolved);
+        $post = self::answers($attemptobj, $exam, $items, $attempt);
         $attemptobj->process_submitted_actions($attempt->finished, false, $post);
         $attemptobj = quiz_attempt::create($row->id);
         $attemptobj->process_submit($attempt->finished, false, $attempt->finished);
         $attemptobj = quiz_attempt::create($row->id);
         $attemptobj->process_grade_submission($attempt->finished);
 
-        self::set_marks(quiz_attempt::create($row->id), $items, $resolved, $attempt);
-        return (int) $row->id;
+        $diverged = self::set_marks(quiz_attempt::create($row->id), $items, $attempt);
+        return [(int) $row->id, $diverged];
     }
 
     /**
@@ -163,14 +154,14 @@ class mirror_attempts {
      *
      * @param quiz_attempt $attemptobj
      * @param exam $exam
-     * @param \stdClass[] $items The mapping by item id.
-     * @param array $resolved
+     * @param \stdClass[] $items The mapping by question id.
+     * @param attempt_data $attempt
      * @return array Field name => value, with the question prefix.
      */
-    private static function answers(quiz_attempt $attemptobj, exam $exam, array $items, array $resolved): array {
-        $itembyslot = [];
-        foreach ($items as $itemid => $item) {
-            $itembyslot[(int) $item->slot] = $itemid;
+    private static function answers(quiz_attempt $attemptobj, exam $exam, array $items, attempt_data $attempt): array {
+        $idbyslot = [];
+        foreach ($items as $questionid => $item) {
+            $idbyslot[(int) $item->slot] = (string) $questionid;
         }
 
         $post = [];
@@ -178,12 +169,8 @@ class mirror_attempts {
             $qa = $attemptobj->get_question_attempt($slot);
             $prefix = $qa->get_field_prefix();
             $post[$prefix . ':sequencecheck'] = $qa->get_sequence_check_count();
-            $itemid = $itembyslot[$slot];
-            $response = $resolved[$itemid]['response'];
-            if ($response === null) {
-                continue;
-            }
-            foreach (self::fields($qa->get_question(), $exam->item($itemid), $response) as $name => $value) {
+            $id = $idbyslot[$slot];
+            foreach (self::fields($exam->question_by_id($id), $attempt->entries[$id]) as $name => $value) {
                 $post[$prefix . $name] = $value;
             }
         }
@@ -191,94 +178,75 @@ class mirror_attempts {
     }
 
     /**
-     * The fields of one question for a response.
+     * The fields of one question for what the student answered.
      *
-     * @param \question_definition $question The question as Moodle loaded it for the attempt.
-     * @param array $item The exam's item.
-     * @param string|array $response A choice: the option id. A match: clip index => place id. A written task: the text.
-     * @return array
+     * @param array $question The exam's question.
+     * @param array $entry The attempt's entry for it.
+     * @return array Empty when there is no answer to record.
      */
-    private static function fields(\question_definition $question, array $item, string|array $response): array {
-        if ($question instanceof \qtype_multichoice_single_question) {
-            // The answers are not shuffled, so the position of an answer is the position of its option.
-            return ['answer' => (string) array_search($response, array_column($item['options'], 'id'), true)];
-        }
-        if ($question instanceof \qtype_match_question) {
-            $fields = [];
-            $texts = array_column($item['places'], 'text', 'id');
-            $stemorder = $question->get_stem_order();
-            $choiceorder = $question->get_choice_order();
-            $stemids = array_keys($question->stems);
-            foreach ($response as $clip => $placeid) {
-                $position = array_search($stemids[$clip] ?? null, $stemorder);
-                $choiceno = array_search($texts[$placeid] ?? null, $question->choices, true);
-                $selected = array_search($choiceno, $choiceorder);
-                if ($position === false || $choiceno === false || $selected === false) {
-                    throw new result_rejection(422, 'invalid_attempt:' . $item['item_id'] . '.response');
-                }
-                $fields['sub' . $position] = (string) $selected;
+    private static function fields(array $question, array $entry): array {
+        if (!$entry['written']) {
+            if ($entry['answer'] === null) {
+                return [];
             }
-            return $fields;
+            // The answers are not shuffled, so the position of an answer is the position of its option.
+            return ['answer' => (string) array_search($entry['answer'], array_column($question['options'], 'id'), true)];
         }
-        if ($question instanceof \qtype_essay_question) {
-            return ['answer' => $response, 'answerformat' => FORMAT_PLAIN];
+        if ($entry['text'] === null) {
+            return [];
         }
-        throw new \coding_exception('Unexpected question type in a mirror quiz: ' . get_class($question));
+        $labels = $question['written']['questions'] + $question['written']['fields'];
+        $lines = [];
+        foreach ($entry['text'] as $name => $value) {
+            // Moodle has one box for all the boxes the student saw: each is named, unless there was only one.
+            $lines[] = count($entry['text']) === 1 ? $value : ($labels[$name] ?? $name) . ': ' . $value;
+        }
+        return ['answer' => implode("\n\n", $lines), 'answerformat' => FORMAT_PLAIN];
     }
 
     /**
-     * Makes every mark the service's.
+     * Makes every mark the service's, and the attempt's total its exact percent.
+     *
+     * A question is worth its share of 100 and earns `points / max_points` of it. Where Moodle's own mark differs, and
+     * always for a written task, a manual grade sets the service's. The total is then taken from the exact percent, not
+     * from the sum of the rounded marks.
      *
      * @param quiz_attempt $attemptobj A graded attempt.
-     * @param \stdClass[] $items The mapping by item id.
-     * @param array $resolved
+     * @param \stdClass[] $items The mapping by question id.
      * @param attempt_data $attempt
+     * @return bool Whether the marks of the questions did not add up to the exact percent.
      */
-    private static function set_marks(quiz_attempt $attemptobj, array $items, array $resolved, attempt_data $attempt): void {
+    private static function set_marks(quiz_attempt $attemptobj, array $items, attempt_data $attempt): bool {
         global $DB;
 
         $quba = \question_engine::load_questions_usage_by_activity((int) $attemptobj->get_attempt()->uniqueid);
         $changed = false;
-        foreach ($items as $itemid => $item) {
-            $expected = round($item->maxmark * $resolved[$itemid]['points'] / $item->units, 7);
+        foreach ($items as $questionid => $item) {
+            $entry = $attempt->entries[$questionid];
+            $expected = round($item->maxmark * $entry['points'] / $item->units, 7);
             $qa = $quba->get_question_attempt((int) $item->slot);
             $have = $qa->get_mark();
             if ($have !== null && abs($have - $expected) <= self::MARK_TOLERANCE) {
                 continue;
             }
-            $comment = $resolved[$itemid]['comment'] ?? get_string('mirrormarkcomment', 'format_rumbos');
-            $qa->manual_grade(s($comment), $expected, FORMAT_HTML, $attempt->finished);
+            $comment = 'mirrormarkcomment';
+            if ($entry['written'] && $entry['text'] === null && !$attempt->textincluded) {
+                $comment = $attempt->truncated ? 'mirrortexttruncated' : 'mirrortextnotsent';
+            }
+            $qa->manual_grade(s(get_string($comment, 'format_rumbos')), $expected, FORMAT_HTML, $attempt->finished);
             $changed = true;
         }
-        if (!$changed) {
-            return;
+        if ($changed) {
+            \question_engine::save_questions_usage_by_activity($quba);
         }
-        \question_engine::save_questions_usage_by_activity($quba);
+
         $row = $attemptobj->get_attempt();
-        $DB->set_field('quiz_attempts', 'sumgrades', $quba->get_total_mark(), ['id' => $row->id]);
+        $quizsum = (float) $attemptobj->get_quizobj()->get_quiz()->sumgrades;
+        $total = $attempt->exact * $quizsum / 100;
+        $diverged = $quizsum <= 0 || abs((float) $quba->get_total_mark() - $total) > self::TOTAL_TOLERANCE;
+        $DB->set_field('quiz_attempts', 'sumgrades', round($total, 5), ['id' => $row->id]);
         $DB->set_field('quiz_attempts', 'timemodified', $attempt->finished, ['id' => $row->id]);
         $attemptobj->get_quizobj()->get_grade_calculator()->recompute_final_grade((int) $row->userid);
-    }
-
-    /**
-     * Whether the total of a quiz attempt, as a percentage rounded to two decimals, is not the service's percent.
-     *
-     * @param int $quizattemptid
-     * @param string $percent The service's percent.
-     * @return bool
-     */
-    private static function total_differs(int $quizattemptid, string $percent): bool {
-        global $DB;
-
-        $sumgrades = $DB->get_field('quiz_attempts', 'sumgrades', ['id' => $quizattemptid]);
-        $quizsum = $DB->get_field_sql(
-            'SELECT q.sumgrades FROM {quiz} q JOIN {quiz_attempts} qa ON qa.quiz = q.id WHERE qa.id = ?',
-            [$quizattemptid]
-        );
-        if ($sumgrades === null || (float) $quizsum <= 0) {
-            return true;
-        }
-        $moodle = number_format(round((float) $sumgrades * 100 / (float) $quizsum, 2), 2, '.', '');
-        return $moodle !== $percent;
+        return $diverged;
     }
 }

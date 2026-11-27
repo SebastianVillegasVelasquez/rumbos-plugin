@@ -59,11 +59,21 @@ final class mirror_quiz_test extends \advanced_testcase {
      * Makes the mirror of the fixture exam.
      *
      * @param \stdClass $course
-     * @param string $version
+     * @param string $title Another title is another exam.
      * @return array{0: \stdClass, 1: bool}
      */
-    private function mirror(\stdClass $course, string $version = 'v1hash'): array {
-        return mirror_quiz::ensure($course, exam::from_array(mirror_fixture::form($version)), 1000);
+    private function mirror(\stdClass $course, string $title = mirror_fixture::TITLE): array {
+        return mirror_quiz::ensure($course, $this->exam(mirror_fixture::definition($title)), 1000);
+    }
+
+    /**
+     * The exam of a definition.
+     *
+     * @param array $definition
+     * @return exam
+     */
+    private function exam(array $definition): exam {
+        return exam::from_definition($definition, mirror_fixture::hash($definition));
     }
 
     /**
@@ -80,7 +90,7 @@ final class mirror_quiz_test extends \advanced_testcase {
     }
 
     /**
-     * The quiz is made hidden, with one question per item, no grade, no pass mark and no completion.
+     * The quiz is made hidden, with one question per question of the exam, no grade, no pass mark and no completion.
      */
     public function test_the_quiz_is_made_hidden_with_the_questions(): void {
         global $DB;
@@ -91,9 +101,9 @@ final class mirror_quiz_test extends \advanced_testcase {
         $this->assertTrue($created);
         $quiz = $DB->get_record('quiz', ['id' => $row->quizid], '*', MUST_EXIST);
         $cm = $DB->get_record('course_modules', ['id' => $row->cmid], '*', MUST_EXIST);
-        $this->assertSame('b2-form-a', $row->formid);
-        $this->assertSame('v1hash', $row->version);
-        $this->assertStringContainsString('B2 check-in (fixture)', $quiz->name);
+        $this->assertSame(mirror_fixture::FORM, $row->formid);
+        $this->assertSame(mirror_fixture::hash(mirror_fixture::definition()), $row->version);
+        $this->assertStringContainsString(mirror_fixture::TITLE, $quiz->name);
         $this->assertStringContainsString('check-in', $quiz->name);
         $this->assertSame('0', $cm->visible);
         $this->assertSame('0', $cm->visibleoncoursepage);
@@ -102,31 +112,32 @@ final class mirror_quiz_test extends \advanced_testcase {
         $this->assertEquals(0, $quiz->gradepass ?? 0);
         $this->assertEqualsWithDelta(100.0, $quiz->sumgrades, 0.00001);
         $this->assertSame('deferredfeedback', $quiz->preferredbehaviour);
-        $this->assertSame(11, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
+        $this->assertSame(15, $DB->count_records('quiz_slots', ['quizid' => $quiz->id]));
     }
 
     /**
-     * Each item becomes the question of its type, worth what the exam says, in the quiz's own question bank.
+     * Each question of the exam becomes a question of its type, worth its share of 100, in the quiz's own question
+     * bank. A pair of a matching item is a single choice among the places.
      */
-    public function test_each_item_is_the_question_of_its_type(): void {
+    public function test_each_question_is_made_with_its_type_and_weight(): void {
         global $DB;
         $course = $this->course();
         [$row] = $this->mirror($course);
 
         $items = mirror_store::items((int) $row->id);
-        $this->assertSame(
-            ['l-01', 'l-02', 'l-11', 'r-01', 'r-02', 'r-11', 'u-01', 'u-02', 'u-03', 'w-01', 's-02'],
-            array_keys($items)
-        );
+        $this->assertSame(mirror_fixture::QUESTIONS, array_keys($items));
         $types = [];
-        foreach ($items as $itemid => $item) {
-            $types[$itemid] = $DB->get_field('question', 'qtype', ['id' => $item->questionid]);
+        foreach ($items as $id => $item) {
+            $types[$id] = $DB->get_field('question', 'qtype', ['id' => $item->questionid]);
         }
         $this->assertSame('multichoice', $types['l-01']);
+        $this->assertSame('multichoice', $types['l-11:0']);
         $this->assertSame('multichoice', $types['r-11']);
-        $this->assertSame('match', $types['l-11']);
         $this->assertSame('essay', $types['w-01']);
         $this->assertSame('essay', $types['s-02']);
+        $this->assertSame(5, $DB->count_records('question_answers', ['question' => $items['l-11:0']->questionid]));
+        $right = $DB->get_field('question_answers', 'answer', ['question' => $items['l-11:1']->questionid, 'fraction' => 1]);
+        $this->assertSame('a theft report', $right);
 
         $context = \context_module::instance($row->cmid);
         $total = 0.0;
@@ -139,55 +150,37 @@ final class mirror_quiz_test extends \advanced_testcase {
             $total += (float) $DB->get_field('quiz_slots', 'maxmark', ['quizid' => $row->quizid, 'slot' => $item->slot]);
         }
         $this->assertEqualsWithDelta(100.0, $total, 0.00001);
-        $matching = $DB->get_field('quiz_slots', 'maxmark', ['quizid' => $row->quizid, 'slot' => $items['l-11']->slot]);
-        $this->assertEquals(17.8571429, $matching);
-        $this->assertEquals(3, $items['l-11']->slot);
-        $this->assertEquals(5, $items['l-11']->units);
+        $pair = $DB->get_field('quiz_slots', 'maxmark', ['quizid' => $row->quizid, 'slot' => $items['l-11:0']->slot]);
+        $this->assertEquals(3.5714286, $pair);
+        $this->assertEquals(5, $items['w-01']->units);
+        $this->assertEquals(1, $items['l-11:0']->units);
     }
 
     /**
-     * The shared passage, the audio's transcript and the prompt are in the question text, escaped.
+     * The instructions, the shared passage, the prompt, the audio's id and a written task's boxes are in the question
+     * text, escaped.
      */
     public function test_the_question_text_carries_what_a_student_read(): void {
         global $DB;
         $course = $this->course();
-        $data = mirror_fixture::form();
-        $data['sections'][0]['items'][0]['prompt'] = 'Is 1 < 2 & is it <b>bold</b>?';
-        [$row] = mirror_quiz::ensure($course, exam::from_array($data), 1000);
+        $data = mirror_fixture::definition();
+        $data['sections'][0]['parts'][0]['questions'][0]['prompt'] = 'Is 1 < 2 & is it <b>bold</b>?';
+        [$row] = mirror_quiz::ensure($course, $this->exam($data), 1000);
         $items = mirror_store::items((int) $row->id);
+        $text = fn(string $id): string => $DB->get_field('question', 'questiontext', ['id' => $items[$id]->questionid]);
 
-        $listening = $DB->get_field('question', 'questiontext', ['id' => $items['l-01']->questionid]);
-        $this->assertStringContainsString('Around nine forty.', $listening);
-        $this->assertStringContainsString('Audio transcript', $listening);
-        $this->assertStringContainsString('Is 1 &lt; 2 &amp; is it &lt;b&gt;bold&lt;/b&gt;?', $listening);
-        $this->assertStringNotContainsString('<b>bold</b>', $listening);
-
-        $gap = $DB->get_field('question', 'questiontext', ['id' => $items['r-11']->questionid]);
-        $this->assertStringContainsString('Chair: I am pleased to (a)___ this meeting.', $gap);
-        $this->assertSame('r-11', $DB->get_field('question_bank_entries', 'idnumber', [
-            'id' => $DB->get_field('question_versions', 'questionbankentryid', ['questionid' => $items['r-11']->questionid]),
+        $this->assertStringContainsString('Is 1 &lt; 2 &amp; is it &lt;b&gt;bold&lt;/b&gt;?', $text('l-01'));
+        $this->assertStringNotContainsString('<b>bold</b>', $text('l-01'));
+        $this->assertStringContainsString('audio-9', $text('l-01'));
+        $this->assertStringContainsString('Read and answer.', $text('l-01'));
+        $this->assertStringContainsString('Audio number 2 of this matching task.', $text('l-11:1'));
+        $this->assertStringContainsString('Chair: I am pleased to (a)___ this meeting.', $text('r-11'));
+        $this->assertStringContainsString('(a)', $text('r-11'));
+        $this->assertStringContainsString('Write your letter here.', $text('w-01'));
+        $this->assertStringContainsString('Your close', $text('s-02'));
+        $this->assertSame('l-11:1', $DB->get_field('question_bank_entries', 'idnumber', [
+            'id' => $DB->get_field('question_versions', 'questionbankentryid', ['questionid' => $items['l-11:1']->questionid]),
         ]));
-    }
-
-    /**
-     * A place that no clip belongs to is kept as a choice with no stem.
-     */
-    public function test_a_matching_item_may_have_more_places_than_clips(): void {
-        global $DB;
-        $course = $this->course();
-        $data = mirror_fixture::form();
-        $item = &$data['sections'][0]['items'][2];
-        $item['clips'] = array_slice($item['clips'], 0, 3);
-        $item['key'] = array_slice($item['key'], 0, 3);
-        unset($item);
-
-        [$row] = mirror_quiz::ensure($course, exam::from_array($data), 1000);
-
-        $questionid = mirror_store::items((int) $row->id)['l-11']->questionid;
-        $stems = $DB->get_records('qtype_match_subquestions', ['questionid' => $questionid], 'id');
-        $this->assertCount(5, $stems);
-        $this->assertSame(['', ''], array_values(array_map(fn($s) => trim($s->questiontext), array_slice($stems, 3))));
-        $this->assertEquals(3, mirror_store::items((int) $row->id)['l-11']->units);
     }
 
     /**
@@ -255,21 +248,21 @@ final class mirror_quiz_test extends \advanced_testcase {
     }
 
     /**
-     * Another content version makes another quiz with its own questions, and leaves the first one alone.
+     * Another definition makes another quiz with its own questions, and leaves the first one alone.
      */
     public function test_a_new_version_makes_a_new_quiz(): void {
         $course = $this->course();
-        [$one] = $this->mirror($course, 'v1hash');
+        [$one] = $this->mirror($course);
         $before = $this->questions_in((int) $one->quizid);
 
-        [$two, $created] = $this->mirror($course, 'v2hash');
+        [$two, $created] = $this->mirror($course, 'Another version');
 
         $this->assertTrue($created);
         $this->assertNotSame($one->quizid, $two->quizid);
         $this->assertNotSame($one->cmid, $two->cmid);
         $this->assertSame($before, $this->questions_in((int) $one->quizid));
         $this->assertEmpty(array_intersect($before, $this->questions_in((int) $two->quizid)));
-        $this->assertSame('v2hash', $two->version);
+        $this->assertSame(mirror_fixture::hash(mirror_fixture::definition('Another version')), $two->version);
         $this->assertEquals(0, get_fast_modinfo($course->id)->get_cm($two->cmid)->visible);
     }
 
@@ -347,7 +340,7 @@ final class mirror_quiz_test extends \advanced_testcase {
         $this->assertTrue($created);
         $this->assertNotSame($first->cmid, $second->cmid);
         $this->assertTrue(mirror_quiz::exists($second));
-        $this->assertCount(11, mirror_store::items((int) $second->id));
+        $this->assertCount(15, mirror_store::items((int) $second->id));
     }
 
     /**

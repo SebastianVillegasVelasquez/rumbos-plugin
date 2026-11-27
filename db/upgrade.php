@@ -179,5 +179,25 @@ function xmldb_format_rumbos_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026112700, 'format', 'rumbos');
     }
 
+    if ($oldversion < 2026112701) {
+        // The service sends the definition of an exam apart from its attempts and without a course, so it is kept until
+        // a course's first attempt needs a quiz. The setting that acknowledged definitions without keeping them is gone.
+        $table = new xmldb_table('format_rumbos_mirror_def');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('formid', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('hash', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('contentversion', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('definition', XMLDB_TYPE_TEXT, null, null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('formhash', XMLDB_KEY_UNIQUE, ['formid', 'hash']);
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+        unset_config('resultsackdefinitions', 'format_rumbos');
+
+        upgrade_plugin_savepoint(true, 2026112701, 'format', 'rumbos');
+    }
+
     return true;
 }

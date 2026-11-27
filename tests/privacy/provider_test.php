@@ -451,13 +451,17 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $generator = $this->getDataGenerator();
         $users = [$generator->create_user(), $generator->create_user()];
         $courses = [$generator->create_course(['format' => 'rumbos']), $generator->create_course(['format' => 'rumbos'])];
-        $form = \format_rumbos\mirror_fixture::form();
+        $definition = \format_rumbos\mirror_fixture::definition();
+        $record = (object) json_decode(json_encode(\format_rumbos\mirror_fixture::record([])));
         foreach ($courses as $course) {
-            $exam = exam::from_array($form);
+            $exam = exam::from_definition($definition, \format_rumbos\mirror_fixture::hash($definition));
             $mirrorid = mirror_store::insert_quiz((int) $course->id, $exam, 100 + $course->id, 200 + $course->id, 1000);
             foreach ($users as $user) {
                 $id = 'att-' . $course->id . '-' . $user->id;
-                $attempt = attempt_data::from_array(\format_rumbos\mirror_fixture::attempt($form, $id, [], '0.00', false));
+                $attempt = attempt_data::from_claims($record, [
+                    'attempt_id' => $id, 'purpose' => 'check_in', 'finished_at' => 1790000000, 'passed' => false,
+                    'percent' => '0.00',
+                ]);
                 mirror_store::insert_attempt($mirrorid, $attempt, (int) $course->id, (int) $user->id, 900, false, 2000);
             }
         }

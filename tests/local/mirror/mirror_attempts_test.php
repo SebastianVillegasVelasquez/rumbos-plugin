@@ -39,9 +39,6 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
     /** @var exam The fixture exam. */
     private exam $exam;
 
-    /** @var array The fixture definition. */
-    private array $form;
-
     /** @var \stdClass The row of the mirror quiz. */
     private \stdClass $mirror;
 
@@ -60,9 +57,48 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
     protected function setUp(): void {
         parent::setUp();
         $this->course = $this->make_course();
-        $this->form = mirror_fixture::form();
-        $this->exam = exam::from_array($this->form);
+        $definition = mirror_fixture::definition();
+        $this->exam = exam::from_definition($definition, mirror_fixture::hash($definition));
         [$this->mirror] = mirror_quiz::ensure($this->course, $this->exam, $this->now);
+    }
+
+    /**
+     * An attempt of the fixture exam, as the plugin reads it from a statement.
+     *
+     * @param string $attemptid
+     * @param int[] $section Points in each section (listening, reading, use of English, writing, speaking).
+     * @param bool $passed What the service decided.
+     * @param callable|null $change Changes the claims of the record.
+     * @param bool $text Whether the written text travels.
+     * @return attempt_data
+     */
+    private function attempt(
+        string $attemptid,
+        array $section,
+        bool $passed = false,
+        ?callable $change = null,
+        bool $text = true
+    ): attempt_data {
+        $record = mirror_fixture::record(mirror_fixture::points($section), null, $text);
+        if ($change !== null) {
+            $record = $change($record);
+        }
+        return attempt_data::from_claims((object) json_decode(json_encode($record)), [
+            'attempt_id' => $attemptid, 'purpose' => 'check_in', 'finished_at' => 1790000000, 'passed' => $passed,
+            'percent' => mirror_fixture::display(mirror_fixture::total105($section)),
+        ]);
+    }
+
+    /**
+     * Writes an attempt for a student.
+     *
+     * @param \stdClass $user
+     * @param attempt_data $attempt
+     * @return array The result of {@see mirror_attempts::write()}.
+     */
+    private function save(\stdClass $user, attempt_data $attempt): array {
+        $courseid = (int) $this->course->id;
+        return mirror_attempts::write($this->mirror, $this->exam, $attempt, $courseid, (int) $user->id, $this->now);
     }
 
     /**
@@ -70,26 +106,12 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
      *
      * @param \stdClass $user
      * @param string $attemptid
-     * @param int[] $section Points in each section of the fixture (listening, reading, use of English, writing, speaking).
-     * @param bool $passed What the service decided.
-     * @param array $itempoints Points per item that replace the ones the sections give.
-     * @param string|null $percent The service's percent; the one the points make by default.
-     * @return array The result of {@see mirror_attempts::write()} and the attempt that was written.
+     * @param int[] $section
+     * @param bool $passed
+     * @return array
      */
-    private function write(
-        \stdClass $user,
-        string $attemptid,
-        array $section,
-        bool $passed = false,
-        array $itempoints = [],
-        ?string $percent = null
-    ): array {
-        $points = $itempoints + mirror_fixture::item_points($section);
-        $percent ??= mirror_fixture::display(mirror_fixture::total105($section));
-        $attempt = attempt_data::from_array(mirror_fixture::attempt($this->form, $attemptid, $points, $percent, $passed));
-        $courseid = (int) $this->course->id;
-        $result = mirror_attempts::write($this->mirror, $this->exam, $attempt, $courseid, (int) $user->id, $this->now);
-        return [$result, $attempt];
+    private function write(\stdClass $user, string $attemptid, array $section, bool $passed = false): array {
+        return $this->save($user, $this->attempt($attemptid, $section, $passed));
     }
 
     /**
@@ -104,10 +126,10 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
     }
 
     /**
-     * The question attempt of an item of the exam.
+     * The question attempt of a question of the exam.
      *
      * @param quiz_attempt $attemptobj
-     * @param string $itemid
+     * @param string $itemid The question id.
      * @return \question_attempt
      */
     private function qa(quiz_attempt $attemptobj, string $itemid): \question_attempt {
@@ -115,12 +137,12 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
     }
 
     /**
-     * The attempt is a finished, real (not preview) attempt of the student with the time the exam was taken.
+     * The attempt is a finished, real (not preview) attempt of the student, at the time the student finished.
      */
     public function test_a_finished_attempt_is_written_for_the_student(): void {
         $user = $this->make_user($this->course);
 
-        [$result] = $this->write($user, 'att-1', [6, 1, 3, 5, 5]);
+        $result = $this->write($user, 'att-1', [6, 1, 3, 5, 5]);
 
         $this->assertSame(['written' => true, 'diverged' => false], $result);
         $attemptobj = $this->quiz_attempt('att-1');
@@ -129,7 +151,7 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
         $this->assertEquals($user->id, $row->userid);
         $this->assertEquals(0, $row->preview);
         $this->assertEquals(1, $row->attempt);
-        $this->assertEquals(1789999000, $row->timestart);
+        $this->assertEquals(1790000000, $row->timestart);
         $this->assertEquals(1790000000, $row->timefinish);
         $mapping = mirror_store::find_attempt('att-1');
         $this->assertSame('79.76', $mapping->percent);
@@ -146,32 +168,57 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
         $this->write($user, 'att-1', [6, 1, 3, 5, 5]);
         $attemptobj = $this->quiz_attempt('att-1');
 
-        // Item l-01 earned its point: the right option, "first".
+        // Question l-01 earned its point: the right option, "first".
         $this->assertSame('first', $this->qa($attemptobj, 'l-01')->get_response_summary());
-        // Item l-02 earned nothing: a wrong option was chosen, "first" is wrong for it (the key is "second").
+        // Question l-02 earned nothing: "first" was chosen and the key is "second".
         $this->assertSame('first', $this->qa($attemptobj, 'l-02')->get_response_summary());
-        // Item r-02 (key "third") earned nothing in this attempt: reading has one point, so r-01 only.
-        $this->assertSame('first', $this->qa($attemptobj, 'r-02')->get_response_summary());
-        // The written task keeps the student's text.
-        $this->assertSame('The student wrote this for w-01.', $this->qa($attemptobj, 'w-01')->get_response_summary());
+        // A matching pair keeps the place the student chose.
+        $this->assertSame('a theft report', $this->qa($attemptobj, 'l-11:1')->get_response_summary());
+        // A written task with one box keeps the text; with two, each is named.
+        $this->assertSame('The student wrote this for w-01 q1.', $this->qa($attemptobj, 'w-01')->get_response_summary());
+        $spoken = $this->qa($attemptobj, 's-02')->get_response_summary();
+        $this->assertStringContainsString('Your opening: The student wrote this for s-02 f1.', $spoken);
+        $this->assertStringContainsString('Your close: The student wrote this for s-02 f2.', $spoken);
         // Every question has its steps: started, answered, finished; a written task has the manual grade too.
         $this->assertGreaterThanOrEqual(3, count(iterator_to_array($this->qa($attemptobj, 'u-01')->get_full_step_iterator())));
         $this->assertGreaterThanOrEqual(4, count(iterator_to_array($this->qa($attemptobj, 'w-01')->get_full_step_iterator())));
     }
 
     /**
-     * A matching item gives a part of its mark for each right pair, as the service counts five points.
+     * Each pair of a matching item is a question with its own mark, which Moodle's own grading gets right.
      */
-    public function test_matching_gives_a_part_for_each_pair(): void {
+    public function test_each_matching_pair_has_its_own_mark(): void {
         $user = $this->make_user($this->course);
         $this->write($user, 'att-1', [3, 0, 0, 0, 0]);
         $attemptobj = $this->quiz_attempt('att-1');
 
-        $qa = $this->qa($attemptobj, 'l-11');
-        $this->assertEqualsWithDelta(17.8571429 * 3 / 5, $qa->get_mark(), 0.0000001);
-        $this->assertEqualsWithDelta(0.6, $qa->get_fraction(), 0.0000001);
-        // Moodle's own automatic grade was right, so no manual grade was needed: started, answered, finished.
-        $this->assertCount(3, iterator_to_array($qa->get_full_step_iterator()));
+        foreach ([0 => 25 / 7, 1 => 25 / 7, 2 => 25 / 7, 3 => 0.0, 4 => 0.0] as $clip => $mark) {
+            $qa = $this->qa($attemptobj, 'l-11:' . $clip);
+            $this->assertEqualsWithDelta($mark, $qa->get_mark(), 0.0000001, (string) $clip);
+            // No manual grade was needed: started, answered, finished.
+            $this->assertCount(3, iterator_to_array($qa->get_full_step_iterator()));
+        }
+    }
+
+    /**
+     * When the written text was not allowed to travel, the task has the service's mark, no response, and a comment that
+     * says why. When the size limit forced it out, the comment says that.
+     */
+    public function test_a_written_task_without_its_text_says_why(): void {
+        $one = $this->make_user($this->course);
+        $two = $this->make_user($this->course);
+
+        $this->save($one, $this->attempt('att-1', [0, 0, 0, 4, 2], false, null, false));
+        $this->save($two, $this->attempt('att-2', [0, 0, 0, 3, 0], false, function (array $record) {
+            return ['truncated' => true] + $record;
+        }, false));
+
+        foreach (['att-1' => ['mirrortextnotsent', 12.0], 'att-2' => ['mirrortexttruncated', 9.0]] as $id => [$why, $mark]) {
+            $qa = $this->qa($this->quiz_attempt($id), 'w-01');
+            $this->assertEmpty($qa->get_response_summary(), $id);
+            $this->assertEqualsWithDelta($mark, $qa->get_mark(), 0.0000001, $id);
+            $this->assertStringContainsString(s(get_string($why, 'format_rumbos')), $qa->get_manual_comment()[0], $id);
+        }
     }
 
     /**
@@ -198,25 +245,17 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
      */
     public function test_the_services_mark_overrides_moodles_automatic_one(): void {
         $user = $this->make_user($this->course);
-        // The student chose the wrong option of r-01 and the service gave the point; r-02 the right one and no point.
-        $attempt = mirror_fixture::attempt($this->form, 'att-1', ['r-01' => 1], '8.33', false);
-        foreach ($attempt['items'] as &$item) {
-            if ($item['item_id'] === 'r-01') {
-                $item['response'] = 'b';
-            } else if ($item['item_id'] === 'r-02') {
-                $item['response'] = 'c';
-                $item['points'] = 0;
+        // The student chose a wrong option of r-01 and the service gave the point; the right one of r-02 and no point.
+        $this->save($user, $this->attempt('att-1', [0, 1, 0, 0, 0], false, function (array $record) {
+            foreach ($record['answers'] as &$answer) {
+                if ($answer['question_id'] === 'r-01') {
+                    $answer['answer'] = 'b';
+                } else if ($answer['question_id'] === 'r-02') {
+                    $answer['answer'] = 'c';
+                }
             }
-        }
-        unset($item);
-        mirror_attempts::write(
-            $this->mirror,
-            $this->exam,
-            attempt_data::from_array($attempt),
-            (int) $this->course->id,
-            (int) $user->id,
-            $this->now
-        );
+            return $record;
+        }));
         $attemptobj = $this->quiz_attempt('att-1');
 
         $this->assertSame('second', $this->qa($attemptobj, 'r-01')->get_response_summary());
@@ -226,24 +265,17 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
     }
 
     /**
-     * An item the student left blank earned nothing and has no response.
+     * A question the student left blank earned nothing and has no response.
      */
-    public function test_an_unanswered_item_is_blank(): void {
+    public function test_an_unanswered_question_is_blank(): void {
         $user = $this->make_user($this->course);
-        $attempt = mirror_fixture::attempt($this->form, 'att-1', ['l-01' => 0], '0.00', false);
-        foreach ($attempt['items'] as &$item) {
-            $item['response'] = null;
-        }
-        unset($item);
 
-        mirror_attempts::write(
-            $this->mirror,
-            $this->exam,
-            attempt_data::from_array($attempt),
-            (int) $this->course->id,
-            (int) $user->id,
-            $this->now
-        );
+        $this->save($user, $this->attempt('att-1', [0, 0, 0, 0, 0], false, function (array $record) {
+            foreach ($record['answers'] as &$answer) {
+                $answer['answer'] = null;
+            }
+            return $record;
+        }));
 
         $qa = $this->qa($this->quiz_attempt('att-1'), 'l-01');
         $this->assertNull($qa->get_response_summary());
@@ -260,7 +292,7 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
         $attempts = $DB->count_records('quiz_attempts', ['quiz' => $this->mirror->quizid]);
         $usages = $DB->count_records('question_usages');
 
-        [$result] = $this->write($user, 'att-1', [6, 1, 3, 5, 5]);
+        $result = $this->write($user, 'att-1', [6, 1, 3, 5, 5]);
 
         $this->assertSame(['written' => false, 'diverged' => false], $result);
         $this->assertSame($attempts, $DB->count_records('quiz_attempts', ['quiz' => $this->mirror->quizid]));
@@ -310,7 +342,7 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
             // The service's rule is strictly above 80: exactly 80 fails.
             $passed = $total > 8400;
 
-            [$result] = $this->write($user, 'att-' . $name, $section, $passed);
+            $result = $this->write($user, 'att-' . $name, $section, $passed);
 
             $row = $this->quiz_attempt('att-' . $name)->get_attempt();
             $quiz = $this->quiz_attempt('att-' . $name)->get_quiz();
@@ -326,7 +358,8 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
                 $passed ? 'yes' : 'no'
             );
             $this->assertFalse($result['diverged'], $name);
-            $this->assertEqualsWithDelta($total / 105, $moodle, 0.00001, $name);
+            // The total is the exact percent, to the five decimals Moodle stores.
+            $this->assertEqualsWithDelta($total / 105, $moodle, 0.000005, $name);
             $this->assertSame($expected, number_format(round($moodle, 2), 2, '.', ''), $name);
             $this->assertSame($passed ? '1' : '0', mirror_store::find_attempt('att-' . $name)->passed, $name);
         }
@@ -338,16 +371,19 @@ final class mirror_attempts_test extends \format_rumbos\result_testcase {
     }
 
     /**
-     * A percent that the points do not make is flagged, and the attempt is still written: the service is right.
+     * An exact percent that the marks do not add up to is flagged. The attempt is still written, with the service's
+     * percent as its total: the service is right.
      */
     public function test_a_percent_that_the_points_do_not_make_is_flagged(): void {
         $user = $this->make_user($this->course);
 
-        [$result] = $this->write($user, 'att-1', [6, 1, 3, 5, 5], false, [], '50.00');
+        $result = $this->save($user, $this->attempt('att-1', [6, 1, 3, 5, 5], false, function (array $record) {
+            return ['percent_exact' => '101/2'] + $record;
+        }));
 
         $this->assertSame(['written' => true, 'diverged' => true], $result);
         $this->assertSame('1', mirror_store::find_attempt('att-1')->diverged);
-        $this->assertSame('50.00', mirror_store::find_attempt('att-1')->percent);
+        $this->assertEqualsWithDelta(50.5, $this->quiz_attempt('att-1')->get_sum_marks(), 0.00001);
     }
 
     /**

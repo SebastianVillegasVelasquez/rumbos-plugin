@@ -17,14 +17,18 @@
 namespace format_rumbos\local\mirror;
 
 /**
- * The database side of the mirror: which quiz holds which exam version, which question holds which item, which quiz
- * attempt was written for which attempt of the service, and what the mirror refused.
+ * The database side of the mirror: the exam definitions it was sent, which quiz holds which exam version, which question
+ * holds which question of the exam, which quiz attempt was written for which attempt of the service, and what the
+ * mirror refused.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class mirror_store {
+    /** @var string Table of the exam definitions the service sent. */
+    public const DEFINITIONS = 'format_rumbos_mirror_def';
+
     /** @var string Table of the mirror quizzes. */
     public const QUIZZES = 'format_rumbos_mirror_quiz';
 
@@ -39,6 +43,48 @@ class mirror_store {
 
     /** @var int Most rows the administrator's list shows. */
     public const LOG_LIST_LIMIT = 200;
+
+    /**
+     * The definition of an exam, if the service sent it.
+     *
+     * @param string $formid
+     * @param string $hash The definition hash.
+     * @return \stdClass|null
+     */
+    public static function find_definition(string $formid, string $hash): ?\stdClass {
+        global $DB;
+
+        return $DB->get_record(self::DEFINITIONS, ['formid' => $formid, 'hash' => $hash]) ?: null;
+    }
+
+    /**
+     * Keeps the definition of an exam. It is the site's, not a course's: the service sends one for all of them, and the
+     * quiz of a course is made from it when that course's first attempt arrives. It holds the answer key.
+     *
+     * @param string $formid
+     * @param string $hash The definition hash.
+     * @param string $contentversion The version of the content pack, kept for the record.
+     * @param string $definition The definition object as JSON.
+     * @param int $now
+     * @throws \dml_write_exception When it is stored already (a race).
+     */
+    public static function insert_definition(
+        string $formid,
+        string $hash,
+        string $contentversion,
+        string $definition,
+        int $now
+    ): void {
+        global $DB;
+
+        $DB->insert_record(self::DEFINITIONS, (object) [
+            'formid' => $formid,
+            'hash' => $hash,
+            'contentversion' => $contentversion,
+            'definition' => $definition,
+            'timecreated' => $now,
+        ]);
+    }
 
     /**
      * The mirror quiz of an exam version in a course, if there is one.
@@ -273,15 +319,16 @@ class mirror_store {
     }
 
     /**
-     * How many quizzes and attempts there are, and how many problems were logged since a time.
+     * How many definitions, quizzes and attempts there are, and how many problems were logged since a time.
      *
      * @param int $since
-     * @return array{quizzes: int, attempts: int, problems: int, diverged: int}
+     * @return array{definitions: int, quizzes: int, attempts: int, problems: int, diverged: int}
      */
     public static function counts(int $since): array {
         global $DB;
 
         return [
+            'definitions' => $DB->count_records(self::DEFINITIONS),
             'quizzes' => $DB->count_records(self::QUIZZES),
             'attempts' => $DB->count_records(self::ATTEMPTS),
             'problems' => $DB->count_records_select(self::LOG, "outcome IN ('rejected', 'failed') AND timecreated >= ?", [$since]),

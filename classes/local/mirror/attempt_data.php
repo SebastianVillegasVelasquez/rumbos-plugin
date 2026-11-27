@@ -17,236 +17,209 @@
 namespace format_rumbos\local\mirror;
 
 use format_rumbos\local\result_rejection;
+use format_rumbos\local\result_statement;
 
 /**
- * One finished attempt at an exam, as the service reports it: what the student answered and the points the service
- * gave for each item.
+ * One closed attempt of the Rumbos service: what the student answered and the points the service gave each question.
  *
- * Like {@see exam}, this reads the provisional wire shape in one place ({@see self::from_array()}).
+ * It reads the claims an attempt statement (schema 2) has beyond the result claims. The result claims are checked
+ * first, by {@see result_statement::normalise_service()}, and are taken from there. Like {@see exam}, it reads that
+ * shape in one place. The service decides every point and the pass; nothing here recomputes them.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class attempt_data {
-    /** @var string The pattern of every identifier. */
-    private const ID = '/^[A-Za-z0-9._-]{1,64}$/';
+    /** @var string[] How the service may have closed an attempt. */
+    public const STATUSES = ['submitted', 'expired'];
 
-    /** @var string The service's attempt id: the idempotency key. */
+    /** @var int Longest written response accepted for one question, in characters. A statement is at most 64 KB. */
+    public const MAX_RESPONSE = 65536;
+
+    /** @var string The pattern of an identifier. */
+    private const ID = '/^[A-Za-z0-9._:-]{1,64}$/D';
+
+    /** @var string The service's attempt id (`jti`): the idempotency key. */
     public string $attemptid;
 
     /** @var string The exam form. */
     public string $formid;
 
-    /** @var string The content version the attempt was taken on. */
+    /** @var string The definition hash the attempt was taken against. */
     public string $version;
 
     /** @var string `check_in` or `final`. */
     public string $purpose;
 
-    /** @var int When the student began (Unix time). */
-    public int $started;
-
-    /** @var int When the student finished (Unix time). */
+    /** @var int When the student finished (Unix time). The statement says nothing about the start. */
     public int $finished;
 
-    /** @var string The percent the service decided, two decimals. */
+    /** @var string The percent the service shows, two decimals. */
     public string $percent;
+
+    /** @var float The exact percent, which is the grade of the attempt. */
+    public float $exact;
 
     /** @var bool What the service decided. Moodle never recomputes it. */
     public bool $passed;
 
-    /** @var array Item id => `points`, `response` and `comment`. */
-    public array $items;
+    /** @var bool Whether the written answers' text was allowed to travel. */
+    public bool $textincluded;
+
+    /** @var bool Whether the service's 64 KB cap forced the written text out. */
+    public bool $truncated;
+
+    /** @var array[] By question id: `written` (bool), `points` (float), `max_points` (int), `answer` and `text`. */
+    public array $entries;
 
     /**
-     * Use {@see self::from_array()}.
-     *
-     * @param string $attemptid The service's attempt id: the idempotency key.
-     * @param string $formid The exam form.
-     * @param string $version The content version the attempt was taken on.
-     * @param string $purpose `check_in` or `final`.
-     * @param int $started When the student began (Unix time).
-     * @param int $finished When the student finished (Unix time).
-     * @param string $percent The percent the service decided, two decimals.
-     * @param bool $passed What the service decided.
-     * @param array $items Item id => `points`, `response` and `comment`.
+     * Use {@see self::from_claims()}.
      */
-    private function __construct(
-        string $attemptid,
-        string $formid,
-        string $version,
-        string $purpose,
-        int $started,
-        int $finished,
-        string $percent,
-        bool $passed,
-        array $items
-    ) {
-        $this->attemptid = $attemptid;
-        $this->formid = $formid;
-        $this->version = $version;
-        $this->purpose = $purpose;
-        $this->started = $started;
-        $this->finished = $finished;
-        $this->percent = $percent;
-        $this->passed = $passed;
-        $this->items = $items;
+    private function __construct() {
     }
 
     /**
      * Validates an attempt and builds it.
      *
-     * A preview is refused here and nowhere else decides it: an attempt that is not explicitly `preview: false` is not
-     * mirrored.
-     *
-     * @param array $data The attempt, decoded from JSON as an associative array.
+     * @param \stdClass $claims The verified claims of the statement.
+     * @param array $result The same statement's result claims, as normalised.
      * @return self
-     * @throws result_rejection 422 `preview_not_accepted` or `invalid_attempt:<where>`.
-     */
-    public static function from_array(array $data): self {
-        if (($data['preview'] ?? null) !== false) {
-            throw new result_rejection(422, 'preview_not_accepted');
-        }
-        $attemptid = self::id($data['attempt_id'] ?? null, 'attempt_id');
-        $formid = self::id($data['form_id'] ?? null, 'form_id');
-        $version = self::id($data['content_version'] ?? null, 'content_version');
-        $purpose = $data['purpose'] ?? null;
-        if (!in_array($purpose, exam::PURPOSES, true)) {
-            throw self::invalid('purpose');
-        }
-        $percent = $data['percent'] ?? null;
-        if (!is_string($percent) || preg_match('/^(100\.00|\d{1,2}\.\d{2})$/', $percent) !== 1) {
-            throw self::invalid('percent');
-        }
-        if (!is_bool($data['passed'] ?? null)) {
-            throw self::invalid('passed');
-        }
-        $finished = $data['finished_at'] ?? null;
-        $started = $data['started_at'] ?? null;
-        if (!is_int($finished) || $finished <= 0 || ($started !== null && (!is_int($started) || $started <= 0))) {
-            throw self::invalid('time');
-        }
-        $started = min($started ?? $finished, $finished);
-
-        $rawitems = $data['items'] ?? null;
-        if (!is_array($rawitems) || !array_is_list($rawitems) || count($rawitems) > exam::MAX_ITEMS) {
-            throw self::invalid('items');
-        }
-        $items = [];
-        foreach ($rawitems as $raw) {
-            if (!is_array($raw)) {
-                throw self::invalid('items');
-            }
-            $id = self::id($raw['item_id'] ?? null, 'item_id');
-            $points = $raw['points'] ?? null;
-            if (isset($items[$id]) || !(is_int($points) || is_float($points)) || $points < 0 || $points > 100) {
-                throw self::invalid($id . '.points');
-            }
-            $comment = $raw['comment'] ?? null;
-            if ($comment !== null && (!is_string($comment) || \core_text::strlen($comment) > 2000)) {
-                throw self::invalid($id . '.comment');
-            }
-            $items[$id] = ['points' => $points + 0, 'response' => $raw['response'] ?? null, 'comment' => $comment];
-        }
-        return new self($attemptid, $formid, $version, $purpose, $started, $finished, $percent, $data['passed'], $items);
-    }
-
-    /**
-     * Checks the attempt against the exam it was taken on and reads each response into the form the mirror writes.
-     *
-     * Each item's points must be possible (never more than the item is worth, and a choice item is 0 or 1), every item
-     * must exist in the exam, and the response must have the shape its item type has.
-     *
-     * @param exam $exam The exam of the same form and version.
-     * @return array<string, array{points: int|float, response: mixed, comment: string|null}> By item id, for every item
-     *      of the exam (an item the service did not report is unanswered and earned nothing).
      * @throws result_rejection 422 `invalid_attempt:<where>`.
      */
-    public function resolve(exam $exam): array {
-        if ($exam->formid !== $this->formid || $exam->version !== $this->version || $exam->purpose !== $this->purpose) {
-            throw self::invalid('exam');
-        }
-        foreach (array_keys($this->items) as $id) {
-            if ($exam->item($id) === null) {
-                throw self::invalid($id . '.unknown');
-            }
-        }
+    public static function from_claims(\stdClass $claims, array $result): self {
+        $data = json_decode(json_encode($claims), true);
 
-        $resolved = [];
-        foreach ($exam->items() as ['item' => $item]) {
-            $id = $item['item_id'];
-            $given = $this->items[$id] ?? ['points' => 0, 'response' => null, 'comment' => null];
-            $units = exam::units($item);
-            $points = $given['points'];
-            $choice = in_array($item['type'], exam::CHOICE_TYPES, true);
-            if ($points > $units || ($choice && $points !== 0 && $points !== 1)) {
-                throw self::invalid($id . '.points');
-            }
-            $resolved[$id] = [
-                'points' => $points,
-                'response' => self::response($item, $given['response']),
-                'comment' => $given['comment'],
-            ];
+        $attempt = new self();
+        $attempt->attemptid = $result['attempt_id'];
+        $attempt->purpose = $result['purpose'];
+        $attempt->finished = $result['finished_at'];
+        $attempt->percent = $result['percent'];
+        $attempt->passed = $result['passed'];
+        $attempt->formid = self::id($data['form_id'] ?? null, 'form_id');
+
+        $hash = $data['definition_hash'] ?? null;
+        if (!is_string($hash) || preg_match(exam::HASH_PATTERN, $hash) !== 1) {
+            throw self::invalid('definition_hash');
         }
-        return $resolved;
+        $attempt->version = $hash;
+
+        if (!in_array($data['status'] ?? null, self::STATUSES, true)) {
+            throw self::invalid('status');
+        }
+        $exact = exam::fraction($data['percent_exact'] ?? null);
+        if ($exact === null || $exact > 100) {
+            throw self::invalid('percent_exact');
+        }
+        $attempt->exact = $exact;
+        if (!is_bool($data['written_text_included'] ?? null) || !is_bool($data['truncated'] ?? null)) {
+            throw self::invalid('written_text_included');
+        }
+        $attempt->textincluded = $data['written_text_included'];
+        $attempt->truncated = $data['truncated'];
+
+        $attempt->entries = [];
+        foreach (['answers' => false, 'written' => true] as $name => $written) {
+            $list = $data[$name] ?? null;
+            if (!is_array($list) || !array_is_list($list) || count($list) > exam::MAX_QUESTIONS) {
+                throw self::invalid($name);
+            }
+            foreach ($list as $raw) {
+                if (!is_array($raw)) {
+                    throw self::invalid($name);
+                }
+                $id = self::id($raw['question_id'] ?? null, $name . '.question_id');
+                $points = exam::fraction($raw['points_exact'] ?? null);
+                $max = $raw['max_points'] ?? null;
+                if (isset($attempt->entries[$id]) || $points === null || !is_int($max) || $points > $max) {
+                    throw self::invalid($id . '.points');
+                }
+                $attempt->entries[$id] = [
+                    'written' => $written,
+                    'points' => $points,
+                    'max_points' => $max,
+                    'answer' => $written ? null : self::answer($raw, $id),
+                    'text' => $written ? self::written_text($raw['text'] ?? null, $id) : null,
+                ];
+                if ($attempt->entries[$id]['text'] !== null && !$attempt->textincluded) {
+                    // The statement says no text travelled. Keeping it would ignore the tenant's switch.
+                    throw self::invalid($id . '.text');
+                }
+            }
+        }
+        return $attempt;
     }
 
     /**
-     * Reads a response into a fixed form.
+     * Checks the attempt against the exam it names: the same form, every question of the exam and no other, each
+     * answered the way its type is, and every chosen option one the question has. The purpose is not compared: the
+     * definition hash already says which exam it is, and the service's own golden vectors differ there.
      *
-     * @param array $item The exam's item.
-     * @param mixed $response What the service sent.
-     * @return string|array|null A choice: the option id. A matching item: clip index => place id. A written task: the
-     *      text. Null when the student did not answer.
+     * @param exam $exam The exam of the same form and definition hash.
+     * @throws result_rejection 422 `invalid_attempt:<where>`.
      */
-    private static function response(array $item, mixed $response): string|array|null {
-        $id = $item['item_id'];
-        if ($response === null || $response === '' || $response === []) {
+    public function check_against(exam $exam): void {
+        if ($exam->formid !== $this->formid || $exam->version !== $this->version) {
+            throw self::invalid('exam');
+        }
+        $ids = array_column($exam->questions, 'id');
+        if (array_diff(array_keys($this->entries), $ids) !== []) {
+            throw self::invalid('question.unknown');
+        }
+        foreach ($exam->questions as $question) {
+            $id = $question['id'];
+            $entry = $this->entries[$id] ?? null;
+            if ($entry === null) {
+                throw self::invalid($id . '.missing');
+            }
+            if ($entry['written'] !== exam::is_written($question) || $entry['max_points'] !== $question['max_points']) {
+                throw self::invalid($id . '.type');
+            }
+            if ($entry['answer'] !== null && !in_array($entry['answer'], array_column($question['options'], 'id'), true)) {
+                throw self::invalid($id . '.answer');
+            }
+        }
+    }
+
+    /**
+     * The chosen option of an objective question.
+     *
+     * @param array $raw
+     * @param string $id
+     * @return string|null Null when the student did not answer.
+     */
+    private static function answer(array $raw, string $id): ?string {
+        if (!array_key_exists('answer', $raw)) {
+            throw self::invalid($id . '.answer');
+        }
+        return $raw['answer'] === null ? null : self::id($raw['answer'], $id . '.answer');
+    }
+
+    /**
+     * The text of a written task: texts by field or question id.
+     *
+     * @param mixed $raw
+     * @param string $id
+     * @return array<string, string>|null Null when no text came.
+     */
+    private static function written_text(mixed $raw, string $id): ?array {
+        if ($raw === null || $raw === []) {
             return null;
         }
-        if (in_array($item['type'], exam::CHOICE_TYPES, true)) {
-            if (!is_string($response) || !in_array($response, array_column($item['options'], 'id'), true)) {
-                throw self::invalid($id . '.response');
-            }
-            return $response;
+        if (!is_array($raw)) {
+            throw self::invalid($id . '.text');
         }
-        if ($item['type'] === exam::MATCH_TYPE) {
-            $places = array_column($item['places'], 'id');
-            if (!is_array($response)) {
-                throw self::invalid($id . '.response');
+        $length = 0;
+        foreach ($raw as $value) {
+            if (!is_string($value)) {
+                throw self::invalid($id . '.text');
             }
-            $out = [];
-            foreach ($response as $clip => $place) {
-                if (!is_int($clip) && !(is_string($clip) && ctype_digit($clip))) {
-                    throw self::invalid($id . '.response');
-                }
-                if ($place === null || $place === '') {
-                    continue;
-                }
-                if ((int) $clip >= count($item['clips']) || !is_string($place) || !in_array($place, $places, true)) {
-                    throw self::invalid($id . '.response');
-                }
-                $out[(int) $clip] = $place;
-            }
-            ksort($out);
-            return $out === [] ? null : $out;
+            $length += \core_text::strlen($value);
         }
-        // Written: a text, or the answers by field or by question, shown one per line.
-        if (is_array($response)) {
-            $lines = [];
-            foreach ($response as $name => $value) {
-                if (!is_string($value) && !is_int($value) && !is_float($value)) {
-                    throw self::invalid($id . '.response');
-                }
-                $lines[] = (is_string($name) ? $name . ': ' : '') . $value;
-            }
-            $response = implode("\n", $lines);
+        if ($length > self::MAX_RESPONSE) {
+            throw self::invalid($id . '.text');
         }
-        if (!is_string($response) || \core_text::strlen($response) > exam::MAX_TEXT) {
-            throw self::invalid($id . '.response');
-        }
-        return $response;
+        return $raw;
     }
 
     /**

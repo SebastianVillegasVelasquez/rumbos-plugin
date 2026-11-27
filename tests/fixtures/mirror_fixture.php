@@ -17,186 +17,203 @@
 namespace format_rumbos;
 
 /**
- * A small exam definition and attempts shaped like the B2 form A of the Rumbos service.
+ * A made-up exam in the shape of the Rumbos service's statements, with every question type.
  *
- * This is a FIXTURE. The service has not published its export contract; the shape below follows the form files in the
- * service's content directory (sections with weights, items of type listen_choose, mcq, gap_choice, match_audio and
- * written_answers, a matching item that counts as five) and is not an agreement. When the contract exists, only the
- * adapter that reads it changes.
+ * The service's golden vectors (tests/fixtures/service_vectors) are the contract; their exam has only multiple choice
+ * questions. This one adds matching pairs and the written types, following the published schema
+ * (`definition-statement` and `attempt-statement` of the service). No real exam content is here.
  *
- * The expected percentages are computed here with integers, on purpose independently of the plugin's own scoring.
+ * It has the section weights and points of a real form: five sections of 25, 25, 20, 15 and 15 with 7, 3, 3, 5 and 5
+ * points, a matching item of five pairs and two written tasks of 0 to 5. The expected percentages are computed here
+ * with integers, on purpose independently of the plugin.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 final class mirror_fixture {
-    /** @var int[] Section weights of the fixture, in order: listening, reading, use of English, writing, speaking. */
+    /** @var string The form id. */
+    public const FORM = 'made-up-form';
+
+    /** @var string The title. */
+    public const TITLE = 'Made-up check-in';
+
+    /** @var int[] Section weights, in order: listening, reading, use of English, writing, speaking. */
     public const WEIGHTS = [25, 25, 20, 15, 15];
 
-    /** @var int[] Points available in each section: the matching item counts as 5, a written task is 0 to 5. */
+    /** @var int[] Points available in each section. */
     public const MAXIMA = [7, 3, 3, 5, 5];
 
     /** @var int The least common multiple of the section maxima, to count exactly in integers. */
     private const LCM = 105;
 
+    /** @var string[] The question ids, in order. */
+    public const QUESTIONS = [
+        'l-01', 'l-02', 'l-11:0', 'l-11:1', 'l-11:2', 'l-11:3', 'l-11:4', 'r-01', 'r-02', 'r-11', 'u-01', 'u-02', 'u-03',
+        'w-01', 's-02',
+    ];
+
     /**
-     * The definition. Section maxima 7, 3, 3, 5, 5; weights 25, 25, 20, 15, 15.
+     * The `definition` object.
      *
-     * @param string $version The content version (a hash in the service).
-     * @param string $formid The form id.
+     * @param string $title A different title is a different exam, and so another hash.
      * @return array
      */
-    public static function form(string $version = 'v1hash', string $formid = 'b2-form-a'): array {
+    public static function definition(string $title = self::TITLE): array {
+        $places = [
+            ['id' => 'chair', 'text' => 'a chaired meeting'], ['id' => 'theft', 'text' => 'a theft report'],
+            ['id' => 'briefing', 'text' => 'a briefing'], ['id' => 'talk', 'text' => 'a talk'],
+            ['id' => 'call', 'text' => 'a phone call'],
+        ];
+        $pairs = [];
+        foreach ($places as $clip => $place) {
+            $pairs[] = self::choice('l-11:' . $clip, 'Match each audio with its scene.', $place['id'], '25/7', 'match_pair', [
+                'item_id' => 'l-11', 'options' => $places, 'clip' => $clip + 1, 'audio_id' => 'audio-' . $clip,
+            ]);
+        }
         return [
-            'form_id' => $formid,
-            'content_version' => $version,
-            'title' => 'B2 check-in (fixture)',
+            'schema' => 1,
+            'form_id' => self::FORM,
             'purpose' => 'check_in',
+            'language' => 'en',
+            'level' => 'B2',
+            'title' => $title,
             'sections' => [
-                ['key' => 'listening', 'weight' => 25, 'items' => [
-                    self::choice('l-01', 'When is the delegation expected?', 'a', 'listen_choose', null, 'Around nine forty.'),
-                    self::choice('l-02', 'What does the client conclude?', 'b', 'listen_choose'),
-                    [
-                        'item_id' => 'l-11', 'type' => 'match_audio', 'prompt' => 'Match each audio with the scene.',
-                        'clips' => [
-                            ['transcript' => 'I am pleased to open this session.'],
-                            ['transcript' => 'I am reporting a theft.'],
-                            ['transcript' => 'It is highly probable that.'],
-                            ['transcript' => 'Visitors are instructed.'],
-                            ['transcript' => 'Under GDS rules.'],
-                        ],
-                        'places' => [
-                            ['id' => 'p0', 'text' => 'chaired negotiation'], ['id' => 'p1', 'text' => 'theft report'],
-                            ['id' => 'p2', 'text' => 'certainty briefing'], ['id' => 'p3', 'text' => 'symposium'],
-                            ['id' => 'p4', 'text' => 'compliance call'],
-                        ],
-                        'key' => [[0, 'p0'], [1, 'p1'], [2, 'p2'], [3, 'p3'], [4, 'p4']],
-                    ],
-                ]],
-                ['key' => 'reading', 'weight' => 25, 'items' => [
-                    self::choice('r-01', 'Notice: ACCOUNTS FLAGGED CANNOT BE REBOOKED', 'a'),
-                    self::choice('r-02', 'What would have happened without the complaint?', 'c'),
-                    self::choice('r-11', 'Gap (a):', 'a', 'gap_choice', 'Chair: I am pleased to (a)___ this meeting.'),
-                ]],
-                ['key' => 'use_of_english', 'weight' => 20, 'items' => [
-                    self::choice('u-01', 'Could you tell me ___ the delegation arrives?', 'a'),
-                    self::choice('u-02', 'If I ___ known, I would have called.', 'b'),
-                    self::choice('u-03', 'The fee ___ be waived.', 'c'),
-                ]],
-                ['key' => 'writing', 'weight' => 15, 'items' => [
-                    [
-                        'item_id' => 'w-01', 'type' => 'written_answers', 'prompt' => 'Write a formal complaint letter.',
-                        'max_points' => 5, 'rubric' => 'writing.complaint_letter',
-                    ],
-                ]],
-                ['key' => 'speaking', 'weight' => 15, 'delivery' => 'written_equivalent', 'items' => [
-                    [
-                        'item_id' => 's-02', 'type' => 'written_answers', 'prompt' => 'Chair a negotiation (written).',
-                        'max_points' => 5, 'rubric' => 'speaking.chair_negotiation_written',
-                    ],
-                ]],
+                self::section('listening', 25, 7, [
+                    self::part('listening-1', [
+                        self::choice('l-01', 'When is the visitor expected?', 'a', '25/7', 'listen_choose', [
+                            'audio_id' => 'audio-9',
+                        ]),
+                        self::choice('l-02', 'What does the speaker conclude?', 'b', '25/7', 'listen_choose'),
+                    ]),
+                    self::part('listening-2', $pairs),
+                ]),
+                self::section('reading', 25, 3, [
+                    self::part('reading-1', [
+                        self::choice('r-01', 'What does the notice ask for?', 'a', '25/3'),
+                        self::choice('r-02', 'What would have happened otherwise?', 'c', '25/3'),
+                    ], 'A made-up notice about a room.'),
+                    self::part('reading-2', [
+                        self::choice('r-11', 'Gap (a):', 'a', '25/3', 'gap_choice', ['gap_label' => '(a)']),
+                    ], 'Chair: I am pleased to (a)___ this meeting.'),
+                ]),
+                self::section('use_of_english', 20, 3, [
+                    self::part('use-1', [
+                        self::choice('u-01', 'Could you tell me ___ the train leaves?', 'a', '20/3'),
+                        self::choice('u-02', 'If I ___ known, I would have called.', 'b', '20/3'),
+                        self::choice('u-03', 'The fee ___ be waived.', 'c', '20/3'),
+                    ]),
+                ]),
+                self::section('writing', 15, 5, [
+                    self::part('writing-1', [
+                        self::written('w-01', 'written_answers', 'Write a short letter.', [
+                            'questions' => [['id' => 'q1', 'text' => 'Write your letter here.']],
+                        ]),
+                    ]),
+                ]),
+                self::section('speaking', 15, 5, [
+                    self::part('speaking-1', [
+                        self::written('s-02', 'form_fields', 'Open a meeting, in writing.', [
+                            'fields' => [['id' => 'f1', 'text' => 'Your opening'], ['id' => 'f2', 'text' => 'Your close']],
+                        ]),
+                    ]),
+                ], 'written_equivalent'),
             ],
         ];
     }
 
     /**
-     * One choice item with the options a, b and c.
+     * The hash that names a definition: SHA-256 of its JSON with sorted members, no spaces, nothing escaped that need
+     * not be. Written here on its own, and checked against the golden vector by the tests.
      *
-     * @param string $id
-     * @param string $prompt
-     * @param string $key The right option.
-     * @param string $type
-     * @param string|null $shared A passage shared with other items.
-     * @param string|null $transcript The audio's transcript.
+     * @param array $definition
+     * @return string
+     */
+    public static function hash(array $definition): string {
+        $sort = function ($value) use (&$sort) {
+            if (!is_array($value)) {
+                return $value;
+            }
+            if (!array_is_list($value)) {
+                ksort($value, SORT_STRING);
+            }
+            return array_map($sort, $value);
+        };
+        return hash('sha256', json_encode($sort($definition), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+            | JSON_UNESCAPED_LINE_TERMINATORS));
+    }
+
+    /**
+     * The claims an attempt statement has beyond the result claims, for an attempt that earned the points given.
+     *
+     * @param array<string, int> $points Question id => points earned; a question left out earned nothing.
+     * @param array|null $definition The exam; the fixture's by default.
+     * @param bool $text Whether the written answers' text travels.
      * @return array
      */
-    private static function choice(
-        string $id,
-        string $prompt,
-        string $key,
-        string $type = 'mcq',
-        ?string $shared = null,
-        ?string $transcript = null
-    ): array {
+    public static function record(array $points, ?array $definition = null, bool $text = true): array {
+        $definition ??= self::definition();
+        $answers = [];
+        $written = [];
+        $total = 0;
+        foreach ($definition['sections'] as $index => $section) {
+            foreach ($section['parts'] as $part) {
+                foreach ($part['questions'] as $question) {
+                    $id = $question['question_id'];
+                    $earned = $points[$id] ?? 0;
+                    $total += self::WEIGHTS[$index] * $earned * intdiv(self::LCM, self::MAXIMA[$index]);
+                    if (isset($question['written'])) {
+                        $boxes = array_merge($question['written']['questions'], $question['written']['fields']);
+                        $values = [];
+                        foreach ($boxes as $box) {
+                            $values[$box['id']] = 'The student wrote this for ' . $id . ' ' . $box['id'] . '.';
+                        }
+                        $written[] = ['question_id' => $id, 'points_exact' => (string) $earned, 'max_points' => 5,
+                            'text' => $text ? $values : null];
+                        continue;
+                    }
+                    $wrong = array_values(array_filter(
+                        array_column($question['options'], 'id'),
+                        fn($option) => $option !== $question['correct']
+                    ));
+                    $answers[] = ['question_id' => $id, 'answer' => $earned ? $question['correct'] : $wrong[0],
+                        'correct' => (bool) $earned, 'points_exact' => (string) $earned, 'max_points' => 1];
+                }
+            }
+        }
         return [
-            'item_id' => $id, 'type' => $type, 'prompt' => $prompt, 'shared' => $shared, 'transcript' => $transcript,
-            'key' => $key,
-            'options' => [['id' => 'a', 'text' => 'first'], ['id' => 'b', 'text' => 'second'], ['id' => 'c', 'text' => 'third']],
+            'schema' => 2,
+            'kind' => 'attempt',
+            'form_id' => $definition['form_id'],
+            'content_version' => '0123456789abcdef',
+            'status' => 'submitted',
+            'definition_hash' => self::hash($definition),
+            'percent_exact' => self::fraction($total, self::LCM),
+            'sections' => [],
+            'answers' => $answers,
+            'written' => $written,
+            'written_text_included' => $text,
+            'truncated' => false,
         ];
     }
 
     /**
-     * An attempt as the service would export it, answered so that it earns exactly the points given.
+     * Points per section (listening, reading, use of English, writing, speaking) as points per question. Listening
+     * points go to the matching pairs first.
      *
-     * @param array $form The definition ({@see self::form()}).
-     * @param string $attemptid The service's attempt id.
-     * @param array<string, int|float> $points Item id => points earned; an item that is left out earned nothing.
-     * @param string $percent The percent the service decided.
-     * @param bool $passed What the service decided.
-     * @return array
-     */
-    public static function attempt(array $form, string $attemptid, array $points, string $percent, bool $passed): array {
-        $items = [];
-        foreach ($form['sections'] as $section) {
-            foreach ($section['items'] as $item) {
-                $earned = $points[$item['item_id']] ?? 0;
-                $items[] = [
-                    'item_id' => $item['item_id'], 'points' => $earned, 'response' => self::response($item, $earned),
-                ];
-            }
-        }
-        return [
-            'attempt_id' => $attemptid, 'form_id' => $form['form_id'], 'content_version' => $form['content_version'],
-            'purpose' => $form['purpose'], 'preview' => false, 'started_at' => 1789999000, 'finished_at' => 1790000000,
-            'percent' => $percent, 'passed' => $passed, 'items' => $items,
-        ];
-    }
-
-    /**
-     * A response that earns the points given.
-     *
-     * @param array $item
-     * @param int|float $earned
-     * @return string|array
-     */
-    private static function response(array $item, int|float $earned): string|array {
-        if ($item['type'] === 'written_answers') {
-            return 'The student wrote this for ' . $item['item_id'] . '.';
-        }
-        if ($item['type'] === 'match_audio') {
-            $response = [];
-            $count = count($item['key']);
-            foreach ($item['key'] as [$clip, $place]) {
-                // The pairs after the first $earned are shifted by one, so each of them is wrong.
-                $response[$clip] = $clip < $earned ? $place : $item['key'][($clip + 1) % $count][1];
-            }
-            return $response;
-        }
-        foreach ($item['options'] as $option) {
-            if (($option['id'] === $item['key']) === ($earned >= 1)) {
-                return $option['id'];
-            }
-        }
-        return $item['options'][0]['id'];
-    }
-
-    /**
-     * Points per section (listening, reading, use of English, writing, speaking) as points per item.
-     *
-     * @param int[] $section Points earned in each section.
+     * @param int[] $section
      * @return array<string, int>
      */
-    public static function item_points(array $section): array {
+    public static function points(array $section): array {
         [$listening, $reading, $english, $writing, $speaking] = $section;
-        $pairs = min(5, $listening);
-        $rest = $listening - $pairs;
-        return [
-            'l-11' => $pairs, 'l-01' => $rest >= 1 ? 1 : 0, 'l-02' => $rest >= 2 ? 1 : 0,
-            'r-01' => $reading >= 1 ? 1 : 0, 'r-02' => $reading >= 2 ? 1 : 0, 'r-11' => $reading >= 3 ? 1 : 0,
-            'u-01' => $english >= 1 ? 1 : 0, 'u-02' => $english >= 2 ? 1 : 0, 'u-03' => $english >= 3 ? 1 : 0,
-            'w-01' => $writing, 's-02' => $speaking,
-        ];
+        $order = ['l-11:0', 'l-11:1', 'l-11:2', 'l-11:3', 'l-11:4', 'l-01', 'l-02'];
+        $points = [];
+        foreach ([[$order, $listening], [['r-01', 'r-02', 'r-11'], $reading], [['u-01', 'u-02', 'u-03'], $english]] as $set) {
+            foreach ($set[0] as $i => $id) {
+                $points[$id] = $i < $set[1] ? 1 : 0;
+            }
+        }
+        return $points + ['w-01' => $writing, 's-02' => $speaking];
     }
 
     /**
@@ -208,7 +225,7 @@ final class mirror_fixture {
     public static function total105(array $section): int {
         $total = 0;
         foreach ($section as $i => $points) {
-            $total += self::WEIGHTS[$i] * $points * (self::LCM / self::MAXIMA[$i]);
+            $total += self::WEIGHTS[$i] * $points * intdiv(self::LCM, self::MAXIMA[$i]);
         }
         return $total;
     }
@@ -225,7 +242,7 @@ final class mirror_fixture {
     }
 
     /**
-     * Section points that come to a given total, nearest below and above 80 percent, and exactly 80.
+     * Section points that come to a given total: the nearest below and above 80 percent, and exactly 80.
      *
      * @return array<string, int[]> Case name => section points.
      */
@@ -257,5 +274,97 @@ final class mirror_fixture {
             }
         }
         return ['below' => $below, 'at' => $at, 'above' => $above, 'zero' => [0, 0, 0, 0, 0], 'full' => [7, 3, 3, 5, 5]];
+    }
+
+    /**
+     * A fraction in its lowest terms, as the service writes one.
+     *
+     * @param int $numerator
+     * @param int $denominator
+     * @return string
+     */
+    private static function fraction(int $numerator, int $denominator): string {
+        [$a, $b] = [$numerator, $denominator];
+        while ($b !== 0) {
+            [$a, $b] = [$b, $a % $b];
+        }
+        $divisor = max($a, 1);
+        $bottom = intdiv($denominator, $divisor);
+        return intdiv($numerator, $divisor) . ($bottom === 1 ? '' : '/' . $bottom);
+    }
+
+    /**
+     * A section.
+     *
+     * @param string $key
+     * @param int $weight
+     * @param int $maximum
+     * @param array[] $parts
+     * @param string|null $delivery
+     * @return array
+     */
+    private static function section(string $key, int $weight, int $maximum, array $parts, ?string $delivery = null): array {
+        return ['key' => $key, 'title' => ucfirst($key), 'instructions' => null, 'weight' => $weight,
+            'delivery' => $delivery, 'max_points' => $maximum, 'parts' => $parts];
+    }
+
+    /**
+     * A part, with a passage its questions share when one is given.
+     *
+     * @param string $key
+     * @param array[] $questions
+     * @param string|null $passage
+     * @return array
+     */
+    private static function part(string $key, array $questions, ?string $passage = null): array {
+        $shared = $passage === null ? null
+            : ['kind' => 'passage', 'title' => 'Notice', 'text' => $passage, 'image_id' => null, 'alt_text' => null];
+        return ['part_key' => $key, 'title' => $key, 'instructions' => 'Read and answer.', 'shared' => $shared,
+            'questions' => $questions];
+    }
+
+    /**
+     * A question answered by choosing; its options are a, b and c unless others are given.
+     *
+     * @param string $id
+     * @param string $prompt
+     * @param string $correct
+     * @param string $weight
+     * @param string $type
+     * @param array $override
+     * @return array
+     */
+    private static function choice(
+        string $id,
+        string $prompt,
+        string $correct,
+        string $weight,
+        string $type = 'mcq',
+        array $override = []
+    ): array {
+        return $override + [
+            'question_id' => $id, 'item_id' => $id, 'type' => $type, 'prompt' => $prompt,
+            'options' => [['id' => 'a', 'text' => 'first'], ['id' => 'b', 'text' => 'second'], ['id' => 'c', 'text' => 'third']],
+            'correct' => $correct, 'audio_id' => null, 'gap_label' => null, 'max_points' => 1, 'weight_points' => $weight,
+            'weight_points_decimal' => number_format(\format_rumbos\local\mirror\exam::fraction($weight), 6, '.', ''),
+        ];
+    }
+
+    /**
+     * A written task, worth 5 points and 15 of the 100.
+     *
+     * @param string $id
+     * @param string $type
+     * @param string $prompt
+     * @param array $boxes `fields` or `questions`.
+     * @return array
+     */
+    private static function written(string $id, string $type, string $prompt, array $boxes): array {
+        return [
+            'question_id' => $id, 'item_id' => $id, 'type' => $type, 'prompt' => $prompt,
+            'written' => $boxes + ['fields' => [], 'questions' => [], 'template' => null, 'min_words' => 20,
+                'max_words' => 80, 'max_chars' => 600],
+            'max_points' => 5, 'weight_points' => '15', 'weight_points_decimal' => '15.000000',
+        ];
     }
 }

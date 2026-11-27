@@ -40,6 +40,7 @@ if (!mirror_config::is_enabled()) {
 
 $summary = new html_table();
 $summary->data = [
+    [get_string('mirrorstatus_definitions', 'format_rumbos'), $counts['definitions']],
     [get_string('mirrorstatus_quizzes', 'format_rumbos'), $counts['quizzes']],
     [get_string('mirrorstatus_attempts', 'format_rumbos'), $counts['attempts']],
     [get_string('mirrorstatus_diverged', 'format_rumbos'), $counts['diverged']],

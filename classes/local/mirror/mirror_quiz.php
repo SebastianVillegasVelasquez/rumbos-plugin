@@ -23,7 +23,7 @@ use mod_quiz\quiz_settings;
  *
  * The rules that make the mirror safe are all here:
  *
- * - **One quiz per version.** A new content version of a form gets a new quiz with its own questions. Moodle does not
+ * - **One quiz per version.** A new definition hash of a form gets a new quiz with its own questions. Moodle does not
  *   let questions change under existing attempts, so an old attempt keeps the questions it was taken on.
  * - **Pinned questions.** Every slot is pinned to the version of the question that was made, so a teacher who edits
  *   the question in the bank cannot change the quiz or its statistics.
@@ -149,12 +149,12 @@ class mirror_quiz {
         $made = [];
         service_identity::run(function () use ($exam, $category, $quizrecord, $mirrorid, &$made) {
             $slot = 0;
-            foreach ($exam->items() as ['section' => $section, 'item' => $item]) {
-                $question = mirror_questions::save($section, $item, $category);
-                $maxmark = exam::maxmark($section, $item);
+            foreach ($exam->questions as $item) {
+                $question = mirror_questions::save($item, $category);
+                $maxmark = exam::maxmark($item);
                 quiz_add_quiz_question($question->id, $quizrecord, 0, $maxmark);
                 $slot++;
-                $made[] = [$item['item_id'], $slot, (int) $question->id, $maxmark, exam::units($item)];
+                $made[] = [$item['id'], $slot, (int) $question->id, $maxmark, $item['max_points']];
             }
         });
 

@@ -17,11 +17,12 @@
 namespace format_rumbos\local\mirror;
 
 /**
- * Makes the Moodle question of an exam item.
+ * Makes the Moodle question of one question of the exam.
  *
- * The mapping, and what each type loses, is in docs/NATIVE-QUIZ-MIRROR.md. The questions are made with the same call
- * the import formats use (`qtype::save_question()`), so they are ordinary questions that a teacher can read in the
- * question bank.
+ * The mapping, and what each type loses, is in docs/NATIVE-QUIZ-MIRROR.md. A choice question, including one pair of a
+ * matching item, is a single choice question with the options in the exam's order; a written task is an essay. The
+ * questions are made with the same call the import formats use (`qtype::save_question()`), so they are ordinary
+ * questions that a teacher can read in the question bank.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
@@ -29,65 +30,85 @@ namespace format_rumbos\local\mirror;
  */
 class mirror_questions {
     /**
-     * Saves the question of an item in a category.
+     * Saves a question of an exam in a category.
      *
-     * @param array $section The section of the exam the item is in.
-     * @param array $item The validated item.
+     * @param array $question The validated question ({@see exam::$questions}).
      * @param \stdClass $category The question category (a row of `question_categories`).
      * @return \stdClass The saved question.
      */
-    public static function save(array $section, array $item, \stdClass $category): \stdClass {
-        $maxmark = exam::maxmark($section, $item);
+    public static function save(array $question, \stdClass $category): \stdClass {
         $form = new \stdClass();
         $form->category = $category->id . ',' . $category->contextid;
         $form->contextid = $category->contextid;
-        $form->name = \core_text::substr($section['key'] . ' / ' . $item['item_id'], 0, 255);
-        $form->idnumber = $item['item_id'];
-        $form->questiontext = ['text' => self::text($item), 'format' => FORMAT_HTML];
+        $form->name = \core_text::substr($question['section'] . ' / ' . $question['id'], 0, 255);
+        $form->idnumber = $question['id'];
+        $form->questiontext = ['text' => self::text($question), 'format' => FORMAT_HTML];
         $form->generalfeedback = ['text' => '', 'format' => FORMAT_HTML];
-        $form->defaultmark = $maxmark;
+        $form->defaultmark = exam::maxmark($question);
         $form->penalty = 0;
         $form->status = \core_question\local\bank\question_version_status::QUESTION_STATUS_READY;
 
-        $qtype = match (true) {
-            $item['type'] === exam::MATCH_TYPE => self::match($form, $item),
-            in_array($item['type'], exam::WRITTEN_TYPES, true) => self::essay($form, $item),
-            default => self::multichoice($form, $item),
-        };
+        $qtype = exam::is_written($question) ? self::essay($form) : self::multichoice($form, $question);
         return \question_bank::get_qtype($qtype)->save_question($form, clone $form);
     }
 
     /**
-     * The text a student would have read: the shared passage, the audio's transcript (the audio is not mirrored), the
-     * prompt and, for a task with a template, the template.
+     * What the student read: the part's instructions, what its questions share, the prompt, which audio of a matching
+     * item this is, and for a written task its questions, fields and template. The audio and images are not mirrored;
+     * their ids are named so that a teacher can find them.
      *
-     * @param array $item
+     * @param array $question
      * @return string HTML.
      */
-    private static function text(array $item): string {
-        $html = '';
-        if ($item['shared'] !== null) {
-            $html .= '<blockquote>' . nl2br(s($item['shared']), false) . '</blockquote>';
+    private static function text(array $question): string {
+        $paragraph = fn(string $text): string => '<p>' . nl2br(s($text), false) . '</p>';
+        $html = $question['instructions'] === null ? '' : $paragraph($question['instructions']);
+
+        $shared = $question['shared'];
+        if ($shared !== null) {
+            $lines = array_filter([$shared['title'], $shared['text'], $shared['alt_text']]);
+            if ($lines !== []) {
+                $html .= '<blockquote>' . implode('', array_map($paragraph, $lines)) . '</blockquote>';
+            }
+            if ($shared['image_id'] !== null) {
+                $html .= $paragraph(get_string('mirrorimage', 'format_rumbos', $shared['image_id']));
+            }
         }
-        if ($item['transcript'] !== null) {
-            $html .= '<p><em>' . get_string('mirrortranscript', 'format_rumbos') . '</em> '
-                . nl2br(s($item['transcript']), false) . '</p>';
+        if ($question['audio_id'] !== null) {
+            $html .= $paragraph(get_string('mirroraudio', 'format_rumbos', $question['audio_id']));
         }
-        $html .= '<p>' . nl2br(s($item['prompt']), false) . '</p>';
-        if (($item['template'] ?? null) !== null) {
-            $html .= '<p>' . nl2br(s($item['template']), false) . '</p>';
+        if ($question['prompt'] !== '') {
+            $html .= $paragraph($question['prompt']);
         }
-        return $html;
+        if ($question['clip'] !== null) {
+            $html .= $paragraph(get_string('mirrorclip', 'format_rumbos', $question['clip']));
+        }
+        if ($question['gap_label'] !== null) {
+            $html .= $paragraph($question['gap_label']);
+        }
+
+        $written = $question['written'] ?? null;
+        if ($written !== null) {
+            foreach (['questions', 'fields'] as $list) {
+                foreach ($written[$list] as $label) {
+                    $html .= $paragraph($label);
+                }
+            }
+            if ($written['template'] !== null) {
+                $html .= $paragraph($written['template']);
+            }
+        }
+        return $html === '' ? $paragraph($question['id']) : $html;
     }
 
     /**
      * A single choice question, with the answers in the order of the exam.
      *
      * @param \stdClass $form The form data to complete.
-     * @param array $item
+     * @param array $question
      * @return string The question type.
      */
-    private static function multichoice(\stdClass $form, array $item): string {
+    private static function multichoice(\stdClass $form, array $question): string {
         $form->qtype = 'multichoice';
         $form->single = 1;
         $form->shuffleanswers = 0;
@@ -96,9 +117,9 @@ class mirror_questions {
         $form->answer = [];
         $form->fraction = [];
         $form->feedback = [];
-        foreach ($item['options'] as $option) {
+        foreach ($question['options'] as $option) {
             $form->answer[] = ['text' => s($option['text']), 'format' => FORMAT_HTML];
-            $form->fraction[] = $option['id'] === $item['key'] ? 1.0 : 0.0;
+            $form->fraction[] = $option['id'] === $question['correct'] ? 1.0 : 0.0;
             $form->feedback[] = ['text' => '', 'format' => FORMAT_HTML];
         }
         self::combined_feedback($form);
@@ -106,43 +127,12 @@ class mirror_questions {
     }
 
     /**
-     * A matching question: each clip's transcript is a stem and each place a choice. A place that no clip belongs to
-     * is a choice with no stem, which Moodle allows.
+     * A written task: free text, graded by hand. The mark is the service's; its rubric never reaches Moodle.
      *
      * @param \stdClass $form The form data to complete.
-     * @param array $item
      * @return string The question type.
      */
-    private static function match(\stdClass $form, array $item): string {
-        $form->qtype = 'match';
-        $form->shuffleanswers = 0;
-        $form->subquestions = [];
-        $form->subanswers = [];
-        $places = array_column($item['places'], 'text', 'id');
-        $used = [];
-        foreach ($item['clips'] as $index => $transcript) {
-            $form->subquestions[] = ['text' => s($transcript), 'format' => FORMAT_HTML];
-            $form->subanswers[] = $places[$item['key'][$index]];
-            $used[$item['key'][$index]] = true;
-        }
-        foreach ($places as $id => $text) {
-            if (!isset($used[(string) $id])) {
-                $form->subquestions[] = ['text' => '', 'format' => FORMAT_HTML];
-                $form->subanswers[] = $text;
-            }
-        }
-        self::combined_feedback($form);
-        return 'match';
-    }
-
-    /**
-     * A written task: free text, graded by hand. The service's rubric is named in the information for graders.
-     *
-     * @param \stdClass $form The form data to complete.
-     * @param array $item
-     * @return string The question type.
-     */
-    private static function essay(\stdClass $form, array $item): string {
+    private static function essay(\stdClass $form): string {
         $form->qtype = 'essay';
         $form->responseformat = 'plain';
         $form->responserequired = 1;
@@ -156,10 +146,7 @@ class mirror_questions {
         $form->minwordenabled = 0;
         $form->maxwordenabled = 0;
         $form->graderinfo = [
-            'text' => '<p>' . s(get_string('mirrorrubric', 'format_rumbos', (object) [
-                'rubric' => $item['rubric'],
-                'max' => format_float($item['max_points'], -1),
-            ])) . '</p>',
+            'text' => '<p>' . s(get_string('mirrorgraderinfo', 'format_rumbos')) . '</p>',
             'format' => FORMAT_HTML,
         ];
         $form->responsetemplate = ['text' => '', 'format' => FORMAT_HTML];

@@ -17,14 +17,16 @@
 namespace format_rumbos\local\mirror;
 
 use format_rumbos\local\result_rejection;
+use format_rumbos\local\result_statement;
 use format_rumbos\mirror_fixture;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/../../fixtures/result_testcase.php');
 require_once(__DIR__ . '/../../fixtures/mirror_fixture.php');
 
 /**
- * Tests for the exam definition and the attempt of the native quiz mirror.
+ * Tests for how the mirror reads the service's exam definitions and attempt records, starting from its golden vectors.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
@@ -32,315 +34,230 @@ require_once(__DIR__ . '/../../fixtures/mirror_fixture.php');
  */
 #[\PHPUnit\Framework\Attributes\CoversClass(exam::class)]
 #[\PHPUnit\Framework\Attributes\CoversClass(attempt_data::class)]
-final class exam_test extends \advanced_testcase {
+final class exam_test extends \format_rumbos\result_testcase {
     /**
-     * Asserts that a callback is refused as unprocessable with a reason that starts as given.
+     * The claims of a vector, as an associative array.
      *
-     * @param callable $callback
-     * @param string $reason The reason with its detail.
+     * @param string $name
+     * @return array
      */
-    private function assert_refused(callable $callback, string $reason): void {
-        try {
-            $callback();
-            $this->fail('Nothing was refused, expected ' . $reason);
-        } catch (result_rejection $rejection) {
-            $this->assertSame(422, $rejection->status);
-            $this->assertSame($reason, $rejection->reason);
-        }
+    private function vector_claims(string $name): array {
+        return json_decode($this->vector_file($name . '.json'), true)['claims'];
     }
 
     /**
-     * Builds a definition and changes it.
+     * The result claims of the attempt vector, as the receiver would normalise them. The vector's `sub` is not one a
+     * launch can carry, so only that claim is replaced.
      *
-     * @param callable $change Receives the definition by reference.
-     * @return callable
+     * @return array [the claims object, the normalised result claims]
      */
-    private static function changed_form(callable $change): callable {
-        return function () use ($change): array {
-            $data = mirror_fixture::form();
-            $change($data);
-            return $data;
-        };
+    private function attempt_vector(): array {
+        $claims = $this->vector('attempt')->claims;
+        $claims->sub = str_repeat('a', 32);
+        return [$claims, result_statement::normalise_service($claims, $claims->iat + 1)];
     }
 
     /**
-     * Builds an attempt of 6/1/3/5/5 points and changes it.
-     *
-     * @param callable $change Receives the attempt by reference.
-     * @return callable
+     * The service's definition vector is read as it is: every question, in order, worth its exact share of 100.
      */
-    private static function changed_attempt(callable $change): callable {
-        return function () use ($change): array {
-            $points = mirror_fixture::item_points([6, 1, 3, 5, 5]);
-            $data = mirror_fixture::attempt(mirror_fixture::form(), 'att-1', $points, '79.76', false);
-            $change($data);
-            return $data;
-        };
-    }
+    public function test_the_definition_vector(): void {
+        $claims = $this->vector_claims('definition');
 
-    /**
-     * The fixture is accepted and keeps what the mirror needs.
-     */
-    public function test_a_valid_definition_is_accepted(): void {
-        $exam = exam::from_array(mirror_fixture::form());
+        $exam = exam::from_definition($claims['definition'], $claims['definition_hash']);
 
-        $this->assertSame('b2-form-a', $exam->formid);
-        $this->assertSame('v1hash', $exam->version);
+        $this->assertSame('synthetic', $exam->formid);
+        $this->assertSame($claims['definition_hash'], $exam->version);
         $this->assertSame('check_in', $exam->purpose);
-        $this->assertCount(5, $exam->sections);
-        $this->assertCount(11, iterator_to_array($exam->items(), false));
+        $this->assertCount(20, $exam->questions);
+        $this->assertSame('listening.q0', $exam->questions[0]['id']);
+        $this->assertEqualsWithDelta(4.9, $exam->questions[0]['weight'], 0.0000001);
+        $this->assertEqualsWithDelta(100.0, array_sum(array_map([exam::class, 'maxmark'], $exam->questions)), 0.00001);
     }
 
     /**
-     * Points are the service's: a matching item is one per pair, a written task its rubric maximum, the rest one.
+     * The hash the fixture computes with its own code is the vector's, so the fixture names exams as the service does.
      */
-    public function test_units_follow_the_services_scoring(): void {
-        $exam = exam::from_array(mirror_fixture::form());
+    public function test_the_fixtures_hash_is_the_services(): void {
+        $claims = $this->vector_claims('definition');
 
-        $this->assertSame(5, exam::units($exam->item('l-11')));
-        $this->assertSame(1, exam::units($exam->item('l-01')));
-        $this->assertSame(5, exam::units($exam->item('w-01')));
-        $this->assertSame(mirror_fixture::MAXIMA, array_map([exam::class, 'section_units'], $exam->sections));
+        $this->assertSame($claims['definition_hash'], mirror_fixture::hash($claims['definition']));
     }
 
     /**
-     * The marks of the items add up to 100, so a Moodle total reads as a percentage, within Moodle's own precision.
+     * The attempt vector fits the definition vector, and its marks add up to its exact percent from the definition's
+     * weights alone.
      */
-    public function test_the_marks_of_the_items_add_up_to_one_hundred(): void {
-        $exam = exam::from_array(mirror_fixture::form());
+    public function test_the_attempt_vector_against_the_definition_vector(): void {
+        $definition = $this->vector_claims('definition');
+        $exam = exam::from_definition($definition['definition'], $definition['definition_hash']);
+        [$claims, $result] = $this->attempt_vector();
+
+        $attempt = attempt_data::from_claims($claims, $result);
+        $attempt->check_against($exam);
+
+        $this->assertSame($claims->jti, $attempt->attemptid);
+        $this->assertSame('80.20', $attempt->percent);
+        $this->assertEqualsWithDelta(80.2, $attempt->exact, 0.0000001);
+        $this->assertTrue($attempt->passed);
         $total = 0.0;
-        foreach ($exam->items() as ['section' => $section, 'item' => $item]) {
-            $total += exam::maxmark($section, $item);
+        foreach ($exam->questions as $question) {
+            $entry = $attempt->entries[$question['id']];
+            $total += $question['weight'] * $entry['points'] / $entry['max_points'];
         }
-
-        $this->assertEqualsWithDelta(100.0, $total, 0.00001);
-        $listening = $exam->sections[0];
-        $this->assertSame(3.5714286, exam::maxmark($listening, $listening['items'][0]));
-        $this->assertSame(17.8571429, exam::maxmark($listening, $listening['items'][2]));
+        $this->assertEqualsWithDelta($attempt->exact, $total, 0.0000001);
     }
 
     /**
-     * The percent computed from the points equals the service's rule for every combination of section points of the
-     * fixture, which includes values just below, at and just above 80, where a half-up rounding could drift.
+     * Every question type the service's schema names is read: pairs of a matching item are choices among the places,
+     * and the written types keep their boxes.
      */
-    public function test_the_percent_is_the_services_for_every_combination(): void {
-        $exam = exam::from_array(mirror_fixture::form());
-        $checked = 0;
-        for ($a = 0; $a <= 7; $a++) {
-            for ($b = 0; $b <= 3; $b++) {
-                for ($c = 0; $c <= 3; $c++) {
-                    for ($d = 0; $d <= 5; $d++) {
-                        for ($e = 0; $e <= 5; $e++) {
-                            $section = [$a, $b, $c, $d, $e];
-                            $this->assertSame(
-                                mirror_fixture::display(mirror_fixture::total105($section)),
-                                $exam->percent(mirror_fixture::item_points($section)),
-                                implode('/', $section)
-                            );
-                            $checked++;
-                        }
-                    }
-                }
+    public function test_every_question_type(): void {
+        $definition = mirror_fixture::definition();
+
+        $exam = exam::from_definition($definition, mirror_fixture::hash($definition));
+
+        $this->assertSame(mirror_fixture::QUESTIONS, array_column($exam->questions, 'id'));
+        $pair = $exam->question_by_id('l-11:3');
+        $this->assertSame(['match_pair', 'l-11', 4, 'talk'], [$pair['type'], $pair['item_id'], $pair['clip'], $pair['correct']]);
+        $this->assertCount(5, $pair['options']);
+        $this->assertSame(['f1' => 'Your opening', 'f2' => 'Your close'], $exam->question_by_id('s-02')['written']['fields']);
+        $this->assertTrue(exam::is_written($exam->question_by_id('w-01')));
+        $this->assertNull($exam->question_by_id('x-01'));
+    }
+
+    /**
+     * The service's matching places and options may repeat a text: Moodle's single choice holds them by position.
+     */
+    public function test_two_options_may_share_a_text(): void {
+        $definition = mirror_fixture::definition();
+        $definition['sections'][1]['parts'][0]['questions'][0]['options'][1]['text'] = 'first';
+
+        $exam = exam::from_definition($definition, mirror_fixture::hash($definition));
+
+        $this->assertCount(3, $exam->question_by_id('r-01')['options']);
+    }
+
+    /**
+     * What is not the shape of the schema is refused, and says where.
+     *
+     * @param array $path Keys down to the value to change.
+     * @param mixed $value The new value.
+     * @param string $where
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalid_definition_provider')]
+    public function test_an_invalid_definition_is_refused(array $path, mixed $value, string $where): void {
+        $definition = mirror_fixture::definition();
+        $target = &$definition;
+        foreach ($path as $key) {
+            $target = &$target[$key];
+        }
+        $target = $value;
+        unset($target);
+
+        try {
+            exam::from_definition($definition, str_repeat('a', 64));
+            $this->fail('accepted');
+        } catch (result_rejection $rejection) {
+            $this->assertSame([422, 'invalid_definition:' . $where], [$rejection->status, $rejection->reason]);
+        }
+    }
+
+    /**
+     * Cases of invalid definitions.
+     *
+     * @return array
+     */
+    public static function invalid_definition_provider(): array {
+        $question = ['sections', 0, 'parts', 0, 'questions', 0];
+        return [
+            'another schema' => [['schema'], 2, 'schema'],
+            'no title' => [['title'], '', 'title'],
+            'unknown purpose' => [['purpose'], 'practice', 'purpose'],
+            'no sections' => [['sections'], [], 'sections'],
+            'unknown type' => [[...$question, 'type'], 'drawing', 'l-01.type'],
+            'the key is no option' => [[...$question, 'correct'], 'z', 'l-01.correct'],
+            'one option' => [[...$question, 'options'], [['id' => 'a', 'text' => 'only']], 'l-01.correct'],
+            'a decimal weight' => [[...$question, 'weight_points'], '3.57', 'l-01.weight_points'],
+            'weights that do not make 100' => [[...$question, 'weight_points'], '4', 'weights'],
+            'no points' => [[...$question, 'max_points'], 0, 'l-01.max_points'],
+            'a repeated question' => [[...$question, 'question_id'], 'l-02', 'question_id.duplicate'],
+            'a bad id' => [[...$question, 'question_id'], 'a b', 'question_id'],
+        ];
+    }
+
+    /**
+     * A hash that is not one is refused.
+     */
+    public function test_a_definition_needs_its_hash(): void {
+        $this->expectExceptionObject(new result_rejection(422, 'invalid_definition:definition_hash'));
+
+        exam::from_definition(mirror_fixture::definition(), 'v1hash');
+    }
+
+    /**
+     * Fractions as the service writes them.
+     */
+    public function test_fractions(): void {
+        $this->assertSame(2.0, (float) exam::fraction('2'));
+        $this->assertEqualsWithDelta(5 / 3, exam::fraction('5/3'), 0.0000000001);
+        foreach (['', '1.5', '-1', '1/0', '1/', '/2', ' 1', 1, null] as $value) {
+            $this->assertNull(exam::fraction($value), var_export($value, true));
+        }
+    }
+
+    /**
+     * What is not the shape of an attempt record is refused.
+     *
+     * @param \Closure $change Changes the record.
+     * @param string $where
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalid_attempt_provider')]
+    public function test_an_invalid_attempt_is_refused(\Closure $change, string $where): void {
+        $definition = mirror_fixture::definition();
+        $exam = exam::from_definition($definition, mirror_fixture::hash($definition));
+        $record = $change(mirror_fixture::record(mirror_fixture::points([7, 3, 3, 5, 5])));
+
+        try {
+            attempt_data::from_claims(json_decode(json_encode($record)), [
+                'attempt_id' => 'att-1', 'purpose' => 'check_in', 'finished_at' => 1000, 'passed' => true,
+                'percent' => '100.00',
+            ])->check_against($exam);
+            $this->fail('accepted');
+        } catch (result_rejection $rejection) {
+            $this->assertSame([422, 'invalid_attempt:' . $where], [$rejection->status, $rejection->reason]);
+        }
+    }
+
+    /**
+     * Cases of invalid attempt records. The first answer is l-01's, the first written entry w-01's.
+     *
+     * @return array
+     */
+    public static function invalid_attempt_provider(): array {
+        $with = fn(array $path, mixed $value): \Closure => function (array $record) use ($path, $value): array {
+            $target = &$record;
+            foreach ($path as $key) {
+                $target = &$target[$key];
             }
-        }
-        $this->assertSame(4608, $checked);
-    }
-
-    /**
-     * Definitions that are not valid, by what is wrong with them.
-     *
-     * @return array
-     */
-    public static function invalid_definitions(): array {
+            $target = $value;
+            return $record;
+        };
         return [
-            'weights do not make 100' => [self::changed_form(function (&$d) {
-                $d['sections'][0]['weight'] = 24;
-            }), 'invalid_definition:weights'],
-            'a weight that is not a whole number' => [self::changed_form(function (&$d) {
-                $d['sections'][0]['weight'] = '25';
-            }), 'invalid_definition:section.weight'],
-            'a repeated item id' => [self::changed_form(function (&$d) {
-                $d['sections'][1]['items'][0]['item_id'] = 'l-01';
-            }), 'invalid_definition:item_id.duplicate'],
-            'an item type that cannot be mirrored' => [self::changed_form(function (&$d) {
-                $d['sections'][1]['items'][0]['type'] = 'drag_drop';
-            }), 'invalid_definition:r-01.type'],
-            'a key that is not an option' => [self::changed_form(function (&$d) {
-                $d['sections'][1]['items'][0]['key'] = 'z';
-            }), 'invalid_definition:r-01.key'],
-            'one option only' => [self::changed_form(function (&$d) {
-                $d['sections'][1]['items'][0]['options'] = [['id' => 'a', 'text' => 'only']];
-            }), 'invalid_definition:r-01.options'],
-            'a repeated option id' => [self::changed_form(function (&$d) {
-                $d['sections'][1]['items'][0]['options'][1]['id'] = 'a';
-            }), 'invalid_definition:r-01.options'],
-            'two options with the same text' => [self::changed_form(function (&$d) {
-                $d['sections'][1]['items'][0]['options'][1]['text'] = 'first';
-            }), 'invalid_definition:r-01.options'],
-            'two places with the same text' => [self::changed_form(function (&$d) {
-                $d['sections'][0]['items'][2]['places'][1]['text'] = 'chaired negotiation';
-            }), 'invalid_definition:l-11.places'],
-            'a matching key that repeats a clip' => [self::changed_form(function (&$d) {
-                $d['sections'][0]['items'][2]['key'][4] = [3, 'p4'];
-            }), 'invalid_definition:l-11.key'],
-            'a matching key with a place that does not exist' => [self::changed_form(function (&$d) {
-                $d['sections'][0]['items'][2]['key'][0] = [0, 'nowhere'];
-            }), 'invalid_definition:l-11.key'],
-            'a written task without a maximum' => [self::changed_form(function (&$d) {
-                unset($d['sections'][3]['items'][0]['max_points']);
-            }), 'invalid_definition:w-01.max_points'],
-            'an identifier with a space' => [self::changed_form(function (&$d) {
-                $d['form_id'] = 'b2 form';
-            }), 'invalid_definition:form_id'],
-            'no sections' => [self::changed_form(function (&$d) {
-                $d['sections'] = [];
-            }), 'invalid_definition:sections'],
-            'a purpose that does not exist' => [self::changed_form(function (&$d) {
-                $d['purpose'] = 'practice';
-            }), 'invalid_definition:purpose'],
-            'a title that is too long' => [self::changed_form(function (&$d) {
-                $d['title'] = str_repeat('x', 256);
-            }), 'invalid_definition:title'],
+            'unknown status' => [$with(['status'], 'voided'), 'status'],
+            'a decimal exact percent' => [$with(['percent_exact'], '100.0'), 'percent_exact'],
+            'more than 100' => [$with(['percent_exact'], '101'), 'percent_exact'],
+            'no answers list' => [$with(['answers'], null), 'answers'],
+            'more points than the question has' => [$with(['answers', 0, 'points_exact'], '2'), 'l-01.points'],
+            'an option the question does not have' => [$with(['answers', 0, 'answer'], 'z'), 'l-01.answer'],
+            'an unknown question' => [$with(['answers', 0, 'question_id'], 'x-01'), 'question.unknown'],
+            'another maximum' => [$with(['written', 0, 'max_points'], 6), 'w-01.type'],
+            'text although none travelled' => [$with(['written_text_included'], false), 'w-01.text'],
+            'text that is not texts' => [$with(['written', 0, 'text'], ['q1' => 3]), 'w-01.text'],
+            'a missing question' => [function (array $record): array {
+                array_pop($record['answers']);
+                return $record;
+            }, 'u-03.missing'],
+            'another form' => [$with(['form_id'], 'other'), 'exam'],
         ];
-    }
-
-    /**
-     * Every kind of invalid definition is refused as unprocessable, naming the part.
-     *
-     * @param callable $build Builds the definition.
-     * @param string $reason The expected reason.
-     */
-    #[\PHPUnit\Framework\Attributes\DataProvider('invalid_definitions')]
-    public function test_an_invalid_definition_is_refused(callable $build, string $reason): void {
-        $this->assert_refused(fn() => exam::from_array($build()), $reason);
-    }
-
-    /**
-     * A well formed attempt is read, resolved against its exam and every item of the exam is there.
-     */
-    public function test_an_attempt_is_resolved_against_its_exam(): void {
-        $form = mirror_fixture::form();
-        $exam = exam::from_array($form);
-        $points = mirror_fixture::item_points([6, 1, 3, 5, 5]);
-        $data = mirror_fixture::attempt($form, 'att-1', $points, '79.76', false);
-        // The service reports only some items; the others are unanswered.
-        $data['items'] = array_values(array_filter($data['items'], fn($i) => $i['item_id'] !== 'u-03'));
-
-        $attempt = attempt_data::from_array($data);
-        $resolved = $attempt->resolve($exam);
-
-        $this->assertSame('att-1', $attempt->attemptid);
-        $this->assertFalse($attempt->passed);
-        $this->assertSame('79.76', $attempt->percent);
-        $this->assertCount(11, $resolved);
-        $this->assertSame(0, $resolved['u-03']['points']);
-        $this->assertNull($resolved['u-03']['response']);
-        $this->assertSame(5, $resolved['l-11']['points']);
-        $this->assertSame([0 => 'p0', 1 => 'p1', 2 => 'p2', 3 => 'p3', 4 => 'p4'], $resolved['l-11']['response']);
-        $this->assertSame('a', $resolved['r-01']['response']);
-    }
-
-    /**
-     * A preview is never mirrored, however the flag is missing or written.
-     */
-    public function test_a_preview_is_refused(): void {
-        $data = mirror_fixture::attempt(mirror_fixture::form(), 'att-1', [], '0.00', false);
-        foreach ([true, 'false', 0, null] as $value) {
-            $data['preview'] = $value;
-            $this->assert_refused(fn() => attempt_data::from_array($data), 'preview_not_accepted');
-        }
-        unset($data['preview']);
-        $this->assert_refused(fn() => attempt_data::from_array($data), 'preview_not_accepted');
-    }
-
-    /**
-     * Attempts that are not valid, by what is wrong with them.
-     *
-     * @return array
-     */
-    public static function invalid_attempts(): array {
-        return [
-            'a percent with one decimal' => [self::changed_attempt(function (&$d) {
-                $d['percent'] = '79.8';
-            }), 'invalid_attempt:percent'],
-            'a percent that is a number' => [self::changed_attempt(function (&$d) {
-                $d['percent'] = 79.76;
-            }), 'invalid_attempt:percent'],
-            'passed that is not a boolean' => [self::changed_attempt(function (&$d) {
-                $d['passed'] = 'false';
-            }), 'invalid_attempt:passed'],
-            'no finish time' => [self::changed_attempt(function (&$d) {
-                unset($d['finished_at']);
-            }), 'invalid_attempt:time'],
-            'an attempt id with a slash' => [self::changed_attempt(function (&$d) {
-                $d['attempt_id'] = 'a/b';
-            }), 'invalid_attempt:attempt_id'],
-            'points that are text' => [self::changed_attempt(function (&$d) {
-                $d['items'][0]['points'] = '1';
-            }), 'invalid_attempt:l-01.points'],
-            'negative points' => [self::changed_attempt(function (&$d) {
-                $d['items'][0]['points'] = -1;
-            }), 'invalid_attempt:l-01.points'],
-            'the same item twice' => [self::changed_attempt(function (&$d) {
-                $d['items'][1]['item_id'] = 'l-01';
-            }), 'invalid_attempt:l-01.points'],
-        ];
-    }
-
-    /**
-     * Every kind of invalid attempt is refused as unprocessable, naming the part.
-     *
-     * @param callable $build Builds the attempt.
-     * @param string $reason The expected reason.
-     */
-    #[\PHPUnit\Framework\Attributes\DataProvider('invalid_attempts')]
-    public function test_an_invalid_attempt_is_refused(callable $build, string $reason): void {
-        $this->assert_refused(fn() => attempt_data::from_array($build()), $reason);
-    }
-
-    /**
-     * Attempts that read well but do not fit their exam.
-     *
-     * @return array
-     */
-    public static function attempts_that_do_not_fit(): array {
-        return [
-            'another version' => [self::changed_attempt(function (&$d) {
-                $d['content_version'] = 'v2hash';
-            }), 'invalid_attempt:exam'],
-            'another purpose' => [self::changed_attempt(function (&$d) {
-                $d['purpose'] = 'final';
-            }), 'invalid_attempt:exam'],
-            'an item the exam does not have' => [self::changed_attempt(function (&$d) {
-                $d['items'][] = ['item_id' => 'x-99', 'points' => 1, 'response' => 'a'];
-            }), 'invalid_attempt:x-99.unknown'],
-            'more points than the item is worth' => [self::changed_attempt(function (&$d) {
-                $d['items'][2]['points'] = 6;
-            }), 'invalid_attempt:l-11.points'],
-            'half a point on a choice item' => [self::changed_attempt(function (&$d) {
-                $d['items'][0]['points'] = 0.5;
-            }), 'invalid_attempt:l-01.points'],
-            'an option that does not exist' => [self::changed_attempt(function (&$d) {
-                $d['items'][0]['response'] = 'z';
-            }), 'invalid_attempt:l-01.response'],
-            'a matching answer with a place that does not exist' => [self::changed_attempt(function (&$d) {
-                $d['items'][2]['response'] = [0 => 'nowhere'];
-            }), 'invalid_attempt:l-11.response'],
-            'a matching answer for a clip that does not exist' => [self::changed_attempt(function (&$d) {
-                $d['items'][2]['response'] = [9 => 'p0'];
-            }), 'invalid_attempt:l-11.response'],
-        ];
-    }
-
-    /**
-     * An attempt that does not fit its exam is refused as unprocessable.
-     *
-     * @param callable $build Builds the attempt.
-     * @param string $reason The expected reason.
-     */
-    #[\PHPUnit\Framework\Attributes\DataProvider('attempts_that_do_not_fit')]
-    public function test_an_attempt_that_does_not_fit_is_refused(callable $build, string $reason): void {
-        $exam = exam::from_array(mirror_fixture::form());
-        $this->assert_refused(fn() => attempt_data::from_array($build())->resolve($exam), $reason);
     }
 }
