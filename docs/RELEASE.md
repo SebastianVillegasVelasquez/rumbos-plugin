@@ -52,12 +52,12 @@ To decide or fix first:
 2. **Result passback with the real service** now accepts the service's signed statements, but it was verified only
    with the golden vectors and locally, not with the deployed service. Before relying on it, follow
    [the production steps](RESULT-PASSBACK.md#production-configure-the-key-and-verify-with-a-real-statement) on staging,
-   and decide about [exam definitions](RESULT-PASSBACK.md#exam-definitions), which the plugin does not store.
+   and turn the mirror on there if the service's tenant has a mirror endpoint.
 3. **Run the manual tests** of v5.11 in [MANUAL-TESTS.md](MANUAL-TESTS.md) on staging, with the app. What was not run is
    marked there.
-4. **Legal review** of auto-completion and of the `uid` claim. Both settings are off by default.
-5. **The native quiz mirror branch is not merged.** Its version (`2026112300`, `0.8.0`) is lower than this one, so its
-   upgrade steps need new numbers if it is merged after this release.
+4. **Legal review** of auto-completion, of the `uid` claim and of the mirror's privacy declaration. All are off by default.
+5. **The native quiz mirror** is in the source (upgrade `2026112701`, off by default). It was run locally only:
+   verify it on staging with [its steps](NATIVE-QUIZ-MIRROR.md#verifying-a-mirrored-attempt) before production.
 
 Then:
 

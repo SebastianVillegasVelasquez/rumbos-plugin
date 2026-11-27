@@ -179,6 +179,7 @@ Open **Site administration > Plugins > Course formats > Rumbos**.
 | Minimum and maximum height | Pixels (200 to 1000, default 360; 400 to 4000, default 1600). No course can go outside them on a computer screen. |
 | Minimum students to show statistics | Default 5, at least 1. The teacher's completion counts are given only when at least this many students are tracked in the course or group being looked at. See [Completion statistics](#completion-statistics-for-teachers). |
 | Accept results, Result issuer, Result tenant, Result keys | The receiver of signed results from the Rumbos service. Off by default. See [Result passback](#result-passback-and-course-completion). |
+| Mirror exams in native quizzes | Keeps each published exam as a hidden native quiz, with each attempt and its real answers, for Moodle's quiz reports. Off by default. See [Native quiz mirror](#native-quiz-mirror). |
 | Registration | Read-only panel with what the Rumbos service needs to know about this site: issuer, host origin, audience, key id, public key and its fingerprint, a registration command, and a diagnostic. See [Registering the site](#registering-the-site-in-the-rumbos-service). |
 
 To use the format, a teacher selects **Rumbos** as the course format in the course
@@ -309,8 +310,8 @@ with the mechanisms considered and why they were rejected, is [docs/RESULT-PASSB
    one from a PEM). The page shows the address to give the service
    (`https://<moodle>/course/format/rumbos/passback.php`). Until a course is set up (step 2) the receiver answers `503`
    and the service keeps its results. The service sends a published exam's results only after its **definition** is
-   accepted, which this plugin cannot store: see
-   [Exam definitions](docs/RESULT-PASSBACK.md#exam-definitions). The steps for production, with how to verify them, are
+   accepted, which the [native quiz mirror](#native-quiz-mirror) does: turn it on when the service's tenant has a
+   mirror endpoint. The steps for production, with how to verify them, are
    in [the same document](docs/RESULT-PASSBACK.md#production-configure-the-key-and-verify-with-a-real-statement).
 2. **Set a course up** with the administrator's command. It is a **dry run unless `--apply` is given**, and nothing is
    configured on install or upgrade:
@@ -339,6 +340,14 @@ invisible to the receiver. Every statement, accepted or refused, writes a row to
 reason, the pseudonymous reference, the score; no name, email or address), and the receiver applies each attempt once
 (the service's `jti`). Neither table is purged by the plugin; the retention is a decision for the site owner and
 legal advice.
+
+### Native quiz mirror
+
+Off by default. For Moodle's own statistics and responses report, the plugin keeps each published Rumbos exam as a
+**hidden quiz** in the course and writes each attempt into it as a finished native attempt with the real answers. It adds
+no grade column and grants nothing: grades and completion come only from the result. Students cannot open it, and the
+correct answers are readable by whoever can read the course's question bank. How it works, how to enable it and how to
+verify an attempt: [docs/NATIVE-QUIZ-MIRROR.md](docs/NATIVE-QUIZ-MIRROR.md).
 
 ### Size of the area
 
@@ -590,6 +599,10 @@ run such commands as that user from then on, for example
 **An error about the app URL.** It must be HTTPS and on a different origin than Moodle.
 
 ## Privacy
+
+With the [native quiz mirror](#native-quiz-mirror) on, Moodle also stores the exams **with their correct answers** and each
+student's answers in native quiz attempts, plus a table that names the user and the service's attempt
+(`format_rumbos_mirror_attempt`). See [docs/NATIVE-QUIZ-MIRROR.md](docs/NATIVE-QUIZ-MIRROR.md#security-and-privacy).
 
 **The declaration below is a draft that needs legal review before it is presented as final.** Moodle stores three kinds
 of personal data for the plugin: which step of a welcome flow a user completed in a course, when, how, and which map

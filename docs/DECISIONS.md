@@ -227,12 +227,16 @@ attempts are still stored, which is all the statistics need.
 
 ### D21. The attempt carries its exam; the quiz is made on first use
 
+*Superseded by D44: the service's attempt record names its exam by hash and does not carry it.*
+
 The brief asks for a definition and an attempt as separate messages. Requiring the definition first would make an
 attempt that arrives first fail until it is resent. The attempt therefore carries the exam it was taken on and the
 receiver makes the quiz when it is not there; the definition message pre-creates it. Size is no problem (a few tens of
 kilobytes; the body cap is 1 MB, the passback's is 16 KB).
 
 ### D22. A separate script and counter, the passback's keys
+
+*Superseded by D43: the service posts everything to one address.*
 
 `mirror.php` has its own rate counter, so a burst of mirror messages cannot use up the allowance a student's completion
 needs. It trusts the passback's issuer, tenant and keys rather than a second key set: one thing to rotate, and the same
@@ -252,6 +256,8 @@ so every write runs as the first site administrator and the previous user (or th
 including on failure. Attempts belong to the student, never to that user.
 
 ### D25. The wire format is read in one place and is provisional
+
+*Superseded: the wire format is now the service's published contract. It is still read in one place.*
 
 The service has not published an export contract, so the shapes in `exam.php` and `attempt_data.php` are fixtures shaped
 like the B2 form A. Each class validates and normalises its payload in one function; everything else works on the
@@ -339,9 +345,66 @@ completes on `passed` as before.
 
 ### D42. Definitions are refused with a retry unless the administrator says otherwise
 
+*Superseded by D43 and D44: the mirror stores definitions and the setting is removed.*
+
 The service posts definitions to the same address and holds an exam's results until its definition is accepted; it can
 only send over HTTP to a tenant with that address, so refusing definitions outright (400, permanent) would have stopped
 every result of a published exam. Storing them is the exam mirror, which is on another branch and out of scope.
 Answering success loses data the sender then believes is stored, so it is not the default: the default is a retryable
 503, which loses nothing and delivers nothing, and `resultsackdefinitions` is the explicit choice. When the mirror is
 merged, it should take over this branch of the receiver and the setting should go.
+
+## The mirror on the service's contract (2026-11-27)
+
+### D43. One address, one verification, and the result first
+
+The mirror's own script, receiver, rate counter and RS256 test signer are removed rather than kept as a wrapper: the
+service posts everything to `passback.php`, and a second way in would be a second thing to secure that nothing uses.
+The receiver verifies once and routes by `kind`. For an attempt record the result is applied and committed first, then
+the record is mirrored: for a published exam it is the only statement with the pass, so no mirror problem may delay a
+student's completion. The reply then carries the mirror's status, so the service retries and the retry finds the result
+already applied. The mirror takes ES256 only.
+
+### D44. A definition is stored; a course builds its quiz on its first attempt
+
+A definition statement names no course. Building quizzes in every Rumbos course on arrival would create activities in
+courses that never take that exam, so the definition goes to its own table and a course gets its quiz with its first
+attempt. This also repairs a deleted quiz without asking the service again. The acknowledge-without-storing setting is
+removed: with storage there is nothing it could be right for, and the upgrade unsets it.
+
+### D45. A refusal that can be cured is one the service retries
+
+The service parks a permanent refusal and never sends it again by itself. So: a missing definition is
+`409 unknown_definition` with the `error` member the service reads; the mirror switched off, a statement this version
+cannot read, and a quiz that no longer fits are `503`; an unexpected failure is `500`. Answering an unreadable statement
+`422`, the HTTP meaning, would lose the record for a bug that a plugin update fixes. The cost is a statement retried
+forever if the sender is wrong; the status page shows it. Only a different content under a stored hash
+(`definition_conflict`) and an unknown schema are permanent, because retrying cannot change either.
+
+### D46. A matching item is one single choice per pair
+
+The service gives one question and one mark per pair, with the places as options. Moodle's matching question would have
+to be put together from pairs, gives one mark for all of them in the statistics, and cannot hold two places with the
+same text. One multiple choice per pair keeps each pair's answer, mark and statistics. The student never sees the
+mirror, so how it looks as a table does not matter.
+
+### D47. The attempt's total is the service's exact percent, and it has no duration
+
+The service's contract says to take the grade from `percent_exact`, not from a sum of rounded marks, so the quiz
+attempt's total is set from it and a difference is only flagged. The statement has no start time; start and finish are
+both `finished_at` instead of an invented duration.
+
+### D48. A preview claim is refused, although none is ever sent
+
+The brief asks for a preview attempt to be rejected. The service never queues a preview and has no `preview` claim, so
+there is no real message to test against. The receiver refuses any ES256 statement that has `preview` other than
+`false`, before applying anything: it costs nothing and fails closed. The role check stays the real guard.
+
+### D49. What the plugin does not check
+
+It does not recompute `definition_hash`: matching the service's canonical JSON byte for byte in PHP is fragile
+(numbers, empty objects), and the hash is a signed claim used as a name. It does not compare the purpose of a record
+with its definition's: the hash already says which exam it is, and the service's own golden vectors differ there. The
+64 KB cap and the written-text switch are enforced by the service; the plugin trusts the statement's flags and refuses
+text on a record that says none travelled.
+
