@@ -178,13 +178,51 @@ final class quiz_result_test extends \advanced_testcase {
         $this->attempt($quiz, $student, 1, 'finish', '3.14');
         $format = course_get_format($course);
 
-        $format->update_course_format_options(['rumbos_quizthreshold' => 100]);
+        $format->update_course_format_options(['rumbos_quizthreshold' => 99]);
         $this->assertTrue($this->ok($course, $quiz, $student)['passedThreshold']);
+
+        // A pass is strictly above the threshold, so nothing passes a threshold of 100: a percentage cannot exceed it.
+        $format->update_course_format_options(['rumbos_quizthreshold' => 100]);
+        $this->assertFalse($this->ok($course, $quiz, $student)['passedThreshold']);
 
         $format->update_course_format_options(['rumbos_quizthreshold' => 0]);
         $result = $this->ok($course, $quiz, $student);
         $this->assertNull($result['passedThreshold']);
         $this->assertEquals(100.0, $result['percent']);
+    }
+
+    /**
+     * At the threshold is not a pass, and one hundredth above it is: the rule of the Rumbos service.
+     *
+     * The percentages are set with a gradebook override, which the result follows, so that they are exact.
+     *
+     * @param float $grade The grade out of 100.
+     * @param bool $passed Whether it passes a threshold of 80.
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('threshold_boundary')]
+    public function test_a_pass_is_strictly_above_the_threshold(float $grade, bool $passed): void {
+        [$course, $quiz, $student] = $this->setup_quiz();
+        $this->attempt($quiz, $student, 1, 'finish', '3.14');
+        $item = \grade_item::fetch(['courseid' => $course->id, 'itemmodule' => 'quiz', 'iteminstance' => $quiz->id]);
+        $item->update_final_grade($student->id, $grade);
+
+        $result = $this->ok($course, $quiz, $student);
+
+        $this->assertSame($grade, $result['percent']);
+        $this->assertSame($passed, $result['passedThreshold']);
+    }
+
+    /**
+     * Grades around a threshold of 80.
+     *
+     * @return array
+     */
+    public static function threshold_boundary(): array {
+        return [
+            'just below' => [79.99, false],
+            'exactly at' => [80.0, false],
+            'just above' => [80.01, true],
+        ];
     }
 
     /**

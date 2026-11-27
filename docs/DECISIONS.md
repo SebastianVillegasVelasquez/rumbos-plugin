@@ -207,3 +207,91 @@ reason in `contracts/openapi.json`.
 Resetting a student's SCORM completion needs their tracks deleted: an override to incomplete is not sticky for automatic
 completion and is recalculated from the tracks. That destroys evidence and cannot be undone, and the decision is the
 client's and legal's. See `docs/DESIGN-restart-from-zero.md`: it stays a documented manual procedure.
+
+## Journey test tooling (2026-11-27)
+
+### D34. The entry quiz passes strictly above the threshold
+
+`passedThreshold` was `percent >= threshold`, while the product rule and the service pass only strictly above. It is now
+`percent > threshold`, on the percentage rounded to two decimals as it is sent, with tests at 79.99, exactly 80 and 80.01.
+**Behaviour change:** a student with exactly the threshold no longer passes. The value is computed on read, so it applies to
+past attempts too. With a threshold of 100 nothing passes. The range stays 0 to 100 and stored values are not rewritten:
+rejecting a stored 100 would make it count as the default of 80, which silently lowers the bar. If a course ever needs
+"at or above", it must be an explicit per-map option, off by default; it is not built.
+
+### D35. The reset takes back only the overrides the log records
+
+Moodle's completion row says who overrode it, not why, and the plugin makes its overrides as the site administrator, so
+the row cannot tell them from the administrator's own. The plugin's record is therefore its event, one per override:
+`content_autocompleted`, and the new `staging_completion_overridden`. No table was added. An override is taken back only
+while it still stands as recorded: complete, by the recorded account, and not modified after the event. The limits are
+accepted because each one makes the reset do less: with logging off or purged nothing is recognised, and any later
+change to the row makes it be left alone. Flow rows are deleted through `flow_progress::reset_map()`. Nothing that is
+evidence is deleted, so a reset student is not a new student: automatic completion can come back from the tracks.
+
+### D36. Auto-complete covers SCORM and the plain content the overlay shows
+
+The list becomes `scorm`, `resource`, `url`, `page` (it replaces the SCORM-only set of D31; the visibility rule and the
+actor stay). It stays a constant behind the same setting, off by default. The override works on every installed module
+type, so what is left out is a choice: completing a quiz, an assignment or a forum would record work the student did not
+do. `book`, `folder` and `imscp` are content too and were left out because nobody asked for them. The service's gate still
+counts SCORM only, so the added types change what the map shows, and possibly course completion, not whether the final
+exam opens. A site that already has the setting on completes more activities from the next passing statement.
+
+### D37. The staging flag is read from config.php's own values
+
+Found by running the tools on a real site: they refused although config.php set the flag to `true`.
+`initialise_cfg()` loads the core settings over `$CFG` as strings, config.php's included, so `$CFG` held `"1"` and the
+strict check failed on every site; the tests set `$CFG` while running, where it stays a boolean. The check now reads
+`$CFG->config_php_settings`, which keeps what config.php held. Accepting `"1"` was rejected: it would let a database
+setting enable the tools. Read this way the rule is as strict as intended, and stricter: only config.php counts.
+
+## The service's signed statements (2026-11-27)
+
+### D38. The configured key decides the algorithm, and ES256 is verified here
+
+The service signs with ES256 and keeps doing so. A key verifies one algorithm, taken from its type: an RSA key RS256 (the
+development signer, unchanged), an EC P-256 key ES256. The header's `alg` has to name it and never selects it.
+`result_statement::decode()` is the one place where a signature is checked, so that another receiver (the exam mirror)
+can use it. For ES256 the plugin does not use the library's verification: `JWT::signatureToDER()` of the bundled
+`firebase/php-jwt` cuts any signature in two halves whatever its length, so a signature that is not the 64 octets of
+RFC 7518 section 3.4 would not be refused for it. `es256` converts to DER itself and calls `openssl_verify()`.
+
+An EC key is configured as a JWK (or a JWKS), not as PEM: the id the service puts in `kid` is the operator's own choice
+(`passback-1` by default) and cannot be derived from the key, and a JWK carries both. `cli/ec_public_jwk.php` makes it
+from the public PEM, because the service has no command that prints it. Several keys by `kid` are what rotation needs.
+
+### D39. The claim rules follow the algorithm of the key
+
+An ES256 key is the service's and gets the service's contract; an RSA key is the development signer's and keeps every
+old rule, `exp` and its five minute lifetime included. One merged set of optional claims would have loosened the old
+form for nothing. For ES256, `jti` is the attempt id and any `attempt_id` is ignored. `exp` is not required and there
+is no age limit, because the outbox retries for days and `jti` is applied once; `exp` and `nbf` are honoured when
+present. The future skew is 300 seconds, not the 60 of the old leeway: the service's contract assumes clocks within five
+minutes, and a refusal is permanent for it, so a tighter limit would park real results. `policy` only ever fed the
+audit; it is now taken from `pass_percent` and `pass_operator`, optional together. The normalised claims of the old form
+are unchanged, so the payload hashes already stored still match.
+
+### D40. The audience of an ES256 statement is "moodle"
+
+The service writes the constant `moodle` in every statement and its contract tells the receiver to require it. The
+plugin required its own issuer URL, so every real statement would have been refused as `bad_audience`. For ES256 the
+audience must be `moodle` and nothing else; for RS256 it stays the site's issuer. **This is a weaker binding than
+before**: the audience no longer names the site. The signature, the tenant and, for a result, the `sub` (an HMAC with a
+secret of the site) still do. A per site audience from the service would restore it.
+
+### D41. Completion needs `passed` and `completes_course`
+
+`completes_course` is false when the attempt passed under a rule without the exemption. The plugin ignored it and would
+have completed the course on `passed` alone. It is required for ES256, and the course and the auto-completed content
+need both. This only withholds. The grade is recorded either way, and the development form, which has no such claim,
+completes on `passed` as before.
+
+### D42. Definitions are refused with a retry unless the administrator says otherwise
+
+The service posts definitions to the same address and holds an exam's results until its definition is accepted; it can
+only send over HTTP to a tenant with that address, so refusing definitions outright (400, permanent) would have stopped
+every result of a published exam. Storing them is the exam mirror, which is on another branch and out of scope.
+Answering success loses data the sender then believes is stored, so it is not the default: the default is a retryable
+503, which loses nothing and delivers nothing, and `resultsackdefinitions` is the explicit choice. When the mirror is
+merged, it should take over this branch of the receiver and the setting should go.

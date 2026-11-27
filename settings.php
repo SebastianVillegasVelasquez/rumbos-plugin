@@ -271,6 +271,13 @@ if ($ADMIN->fulltree) {
         '10'
     ));
 
+    $settings->add(new admin_setting_configcheckbox(
+        'format_rumbos/resultsackdefinitions',
+        new lang_string('resultsackdefinitions', 'format_rumbos'),
+        new lang_string('resultsackdefinitions_desc', 'format_rumbos'),
+        0
+    ));
+
     $settings->add(new setting_registration(
         'format_rumbos/registration',
         get_string('registration', 'format_rumbos'),

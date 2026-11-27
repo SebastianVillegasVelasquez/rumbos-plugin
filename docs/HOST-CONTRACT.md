@@ -215,7 +215,9 @@ QuizResult = { attempts: int, finishedAttempts: int, inProgress: boolean, percen
   when the student may not see it: the course hides grades, the user may not view grades, the grade (or the item)
   is hidden or hidden until a date, the quiz's review options do not show marks for every finished attempt, the quiz
   is ungraded, or there is no finished attempt. **`passedThreshold`** is `null` when the threshold is 0, `percent` is
-  `null`, or grading is pending, else `percent >= quizThreshold`. `finishedAttempts` counts only attempts in the
+  `null`, or grading is pending, else `percent > quizThreshold`: **strictly above**, the rule of the product and of the
+  Rumbos service, so exactly the threshold is not a pass and nothing passes a threshold of 100 (it was `>=` before
+  2026-11-27; see D34 in `docs/DECISIONS.md`). `finishedAttempts` counts only attempts in the
   finished state (not abandoned ones, not previews); `inProgress` is true for an open or overdue attempt;
   `pendingGrading` is true when a finished attempt still needs manual grading (or is submitted and not yet graded).
 - **Errors of `request-quiz-result`.** `not_found`: no such quiz in this course, or the user cannot see it.

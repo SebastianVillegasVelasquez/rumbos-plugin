@@ -27,8 +27,18 @@ namespace format_rumbos\local;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class result_receiver {
-    /** @var int Largest request body read, in bytes: a statement is about a kilobyte. */
-    public const MAX_BODY = 16384;
+    /**
+     * @var int Largest request body read, in bytes. A result is about a kilobyte, but with its exam mirror on the
+     * service sends the same pass as an attempt record of up to 64 KB of JSON, and its signing library writes every
+     * non-ASCII character as escapes of six or twelve bytes before base64.
+     */
+    public const MAX_BODY = 524288;
+
+    /** @var string Setting: answer success to an exam definition, which this plugin does not store. */
+    public const ACK_DEFINITIONS = 'resultsackdefinitions';
+
+    /** @var string Reason when a definition was acknowledged and not stored. */
+    public const DEFINITION_NOT_STORED = 'definition_not_stored';
 
     /**
      * Handles one request.
@@ -56,7 +66,16 @@ class result_receiver {
             $jws = self::statement_of($body);
             $known['kid'] = self::safe_key_id($jws);
 
-            $claims = result_statement::verify($jws, $now);
+            $verified = result_statement::decode($jws, $now);
+            $algorithm = result_statement::algorithm_of($jws);
+            if ($algorithm === result_statement::SERVICE_ALGORITHM && ($verified->kind ?? null) === 'definition') {
+                result_statement::check_envelope($verified, $algorithm);
+                $authentic = true;
+                // Into the outer list: a refused definition is audited with its id too.
+                $known['jti'] = $verified->jti;
+                return self::definition($known, $now);
+            }
+            $claims = result_statement::result_claims($verified, $algorithm, $now);
             $authentic = true;
             $known = result_store::audit_fields($claims) + $known;
 
@@ -70,6 +89,26 @@ class result_receiver {
             self::write_audit($now, 500, 'internal_error', $known, $authentic);
             return self::reply(500, false, 'internal_error');
         }
+    }
+
+    /**
+     * Answers an exam definition of the service. Only an exam mirror would store one, and this plugin has none.
+     *
+     * The service sends the result of a published exam only after its definition was accepted. By default the answer
+     * is one the service retries, so nothing is lost and nothing arrives. An administrator can have it acknowledged
+     * instead: results then arrive, and the definition is not kept.
+     *
+     * @param array $known The audit fields of the verified definition.
+     * @param int $now
+     * @return array The reply.
+     * @throws result_rejection 503 definition_not_supported unless the setting is on.
+     */
+    private static function definition(array $known, int $now): array {
+        if (!get_config('format_rumbos', self::ACK_DEFINITIONS)) {
+            throw new result_rejection(503, 'definition_not_supported');
+        }
+        self::write_audit($now, 200, self::DEFINITION_NOT_STORED, $known, true);
+        return self::reply(200, false, self::DEFINITION_NOT_STORED);
     }
 
     /**
@@ -87,7 +126,7 @@ class result_receiver {
             self::write_audit($now, 200, 'already_applied', ['userid' => (int) $replay->userid] + $known, true);
             // A delivery that arrives again is also the retry of an auto-completion that failed the first time. It
             // does nothing when everything is complete, or when the setting is off.
-            if ((int) $replay->passed === 1) {
+            if ((int) $replay->passed === 1 && result_statement::completes($claims)) {
                 content_autocomplete::after_result((int) $replay->courseid, (int) $replay->userid, (string) $replay->jti);
             }
             return self::reply(200, false, 'already_applied');
@@ -106,7 +145,7 @@ class result_receiver {
         try {
             $reason = result_applier::apply($course, $userid, $claims, $now, $known);
             // After the commit, so that nothing in it can undo the result or change the answer to the sender.
-            if ($claims['passed']) {
+            if (result_statement::completes($claims)) {
                 content_autocomplete::after_result((int) $course->id, $userid, (string) $claims['jti']);
             }
         } catch (\dml_write_exception $e) {
@@ -140,15 +179,21 @@ class result_receiver {
     }
 
     /**
-     * The statement in a request body.
+     * The statement in a request body: the compact JWS itself, as the service posts it (`application/jwt`), or the
+     * JSON `{"statement": "<JWS>"}`. The shape of the body decides, not its content type: either way only the
+     * signature makes it count.
      *
      * @param string $body
      * @return string
-     * @throws result_rejection 400 when the body is too large, not JSON, or has no statement.
+     * @throws result_rejection 400 when the body is too large or is neither.
      */
     private static function statement_of(string $body): string {
         if (strlen($body) > self::MAX_BODY) {
             throw new result_rejection(400, 'malformed');
+        }
+        $bare = trim($body);
+        if (preg_match('/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/D', $bare) === 1) {
+            return $bare;
         }
         $data = json_decode($body, true);
         if (!is_array($data) || !isset($data['statement']) || !is_string($data['statement']) || $data['statement'] === '') {
@@ -169,7 +214,7 @@ class result_receiver {
         } catch (result_rejection $e) {
             return null;
         }
-        return preg_match('/^[0-9a-f]{1,32}$/', $kid) === 1 ? $kid : null;
+        return preg_match(result_config::KID_PATTERN, $kid) === 1 ? $kid : null;
     }
 
     /**

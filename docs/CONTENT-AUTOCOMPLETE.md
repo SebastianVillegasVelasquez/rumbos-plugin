@@ -3,8 +3,9 @@
 **Off by default. Writes completion data for students: NEEDS LEGAL REVIEW before it is turned on in production.**
 
 When the Rumbos service reports a **passing** result (the check-in or the final exam) and the setting is on, the plugin
-marks the SCORM activities the student can see as complete in Moodle, so that a student who passed the check-in is not
-asked to do content they were exempted from, and the final-exam gate (which reads Moodle's completion) agrees.
+marks the content the student can see (SCORM packages, files, URLs and pages) as complete in Moodle, so that a student who
+passed the check-in is not asked to do content they were exempted from, and the final-exam gate (which reads Moodle's
+completion of the SCORM packages) agrees.
 
 ## The rule that matters: only a signed statement can cause it
 
@@ -19,10 +20,9 @@ For one student, after the result is committed:
 
 1. Stops if the setting is off, if there is no verified passing result for that user and course, or if the user is not an
    actively enrolled student who may not edit the map.
-2. Takes the **required set**: activities of the module list `content_autocomplete::MODULES` (**`scorm`**), that are
-   **visible to the student** (not hidden, not restricted for them, not being deleted) and **track completion**. This is the
-   rule of the final-exam gate. Plain content (a PDF, a link, a page) is not in the set because it tracks nothing the gate
-   reads; add its module name to the constant to include it (a code change, on purpose).
+2. Takes the **required set**: activities of the module list `content_autocomplete::MODULES` (**`scorm`, `resource`,
+   `url`, `page`**) that are **visible to the student** (not hidden, not restricted for them, not being deleted) and
+   **track completion**. Changing the list is a code change, on purpose.
 3. For each, if it is not already complete, calls Moodle's supported override, `completion_info::update_state($cm,
    COMPLETION_COMPLETE, $userid, true)`. A state of "complete with fail" is first overridden to incomplete and then to
    complete (Moodle returns early otherwise), the two steps a teacher takes by hand.
@@ -31,6 +31,34 @@ For one student, after the result is committed:
    account recorded as the one who overrode, the id and purpose of the statement that justified it, and the state before.
 
 It deletes nothing: no attempt, track or grade is touched, and the student can still open every activity.
+
+## Which module types are completed, and what the final-exam gate sees
+
+A bubble on the map is any activity with a view page that is meant to be linked (`course_state::is_relevant()` here,
+`is_bubble_candidate` in the service). That leaves out `label`, `subsection` (no page) and an activity set to show no link,
+such as a folder displayed on the course page.
+
+| Types | Does the override work? | Completed by a pass? | What the gate sees |
+| --- | --- | --- | --- |
+| `scorm` | Yes | **Yes** | Counted: it must be complete. |
+| `resource`, `url`, `page` | Yes | **Yes** | Not counted, complete or not. |
+| `assign`, `quiz`, `lesson`, `workshop`, `forum`, `glossary`, `data`, `wiki`, `choice`, `feedback`, `h5pactivity`, `lti`, `bigbluebuttonbn` | Yes | **No**, on purpose: completion would say the student did work or took part. | Not counted. |
+| `book`, `folder`, `imscp` | Yes | **No**: content too, but not asked for; add it to the list if the client wants it. | Not counted. |
+| Plugins not installed on the test site, such as `customcert` | Not tested. The same call applies to any module type. | No | Not counted. |
+| Any type with completion "None" | **No**: Moodle records nothing. | No | Not counted (`completion = 0`). |
+| Any disabled module type | **No**: `update_state()` returns. | No | Not tested. |
+
+"Yes" was observed on Moodle 5.2.4 in PHPUnit, by overriding one activity of each of these installed types with manual
+completion (the test data generator enables a disabled type such as `bigbluebuttonbn` when it creates one). `resource`,
+`url` and `page` are also tested with automatic view completion.
+
+The gate counts `scorm` only (`REQUIRED_MODNAMES` in the service's `app/closing/gate.py`). One difference remains: the
+gate reads with a privileged account, so a SCORM that is **restricted** for the student (not hidden) is still counted by
+the gate, while this feature skips it because the student cannot open it. Such a package can keep the final exam closed
+after a pass. The extra passes below cover only restrictions that another completion lifts.
+
+Completing more activities can also complete the **course**, when its completion criteria include them, and whatever
+depends on that (a certificate).
 
 ## The Moodle API, and what it can and cannot do (read from Moodle 5.2.4 code)
 

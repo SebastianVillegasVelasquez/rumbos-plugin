@@ -57,7 +57,7 @@ class result_applier {
         try {
             result_store::insert_result($claims, (int) $course->id, $userid, $now);
             self::record_best($course, $userid, result_statement::cents($claims['percent']));
-            $completed = $claims['passed'] && self::complete($course, $userid);
+            $completed = result_statement::completes($claims) && self::complete($course, $userid);
             $reason = $completed ? self::COMPLETED : self::RECORDED;
 
             result_store::audit($now, 200, $reason, ['userid' => $userid] + $known + result_store::audit_fields($claims));

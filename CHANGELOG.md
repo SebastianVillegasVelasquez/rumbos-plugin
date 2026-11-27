@@ -2,12 +2,44 @@
 
 ## Unreleased
 
+Not released: there is no tag after `v0.2.0`, and everything under this heading, host contract v5.11 included, is only in
+the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it needs is in
+[docs/RELEASE.md](docs/RELEASE.md#releasing-what-is-unreleased-now).
+
+### Changed
+
+- **Behaviour change:** the welcome flow's entry quiz now passes only **strictly above** the course's threshold
+  (`passedThreshold` is `percent > quizThreshold`, it was `>=`), the product rule and the service's. A student with exactly
+  the threshold no longer passes, and with a threshold of 100 nobody passes (the setting takes whole numbers). Nothing
+  stored changes; the value is computed when it is read.
+
+### Fixed
+
+- The staging tools refused every real site: Moodle turns `true` from config.php into the string `"1"` in `$CFG` while it
+  starts, and the check wants the boolean. It now reads the value config.php held, so
+  `$CFG->format_rumbos_staging_tools = true;` works and nothing but config.php can allow the tools.
+
 ### Added
 
-- Auto-complete (off by default, setting `autocompletecontent`): a verified passing result (check-in or final) marks the SCORM
-  activities the student can see as complete, through Moodle's override, with an event per activity and an ad-hoc retry task.
-  Only the result receiver can trigger it. The privacy declaration is updated and marked for legal review. See
-  `docs/CONTENT-AUTOCOMPLETE.md`.
+- The result receiver verifies **ES256**, the algorithm the Rumbos service signs with. The "Result keys" setting takes
+  the service's public key as a JWK or a JWKS, several at once for a rotation; `cli/ec_public_jwk.php` makes the JWK
+  from a public PEM. The configured key decides the only algorithm accepted. RSA keys in PEM keep working with RS256.
+- The receiver accepts the **statements the Rumbos service sends**: the bare token as the body (`application/jwt`), the
+  audience `moodle`, no `exp`, `attempt_id` or `policy`, `jti` as the attempt id, result (schema 1) and attempt (schema
+  2) records up to 512 KB. The course and the content are completed only when `passed` **and** `completes_course` are
+  true. Before this, no real result could be applied. The development (RS256) form is unchanged. See
+  `docs/RESULT-PASSBACK.md`.
+- Setting `resultsackdefinitions` (off by default): answer success to the service's exam definitions without storing
+  them. While it is off they are answered 503, and the service holds the results of those exams.
+- **Staging only:** `cli/reset_test_student.php` resets a test student without deleting evidence (dry run by default). It
+  deletes the student's flow progress rows in the course and sets back to incomplete only the completion overrides the
+  plugin recorded. It refuses unless config.php sets `$CFG->format_rumbos_staging_tools = true;`. The staging completion
+  helper now records each override it makes with the event `staging_completion_overridden`; overrides it made before this
+  version have no record, so the reset leaves them alone. See `docs/FINAL-EXAM-GATE.md`.
+- Auto-complete (off by default, setting `autocompletecontent`): a verified passing result (check-in or final) marks the
+  SCORM packages, files, URLs and pages the student can see as complete, through Moodle's override, with an event per
+  activity and an ad-hoc retry task. Only the result receiver can trigger it. The privacy declaration is updated and marked
+  for legal review. See `docs/CONTENT-AUTOCOMPLETE.md`.
 - `docs/DESIGN-restart-from-zero.md`: an audit of restarting a student after three failed finals. Not implemented.
 - Host contract v5.11: a flow step can show a Moodle activity (`resource`, `url`, `page`) in the overlay. Capabilities `activities`
   (editors) and `activity`; messages `request-activities`, `activity-open` and their replies. No address travels in any message.

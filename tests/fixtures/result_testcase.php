@@ -135,6 +135,60 @@ abstract class result_testcase extends \advanced_testcase {
     }
 
     /**
+     * Changes one character in the middle of a statement's signature.
+     *
+     * Not the last one: the signature of a 2048-bit key is 342 base64url characters for 256 bytes, so the last character
+     * carries four padding bits that a decoder ignores. Changing it left the bytes as they were about one time in four,
+     * and the "tampered" statement was then rightly accepted.
+     *
+     * @param string $jws
+     * @return string
+     */
+    protected function tamper(string $jws): string {
+        $start = strrpos($jws, '.') + 1;
+        $middle = $start + intdiv(strlen($jws) - $start, 2);
+        $tampered = substr_replace($jws, $jws[$middle] === 'A' ? 'B' : 'A', $middle, 1);
+        $this->assertNotSame(
+            JWT::urlsafeB64Decode(substr($jws, $start)),
+            JWT::urlsafeB64Decode(substr($tampered, $start)),
+            'the tampering must change the bytes of the signature'
+        );
+        return $tampered;
+    }
+
+    /**
+     * The text of a file of the service's golden vectors.
+     *
+     * @param string $file
+     * @return string
+     */
+    protected function vector_file(string $file): string {
+        return file_get_contents(__DIR__ . '/service_vectors/' . $file);
+    }
+
+    /**
+     * One golden vector: `jws`, `header` and `claims`, as the service wrote them.
+     *
+     * @param string $name result, attempt or definition.
+     * @return \stdClass
+     */
+    protected function vector(string $name): \stdClass {
+        return json_decode($this->vector_file($name . '.json'));
+    }
+
+    /**
+     * A new EC P-256 key pair of the tests' own.
+     *
+     * @param string $kid
+     * @return array The private key in PEM, and the public JWK as the setting takes it.
+     */
+    protected function ec_key(string $kid): array {
+        $resource = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        openssl_pkey_export($resource, $private);
+        return [$private, result_config::jwk_from_pem(openssl_pkey_get_details($resource)['key'], $kid)];
+    }
+
+    /**
      * Posts a statement to the receiver.
      *
      * @param string $statement The JWS.

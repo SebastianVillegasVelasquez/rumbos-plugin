@@ -217,6 +217,32 @@ php public/course/format/rumbos/cli/staging_completion.php --course=10 --user=42
 - It accepts one active student enrolled in the course, never an editor (editors skip the gate), and only tracked
   activities of the module asked for (`--module`, default `scorm`).
 - Running it again leaves the same state.
+- Each state it actually changes is recorded in the event `staging_completion_overridden`.
+
+### Resetting a test student
+
+`cli/reset_test_student.php` puts a test student's journey back so it can be walked again, as far as that is possible
+without deleting evidence. It has the same refusal as the helper above and accepts the same kind of user.
+
+```bash
+php public/course/format/rumbos/cli/reset_test_student.php --course=10 --user=42           # dry run, the default
+php public/course/format/rumbos/cli/reset_test_student.php --course=10 --user=42 --apply
+```
+
+- It deletes the student's flow progress rows in the course, for every map id and both flows.
+- It takes back **only the overrides the plugin recorded**: those of auto-completion (`content_autocompleted`) and of the
+  helper above (`staging_completion_overridden`). The record is Moodle's log, so "Standard log" has to be on both when the
+  override is made and at the reset. With no readable log store it takes back nothing and says so. An override made while
+  logging was off, or whose log entry was purged, is listed as unrecorded and left alone.
+- It also leaves alone an activity that was overridden by another account, or modified after the record, that is no
+  longer an override, or that is gone or no longer tracks completion.
+- "Taking back" is an override to incomplete: Moodle's API cannot remove an override.
+- **That does not hold for automatic completion.** Moodle calculates it again at the next trigger, so a SCORM whose tracks
+  meet its rules becomes complete again. A passing statement delivered again, or a queued auto-completion retry, can
+  complete it too.
+- It deletes no SCORM track, quiz attempt, grade, verified result or course completion, and cannot reset what the Rumbos
+  service holds. It prints what it left.
+- Exit codes: 0 done, 1 a user who is refused or a change Moodle did not make, 2 bad arguments, 3 not a staging site.
 
 ## Privacy (for legal review; not final)
 

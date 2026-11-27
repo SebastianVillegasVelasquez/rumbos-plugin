@@ -515,24 +515,30 @@ completion, one restricted SCORM that tracks completion, `student1` enrolled, `t
 
 | Case | Expected | Result |
 | --- | --- | --- |
-| Setting "Send the Moodle user id" off (default): admin preview | Claims are `iss aud sub course role iat exp jti`, no `uid` | |
-| Setting on: admin preview | The same plus `uid`, an integer equal to the administrator's id | |
-| Setting on: open the course as `student1`, decode the assertion the service received | `uid` is `student1`'s id, `role` is `student` | |
-| Setting on, assertion edited to another `uid` | The service refuses it (bad signature) | |
-| Setting turned off again | The next assertion has no `uid` | |
-| Service account, call (a) and (b) of the verification | `True`; every tracked SCORM listed, including the hidden and the restricted one | |
-| Staging helper, dry run, `--state=complete` | Lists the tracked SCORM activities, changes nothing | |
-| Staging helper, `--apply`, then call (b) | Every tracked SCORM `state` 1; `overrideby` is the administrator | |
-| Staging helper, `--state=incomplete --apply`, then call (b) | `state` 0 | |
-| Staging helper on the production site (no flag) | Refuses, exit code 3, nothing changed | |
-| Staging helper with `teacher1`, with a user who is not enrolled, with a suspended student | Refuses each | |
-| As a teacher, *Reports > Activity completion > Override* one SCORM for `student1` | The service reads `state` 1 for it on its next call; the Moodle log has the completion event naming the teacher | |
-| Closing flow: finish two content steps, escape the final exam step, reload | Rows `completed`, `completed`, `fallback`; the app shows the same after reload | |
-| Closing flow: complete the final exam step after the escape (same revision) | The row stays `fallback` | |
-| Privacy export and erase for `student1` | The closing rows are in the export and gone after the erase | |
+| Setting "Send the Moodle user id" off (default): admin preview | Claims are `iss aud sub course role iat exp jti`, no `uid` | not run |
+| Setting on: admin preview | The same plus `uid`, an integer equal to the administrator's id | not run |
+| Setting on: open the course as `student1`, decode the assertion the service received | `uid` is `student1`'s id, `role` is `student` | not run |
+| Setting on, assertion edited to another `uid` | The service refuses it (bad signature) | not run |
+| Setting turned off again | The next assertion has no `uid` | not run |
+| Service account, call (a) and (b) of the verification | `True`; every tracked SCORM listed, including the hidden and the restricted one | not run |
+| Staging helper, dry run, `--state=complete` | Lists the tracked SCORM activities, changes nothing | Partly (L, 2026-11-27): after the D37 fix it listed the two SCORM and reported that nothing was changed |
+| Staging helper, `--apply`, then call (b) | Every tracked SCORM `state` 1; `overrideby` is the administrator | not run |
+| Staging helper, `--state=incomplete --apply`, then call (b) | `state` 0 | not run |
+| Staging helper on the production site (no flag) | Refuses, exit code 3, nothing changed | not run |
+| Staging helper with `teacher1`, with a user who is not enrolled, with a suspended student | Refuses each | not run |
+| As a teacher, *Reports > Activity completion > Override* one SCORM for `student1` | The service reads `state` 1 for it on its next call; the Moodle log has the completion event naming the teacher | not run |
+| Closing flow: finish two content steps, escape the final exam step, reload | Rows `completed`, `completed`, `fallback`; the app shows the same after reload | not run |
+| Closing flow: complete the final exam step after the escape (same revision) | The row stays `fallback` | not run |
+| Privacy export and erase for `student1` | The closing rows are in the export and gone after the erase | not run |
 
 
 ## Moodle activities in a flow and auto-complete (contract v5.11; run on staging first)
+
+**Run partly on 2026-11-27, on a local site only** (L): Moodle 5.2.4+, PHP 8.3, PostgreSQL 17, plugin 2026112401 from the
+source, at `http://localhost:8085`, one new test course and student. Statements came from `dev/sign-test-statement.php`
+(RS256), **not from the Rumbos service**. No Rumbos map was created and the app did not run. (B) means headless Chrome
+158, driven over the DevTools protocol with a throwaway profile, with a stand-in window playing the app, as the Behat
+steps do. Staging, other browsers and phones were not run.
 
 Needs a Rumbos course with a PDF file resource in each display mode, a page, a URL, a quiz, a hidden page, `student1`
 enrolled, `teacher1` editing teacher, two tracked SCORM activities, and a way to send a signed result statement
@@ -540,19 +546,84 @@ enrolled, `teacher1` editing teacher, two tracked SCORM activities, and a way to
 
 | Case | Expected | Result |
 | --- | --- | --- |
-| As `teacher1` with editing on, send `rumbos:request-activities` | `host-activities` lists the page, URL, PDFs and the hidden page (`visible: false`), not the quiz | |
-| As `student1`, send `rumbos:request-activities` | `host-activities` with `error: "capability"`, and `host-init` had no `activities` | |
-| As `student1`, `rumbos:activity-open` for each PDF display mode | `host-activity-opened`, and the PDF is visible in the overlay every time | |
-| Overlay: Tab, Shift+Tab, Escape, the close button | The focus stays inside, Escape and the button close it, the focus returns to the page, the page does not scroll behind | |
-| After closing | `host-activity-closed` with the same `cmid` | |
-| `activity-open` for the hidden page, the quiz, an id from another course, an id that does not exist | `open-failed` with `forbidden`, `unsupported`, `not_found`, `not_found` | |
-| An `activity-open` with a `url` and no `cmid` | Nothing happens, no reply | |
-| Any message in the browser console log of the host | No address in any message either way | |
-| A PDF resource with "view" completion: open it in the overlay | The activity shows as viewed in the completion report | |
-| Auto-complete off (default): send a signed passing statement | The result is applied, no SCORM changes | |
-| Auto-complete on: send a signed passing statement | Both SCORM are complete, "overridden by" the administrator, one log event each naming the statement | |
-| Send the same statement again | `already_applied`, no new event, no change | |
-| Send a failing statement | No SCORM changes | |
-| Student with a hidden SCORM | It stays incomplete | |
-| Turn auto-complete off again | New passes change nothing; completions already made stay (clear them in the completion report) | |
-| Stop the database write for one activity (staging only) | The result is still applied, an error event appears in the logs, the cron retries | |
+| As `teacher1` with editing on, send `rumbos:request-activities` | `host-activities` lists the page, URL, PDFs and the hidden page (`visible: false`), not the quiz | not run |
+| As `student1`, send `rumbos:request-activities` | `host-activities` with `error: "capability"`, and `host-init` had no `activities` | Passed (L, B): `error: "capability"`; `host-init` had only `{"activity": true}` |
+| As `student1`, `rumbos:activity-open` for each PDF display mode | `host-activity-opened`, and the PDF is visible in the overlay every time | Passed (L, B): all seven, see the table below |
+| Overlay: Tab, Shift+Tab, Escape, the close button | The focus stays inside, Escape and the button close it, the focus returns to the page, the page does not scroll behind | Partly (L, B, on a page activity): focus stayed in the dialog after 4 Tab and 4 Shift+Tab; Escape closed it with the focus on the close button (not tried from inside the activity); the button closed all seven PDFs (clicked by script); the focus returned to the app frame; `body` had `overflow: hidden` (scrolling not tried by hand) |
+| After closing | `host-activity-closed` with the same `cmid` | Passed (L, B): the same `cmid`, for all seven PDFs and the page |
+| `activity-open` for the hidden page, the quiz, an id from another course, an id that does not exist | `open-failed` with `forbidden`, `unsupported`, `not_found`, `not_found` | Passed (L): `forbidden`, `unsupported`, `not_found`, `not_found` in the browser; the id of another course used there did not exist, so that case was repeated with a real one on the server function: `not_found` |
+| An `activity-open` with a `url` and no `cmid` | Nothing happens, no reply | Passed (L, B): nothing, no reply |
+| Any message in the browser console log of the host | No address in any message either way | Partly (L, B): no address in the activity messages the stand-in received; other messages and the console were not checked |
+| A PDF resource with "view" completion: open it in the overlay | The activity shows as viewed in the completion report | Partly (L): requesting each overlay address over HTTP as the student turned the activity complete in the database; the embed page showed "Done: View" in the browser; the completion report was not opened |
+| Auto-complete off (default): send a signed passing statement | The result is applied, no SCORM changes | Passed (L): `200 completed`, course complete, no activity completed |
+| Auto-complete on: send a signed passing statement | Both SCORM are complete, "overridden by" the administrator, one log event each naming the statement | Passed (L, read from the database): both SCORM, the seven PDFs, the page and the URL complete, `overrideby` the administrator, 11 log events; the quiz, the forum and the hidden page untouched. The completion report and the content of the events were not opened |
+| Send the same statement again | `already_applied`, no new event, no change | Passed (L): `already_applied`, still 11 events, same states |
+| Send a failing statement | No SCORM changes | Passed (L): `200 recorded`, no activity completed |
+| Student with a hidden SCORM | It stays incomplete | not run |
+| Turn auto-complete off again | New passes change nothing; completions already made stay (clear them in the completion report) | not run |
+| Stop the database write for one activity (staging only) | The result is still applied, an error event appears in the logs, the cron retries | not run |
+
+### PDF display modes in the overlay (2026-11-27, L)
+
+The HTTP columns are what the overlay address answered to the student. "On screen" is a screenshot of the overlay showing
+the PDF's own text, in headless Chrome's PDF viewer.
+
+| Display mode | Overlay address | HTTP answer | On screen (B) |
+| --- | --- | --- | --- |
+| Automatic | `mod/resource/view.php` | redirect to the file, `application/pdf`, inline | yes |
+| Embed | `mod/resource/view.php` | the Moodle page that embeds the file (`text/html`) | yes, inside the Moodle page, below "Completion requirements" |
+| In frame | the plugin's `resource.php` | redirect to the file, `application/pdf`, inline | yes |
+| New window | the plugin's `resource.php` | redirect to the file, `application/pdf`, inline | yes |
+| Force download | the plugin's `resource.php` | redirect to the file, `application/pdf`, inline | yes |
+| Open | `mod/resource/view.php` | redirect to the file, `application/pdf`, inline | yes |
+| In pop-up | the plugin's `resource.php` | redirect to the file, `application/pdf`, inline | yes |
+
+## Test-student reset (staging tool)
+
+Run on 2026-11-27 on the local site (L above), on the same course after the pass that completed 11 activities, with two
+flow rows, one inserted SCORM attempt with one track, and one override of a forum made without the plugin.
+
+| Case | Expected | Result |
+| --- | --- | --- |
+| No staging flag | Refuses, exit code 3 | Passed |
+| Flag in config.php | Runs | **Failed at first** (it refused: D37), passed after the fix |
+| Dry run | Lists the rows and overrides, changes nothing | Passed: 2 rows, 11 overrides, the forum listed as unrecorded; counts unchanged |
+| `--apply` | Rows deleted, the 11 recorded overrides set to incomplete, evidence kept | Passed: flow rows 2 to 0; completed activities 12 to 1 (the forum); attempt, track, 2 grades, 3 results and course completion unchanged |
+| `--apply` again | Nothing left to do | Passed |
+| A user who is not enrolled (the administrator) | Refused | Passed: "Invalid user", exit code 1 |
+| The student then opens each PDF, and the SCORM player (all with view completion) | Moodle can complete them again, as the command warns | Observed: each became complete again, no longer an override. The SCORM's overview page alone did not; the player records the view |
+| Editor or suspended student; no log store | Refused; nothing reverted | not run by hand (PHPUnit only) |
+
+## Result passback, local run (2026-11-27)
+
+Partial run of "Result passback and completion", on the local site (L above), with the development signer.
+
+| Statement | Observed |
+| --- | --- |
+| Failing check-in, 40.00 | `200 recorded`; result grade 40; course not complete |
+| Passing statement with a tampered signature (`--tamper`) | `401 bad_signature`, in the audit table; nothing else changed |
+| Passing check-in, 90.00 | `200 completed`; grade 90; course complete |
+| Passing final, 85.00 | `200 recorded` (already complete); grade stays 90 |
+| The same statement again | `200 already_applied`, in the audit table |
+
+The certificate, preview roles, the unconfigured course, expiry and the real service were not run. **The real service's
+statements would be refused**: see [DESIGN-restart-from-zero.md](DESIGN-restart-from-zero.md#together-with-the-services-restart-document).
+
+## Result passback with the service's signer and sender (2026-11-27, local)
+
+On the local site only (Moodle 5.2.4+, plugin from the source of this change). The statements were built, signed and
+posted by the **service's own code** (`app.passback.statement.claims_for` and `sign`,
+`app.mirror.attempt.attempt_claims`, `app.mirror.statements.definition_claims`, `app.passback.http.HttpMirrorPort`,
+`rumbos-backend` at `652c29e`), run from a script with a throwaway key. The deployed service, its outbox worker, its
+production key and staging were **not** run. The exam was the service's made-up test form. The JWK was made with
+`cli/ec_public_jwk.php`; auto-complete was on; one new student.
+
+| Sent | The service's sender concluded | Moodle, observed |
+| --- | --- | --- |
+| Definition, acknowledgement off | transient (503), would retry | nothing stored; audit `definition_not_supported` |
+| The same definition, acknowledgement on | accepted | nothing stored; audit `definition_not_stored` |
+| Fail 40, check-in (schema 1) | accepted | grade 40; course and activities not complete |
+| Pass 90, `completes_course` false | accepted | grade 90; course and activities not complete |
+| Pass 80.20, final (schema 2 attempt) | accepted | course complete; 11 activities complete; grade stays 90 (best) |
+| The same claims signed again | accepted | `already_applied`; nothing changed |
+| Another key under the same `kid` | permanent (401) | `bad_signature`; nothing changed |

@@ -51,13 +51,15 @@ class content_autocomplete {
     /**
      * The modules whose activities count as the content of a level.
      *
-     * The SCORM activities are what the map's bubbles open and what the final-exam gate counts (docs/FINAL-EXAM-GATE.md). A
-     * Rumbos course also holds plain content (a PDF, a link) that students look at and that tracks nothing the gate reads;
-     * marking those would change completion data nobody asked to change. Add a module name here to include it.
+     * SCORM, and the plain content the activity overlay shows ({@see flow_activities::ALLOWED_MODULES}): a file, a link
+     * and a page. The final-exam gate of the service counts SCORM only (docs/FINAL-EXAM-GATE.md); the others are completed
+     * so that the map does not ask a student who passed to open them. Moodle's override would work on any module type: the
+     * ones left out include those where completion says the student did or handed in something (a quiz, an assignment, a
+     * forum). Add a module name here to include it (docs/DECISIONS.md, D36).
      *
      * @var string[]
      */
-    public const MODULES = ['scorm'];
+    public const MODULES = ['scorm', 'resource', 'url', 'page'];
 
     /** @var int Most passes over the course: finishing one activity can unlock another that was restricted by it. */
     public const MAX_PASSES = 5;

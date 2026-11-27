@@ -51,7 +51,7 @@ Options:
     --jti=<id>          Default: a new one.
     --lifetime=<s>      Seconds the statement lives, default 120.
     --age=<s>           Pretend it was signed this many seconds ago (to make an expired one).
-    --tamper            Flip a character of the signature.
+    --tamper            Change a character in the middle of the signature.
 
 Example:
     php public/course/format/rumbos/dev/sign-test-statement.php --setup
@@ -114,7 +114,10 @@ $claims = [
 ];
 $jws = JWT::encode($claims, $privatepem, 'RS256', result_config::key_id($publicpem));
 if ($options['tamper']) {
-    $last = substr($jws, -1);
-    $jws = substr($jws, 0, -1) . ($last === 'A' ? 'B' : 'A');
+    // A character in the middle of the signature: the last one carries padding bits that a decoder ignores, so changing
+    // it can leave the signature's bytes as they were.
+    $start = strrpos($jws, '.') + 1;
+    $middle = $start + intdiv(strlen($jws) - $start, 2);
+    $jws = substr_replace($jws, $jws[$middle] === 'A' ? 'B' : 'A', $middle, 1);
 }
 cli_writeln(json_encode(['statement' => $jws]));

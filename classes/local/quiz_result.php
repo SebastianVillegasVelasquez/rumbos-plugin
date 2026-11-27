@@ -190,7 +190,8 @@ class quiz_result {
         $threshold = flow_config::get_quiz_threshold((int) $course->id);
         $passed = null;
         if ($threshold > 0 && $percent !== null && !$tally['pending']) {
-            $passed = $percent >= $threshold;
+            // Strictly above, the product's rule and the service's: exactly the threshold is not a pass.
+            $passed = $percent > $threshold;
         }
 
         return [
