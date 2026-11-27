@@ -17,6 +17,8 @@
 namespace format_rumbos\local;
 
 use core\context\course as context_course;
+use core\context\module as context_module;
+use format_rumbos\event\staging_completion_overridden;
 
 /**
  * STAGING ONLY: marks a test student's tracked SCORM activities complete or incomplete, so the final-exam gate of
@@ -61,6 +63,24 @@ class staging_completion {
     }
 
     /**
+     * Refuses anybody who is not a real, active participant of the course, and an editor of the map.
+     *
+     * @param int $courseid
+     * @param int $userid
+     * @throws \moodle_exception When the user is not a student of the course.
+     */
+    public static function require_student(int $courseid, int $userid): void {
+        $context = context_course::instance($courseid);
+        $user = \core_user::get_user($userid, '*', MUST_EXIST);
+        if ($user->deleted || isguestuser($user) || !is_enrolled($context, $user, '', true)) {
+            throw new \moodle_exception('invaliduser');
+        }
+        if (has_capability('format/rumbos:editmap', $context, $user)) {
+            throw new \moodle_exception('invaliduser', '', '', null, 'The user is an editor of the course, not a student.');
+        }
+    }
+
+    /**
      * The activities the helper would change, with their state now.
      *
      * Only activities that track completion count: the others record nothing in Moodle. The student must be a
@@ -75,14 +95,7 @@ class staging_completion {
      */
     public static function plan(int $courseid, int $userid, string $modname = self::DEFAULT_MODULE): array {
         $course = get_course($courseid);
-        $context = context_course::instance($courseid);
-        $user = \core_user::get_user($userid, '*', MUST_EXIST);
-        if ($user->deleted || isguestuser($user) || !is_enrolled($context, $user, '', true)) {
-            throw new \moodle_exception('invaliduser');
-        }
-        if (has_capability('format/rumbos:editmap', $context, $user)) {
-            throw new \moodle_exception('invaliduser', '', '', null, 'The user is an editor of the course, not a student.');
-        }
+        self::require_student($courseid, $userid);
 
         $completion = new \completion_info($course);
         $plan = [];
@@ -104,7 +117,8 @@ class staging_completion {
     /**
      * Marks every activity of the plan complete or incomplete for the user, as the current user's override.
      *
-     * The current user needs moodle/course:overridecompletion, as in the completion report.
+     * The current user needs moodle/course:overridecompletion, as in the completion report. Each state that actually
+     * changes is also recorded in an event, which is how {@see test_student_reset} knows what it may take back.
      *
      * @param int $courseid
      * @param int $userid
@@ -113,13 +127,28 @@ class staging_completion {
      * @return array[] The plan again, with the state after the change.
      */
     public static function apply(int $courseid, int $userid, bool $complete, string $modname = self::DEFAULT_MODULE): array {
+        global $USER;
+
         $course = get_course($courseid);
         $completion = new \completion_info($course);
         $target = $complete ? COMPLETION_COMPLETE : COMPLETION_INCOMPLETE;
 
         $activities = $completion->get_activities();
         foreach (self::plan($courseid, $userid, $modname) as $item) {
-            $completion->update_state($activities[$item['cmid']], $target, $userid, true);
+            $cm = $activities[$item['cmid']];
+            $completion->update_state($cm, $target, $userid, true);
+            $after = (int) $completion->get_data($cm, false, $userid)->completionstate;
+            if ($after === $item['state']) {
+                continue;
+            }
+            staging_completion_overridden::create([
+                'context' => context_module::instance($item['cmid']),
+                'objectid' => $item['cmid'],
+                'userid' => (int) $USER->id,
+                'relateduserid' => $userid,
+                'courseid' => $courseid,
+                'other' => ['state' => $after, 'previousstate' => $item['state'], 'modname' => $item['modname']],
+            ])->trigger();
         }
         return self::plan($courseid, $userid, $modname);
     }

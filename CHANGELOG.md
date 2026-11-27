@@ -11,6 +11,11 @@
 
 ### Added
 
+- **Staging only:** `cli/reset_test_student.php` resets a test student without deleting evidence (dry run by default). It
+  deletes the student's flow progress rows in the course and sets back to incomplete only the completion overrides the
+  plugin recorded. It refuses unless config.php sets `$CFG->format_rumbos_staging_tools = true;`. The staging completion
+  helper now records each override it makes with the event `staging_completion_overridden`; overrides it made before this
+  version have no record, so the reset leaves them alone. See `docs/FINAL-EXAM-GATE.md`.
 - Auto-complete (off by default, setting `autocompletecontent`): a verified passing result (check-in or final) marks the SCORM
   activities the student can see as complete, through Moodle's override, with an event per activity and an ad-hoc retry task.
   Only the result receiver can trigger it. The privacy declaration is updated and marked for legal review. See

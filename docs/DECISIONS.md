@@ -218,3 +218,13 @@ client's and legal's. See `docs/DESIGN-restart-from-zero.md`: it stays a documen
 past attempts too. With a threshold of 100 nothing passes. The range stays 0 to 100 and stored values are not rewritten:
 rejecting a stored 100 would make it count as the default of 80, which silently lowers the bar. If a course ever needs
 "at or above", it must be an explicit per-map option, off by default; it is not built.
+
+### D35. The reset takes back only the overrides the log records
+
+Moodle's completion row says who overrode it, not why, and the plugin makes its overrides as the site administrator, so
+the row cannot tell them from the administrator's own. The plugin's record is therefore its event, one per override:
+`content_autocompleted`, and the new `staging_completion_overridden`. No table was added. An override is taken back only
+while it still stands as recorded: complete, by the recorded account, and not modified after the event. The limits are
+accepted because each one makes the reset do less: with logging off or purged nothing is recognised, and any later
+change to the row makes it be left alone. Flow rows are deleted through `flow_progress::reset_map()`. Nothing that is
+evidence is deleted, so a reset student is not a new student: automatic completion can come back from the tracks.

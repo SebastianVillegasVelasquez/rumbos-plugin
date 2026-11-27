@@ -232,6 +232,7 @@ the service. The contract is in [docs/HOST-CONTRACT.md](docs/HOST-CONTRACT.md#we
 | External functions | `format_rumbos_get_flow_progress`, `_set_flow_step_done`, `_reset_flow_progress`, `_get_quiz_result`. AJAX only, always about the current user; writes are limited to 30 a minute per user. |
 | Quiz result fields of v5.9 | `previewAttempts`, `canAttempt` and `reason` (`ok`, `no_attempts`, `in_progress`, `preview_only`, `cannot_attempt`, `not_graded_yet`), added to the v5.8 fields, which are unchanged. Derived when read; nothing is stored. |
 | `cli/staging_completion.php` | **Staging only.** Marks a test student's SCORM activities complete or incomplete to try the final-exam gate; refuses unless config.php of the site sets `$CFG->format_rumbos_staging_tools = true;`. See [docs/FINAL-EXAM-GATE.md](docs/FINAL-EXAM-GATE.md). |
+| `cli/reset_test_student.php` | **Staging only.** Deletes a test student's flow progress rows and takes back the completion overrides the plugin recorded; deletes no SCORM track, attempt or grade. Dry run unless `--apply`; same refusal as above. See [docs/FINAL-EXAM-GATE.md](docs/FINAL-EXAM-GATE.md). |
 | `cli/quiz_check.php` | Read-only command line check, for the site administrator, of why a user's quiz result is what it is. See below. |
 
 Progress is not stored for a guest, for somebody who used "Log in as" and for a user who takes no part in the course
