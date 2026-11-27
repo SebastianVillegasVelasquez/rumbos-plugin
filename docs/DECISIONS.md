@@ -208,6 +208,56 @@ Resetting a student's SCORM completion needs their tracks deleted: an override t
 completion and is recalculated from the tracks. That destroys evidence and cannot be undone, and the decision is the
 client's and legal's. See `docs/DESIGN-restart-from-zero.md`: it stays a documented manual procedure.
 
+## Native quiz mirror
+
+### D19. A mirror, not a second source of truth
+
+The client needs Moodle's quiz statistics and responses report. The mirror writes native attempts so those reports
+work, and nothing reads them back: the score and the pass decision are the service's, the grade and the completion are
+the passback's. A total that differs from the service's percent is flagged (`diverged`) and still written, because the
+service is right and the log is where the difference is looked at.
+
+### D20. The mirror quiz has no grade, no pass mark and no completion
+
+Moodle's "grade to pass" is inclusive (80 passes at 80) and the service's rule is strictly above. A quiz with a pass
+mark would show, and with a completion rule would grant, exactly the result the service refused. A quiz with a maximum
+grade of 0 makes Moodle create no grade item at all, so there is also no second grade in the course total. The four
+gradebook options audited are in the spike; this is the only one that leaves nothing to reconcile. The marks of the
+attempts are still stored, which is all the statistics need.
+
+### D21. The attempt carries its exam; the quiz is made on first use
+
+The brief asks for a definition and an attempt as separate messages. Requiring the definition first would make an
+attempt that arrives first fail until it is resent. The attempt therefore carries the exam it was taken on and the
+receiver makes the quiz when it is not there; the definition message pre-creates it. Size is no problem (a few tens of
+kilobytes; the body cap is 1 MB, the passback's is 16 KB).
+
+### D22. A separate script and counter, the passback's keys
+
+`mirror.php` has its own rate counter, so a burst of mirror messages cannot use up the allowance a student's completion
+needs. It trusts the passback's issuer, tenant and keys rather than a second key set: one thing to rotate, and the same
+party signs both. The setting is off by default and also needs the passback's settings complete.
+
+### D23. Locking is re-applied at every use
+
+Hidden plus a prohibition of attempt, view and review for the student and guest archetypes, set on the quiz's own
+context. A restored course does not bring permission overrides back and a teacher can make a quiz visible, so the lock
+is applied again each time the quiz is used. A role made after the quiz is hidden from the quiz by its visibility until
+the next use.
+
+### D24. Writes run as the first administrator
+
+The question engine and the quiz attempt API check capabilities and record the acting user. The receiver has no session,
+so every write runs as the first site administrator and the previous user (or the empty session) is restored after,
+including on failure. Attempts belong to the student, never to that user.
+
+### D25. The wire format is read in one place and is provisional
+
+The service has not published an export contract, so the shapes in `exam.php` and `attempt_data.php` are fixtures shaped
+like the B2 form A. Each class validates and normalises its payload in one function; everything else works on the
+normalised objects. The mirror must not be enabled in production until the contract exists and the adapter is checked
+against it.
+
 ## Journey test tooling (2026-11-27)
 
 ### D34. The entry quiz passes strictly above the threshold
