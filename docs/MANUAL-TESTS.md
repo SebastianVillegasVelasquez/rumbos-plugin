@@ -608,3 +608,22 @@ Partial run of "Result passback and completion", on the local site (L above), wi
 
 The certificate, preview roles, the unconfigured course, expiry and the real service were not run. **The real service's
 statements would be refused**: see [DESIGN-restart-from-zero.md](DESIGN-restart-from-zero.md#together-with-the-services-restart-document).
+
+## Result passback with the service's signer and sender (2026-11-27, local)
+
+On the local site only (Moodle 5.2.4+, plugin from the source of this change). The statements were built, signed and
+posted by the **service's own code** (`app.passback.statement.claims_for` and `sign`,
+`app.mirror.attempt.attempt_claims`, `app.mirror.statements.definition_claims`, `app.passback.http.HttpMirrorPort`,
+`rumbos-backend` at `652c29e`), run from a script with a throwaway key. The deployed service, its outbox worker, its
+production key and staging were **not** run. The exam was the service's made-up test form. The JWK was made with
+`cli/ec_public_jwk.php`; auto-complete was on; one new student.
+
+| Sent | The service's sender concluded | Moodle, observed |
+| --- | --- | --- |
+| Definition, acknowledgement off | transient (503), would retry | nothing stored; audit `definition_not_supported` |
+| The same definition, acknowledgement on | accepted | nothing stored; audit `definition_not_stored` |
+| Fail 40, check-in (schema 1) | accepted | grade 40; course and activities not complete |
+| Pass 90, `completes_course` false | accepted | grade 90; course and activities not complete |
+| Pass 80.20, final (schema 2 attempt) | accepted | course complete; 11 activities complete; grade stays 90 (best) |
+| The same claims signed again | accepted | `already_applied`; nothing changed |
+| Another key under the same `kid` | permanent (401) | `bad_signature`; nothing changed |
