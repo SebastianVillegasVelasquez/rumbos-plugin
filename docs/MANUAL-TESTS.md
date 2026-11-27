@@ -627,3 +627,74 @@ production key and staging were **not** run. The exam was the service's made-up 
 | Pass 80.20, final (schema 2 attempt) | accepted | course complete; 11 activities complete; grade stays 90 (best) |
 | The same claims signed again | accepted | `already_applied`; nothing changed |
 | Another key under the same `kid` | permanent (401) | `bad_signature`; nothing changed |
+
+## Native quiz mirror
+
+*Historical: run with the earlier provisional format and `mirror.php`, which no longer exist. The current run is
+[below](#native-quiz-mirror-on-the-services-contract-2026-11-27-local).*
+
+Run on the development site (Moodle 5.2.4, PostgreSQL 17) with real HTTP posts to `mirror.php` and `passback.php`, signed
+by `dev/sign-test-mirror.php` and `dev/sign-test-statement.php`, on enrolled test students, for the check-in and the final.
+The messages are **fixtures**: the service's export contract does not exist yet. Not run on staging.
+
+| # | Scenario | Result (dev site) |
+| --- | --- | --- |
+| 1 | Definition of a published version, check-in and final | `200 created`; a hidden quiz, grade 0, no completion, no grade item; a student has neither the attempt nor the view capability |
+| 2 | The same definition again | `200 already_mirrored`; still one quiz |
+| 3 | Attempts below (79.76), at (80.00) and above (80.10) the threshold | `200 written`; quiz attempts finished, not preview, numbered 1, 2, 3, totals 79.7619, 80.0000 and 80.0952 of 100 |
+| 4 | The same attempt again | `200 already_written`; no second quiz attempt |
+| 5 | New content version | `200 created`; a second quiz; the old attempts stay in the first |
+| 6 | Tampered signature | `401 bad_signature`; nothing written |
+| 7 | A teacher's attempt | `422 role_not_allowed` |
+| 8 | A student the course does not have | `422 unknown_user` |
+| 9 | Mirror at 80.00 (service: fail) and at 80.10 (service: pass), then the passback of each | After the mirror alone the course is **not** complete and no result is recorded; the passback `recorded` the 80.00 and `completed` the 80.10; the gradebook has only the course total and "Rumbos result" |
+| 10 | Upgrade step: drop the four tables, lower the version, run the CLI upgrade | The tables are back at 2026112300 |
+
+**Not verified here:** the responses report rendered in a browser, a real enrolled student opening the quiz URL in a
+browser, backup and restore of a course with mirror quizzes, the real backend as sender and its retry behaviour, and
+Moodle 5.3. The two bugs this matrix found (the engine call that is only for unit tests, and a transaction left open after
+a failure) were invisible to PHPUnit.
+
+## Native quiz mirror on the service's contract (2026-11-27, local)
+
+On the local site only (Moodle 5.2.4+, PostgreSQL 17, plugin from the source of this change), upgraded with the CLI from
+`2026112401` to `2026112701`. That site still had the four tables of the provisional mirror with old rows, so the run did
+not create them; the PHPUnit upgrade test does. Statements were built, signed and posted by the **service's own code**
+(`claims_for`, `attempt_claims`, `build_definition`, `definition_claims`, `sign`, `HttpMirrorPort`; `rumbos-backend` at
+`02e1e35`) with a throwaway key. The exams were the service's made-up two-section form and its four published check-in
+forms (A1, A2, B1, B2), read in memory. New test students in one course; auto-complete on. **Not run:** the deployed
+service, its outbox worker (so its ordering and backoff are not covered), its production key, staging.
+
+| Sent | The service's sender concluded | Moodle, observed |
+| --- | --- | --- |
+| Definition, mirror off | transient (503 `mirror_not_enabled`) | nothing stored |
+| Attempt 80.20, mirror off | transient (503, `applied: true`) | grade 80.20, course and 11 activities complete; no mirror attempt |
+| Mirror on: definition, then again | accepted, accepted | `definition_stored`, `definition_already_stored`; one definition |
+| That attempt again | accepted | `already_applied`, `mirrored`; one native attempt, which also made the quiz |
+| A new attempt 80.20 of a known definition | accepted | `completed`, `mirrored` |
+| The byte-identical token, then the same claims signed again | accepted, accepted | `already_applied`, `already_mirrored`; the native attempt unchanged |
+| B2 attempt 70.00 **before** its definition | **unknown definition** (409) | grade 70, not complete; no mirror attempt |
+| B2 definition, then the same attempt | accepted, accepted | `definition_stored`; `mirrored` |
+| Failing attempt 35.10 | accepted | `recorded`, not complete; mirrored |
+| **Exactly 80.00** (`passed: false`) | accepted | grade 80, course not complete, 0 activities complete; native total 80 |
+| A hand-made `preview: true` attempt (the service never sends one) | permanent (422 `preview_not_accepted`) | no result, no grade, no mirror attempt |
+| Another key under the same `kid` | permanent (401) | nothing |
+| A1, A2 definitions and attempts, written text on | accepted | essays hold the text |
+| B1 definition and attempt, written text off | accepted | essays have the mark and the "not sent" comment, no response |
+| B2 attempt made over 64 KB with the text on | accepted | the service dropped the text (`truncated: true`), kept all 48 answers; the comment names the size limit |
+
+- **Answers and marks:** for four native attempts (the made-up form at 80.20 and 80.00, B2, and A1 with text), every
+  response and mark was compared with what the service's builder sent: 165 questions, no difference. No attempt was
+  flagged `diverged`.
+- **Hidden:** the five new quizzes are not visible, have maximum grade 0, no completion and no grade item, and their
+  maximum marks total 100. For five of the students: not visible to them, no view, attempt or review-own capability.
+- **One grade:** those students have "Rumbos result" and the course total, nothing else.
+- **Off by default:** checked by unsetting the setting here; a new install and the upgrade leaving it off are covered by
+  PHPUnit.
+- **Not verified:** Moodle's quiz reports in a browser (the local site asked for a login, which was not entered), a
+  student opening the quiz address in a browser, backup and restore, and a half-way write failure with this format.
+- **Left on the local site:** its settings were restored (its own mirror setting was on before the run and is on again),
+  the temporary files removed. The test students (ids 15 to 24) with their results and grades, five definitions, five
+  hidden quizzes in course 8 and their attempts remain. **The definitions and quizzes of the four real forms hold their
+  answer keys** in that local database.
+

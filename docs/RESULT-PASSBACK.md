@@ -1,5 +1,7 @@
 # Result passback: the receiver in the plugin
 
+The same address also receives the exam definitions and attempt records of the [native quiz mirror](NATIVE-QUIZ-MIRROR.md); this page is about verification and results.
+
 How the Rumbos backend tells this plugin that a student passed or failed the native check-in or final exam,
 and what Moodle does with it. **This page is the specification the backend's sender follows.** The backend
 implements the sender, the plugin implements the receiver. The browser is never trusted to report a grade
@@ -55,7 +57,7 @@ its secret included), another curve or the other key's algorithm are `401 bad_si
 JWT library is not used for this: its conversion halves a signature of any length.
 
 All signature checks are in one function, `result_statement::decode()`. `result_statement::verify_envelope()` adds
-issuer, audience, tenant, `jti` and `iat`, for a receiver of other messages of the service.
+issuer, audience, tenant, `jti` and `iat`, which results, definitions and attempt records all pass.
 
 ### The service's statements (ES256)
 
@@ -78,8 +80,10 @@ The source of truth is the service's `contracts/` and its signed vectors, copied
 | `passed` | The service's decision. Moodle never recomputes it. | Required, boolean. |
 | `completes_course` | The course is completed, and the content when auto-complete is on, only if this **and** `passed` are true. | Required, boolean. It is false when the rule in force did not exempt a student who passed. |
 | `pass_percent`, `pass_operator` | The rule, recorded in the audit (`gt:80`). It decides nothing. | Optional, both or neither; 0 to 100, and `gt` or `gte`. |
-| `kind`, `schema` | Neither: a schema 1 result. `kind: "attempt"` with `schema: 2`: an attempt record, applied as the same result. `kind: "definition"`: [below](#exam-definitions). | Anything else is `422 unknown_kind`. |
-| `ordinal`, `form_id`, `content_version`, `status`, `definition_hash`, `percent_exact`, `sections`, `answers`, `written`, ... | Ignored and not stored. | |
+| `kind`, `schema` | They route the statement: [below](#what-each-kind-of-statement-does). | Anything else is `422 unknown_kind`. |
+| `form_id`, `content_version`, `status`, `definition_hash`, `percent_exact`, `answers`, `written`, `written_text_included`, `truncated` | Of an attempt record: read by the [mirror](NATIVE-QUIZ-MIRROR.md). The result does not depend on them. | |
+| `ordinal`, `sections`, ... | Ignored and not stored. | |
+| `preview` | The service never sends it. Present and not `false`: nothing is applied. | `422 preview_not_accepted` |
 
 No `attempt_id`, no `policy`, no `exp` is needed.
 
@@ -92,20 +96,20 @@ the service treats as **permanent**, so both servers need a synchronised clock.
 a key configured here, the tenant, and for a result the `sub`: an HMAC with a secret of this site, which no other site
 resolves to a user.
 
-### Exam definitions
+### What each kind of statement does
 
-With a tenant's mirror on, the service sends the **definition** of a published exam to the same address, and sends the
-results of that exam only after the definition was accepted. The service can send over HTTP only to a tenant with a
-mirror endpoint, so for a published exam this is the normal case. This plugin has no exam mirror and stores no
-definition. A definition whose signature, issuer, audience and tenant are right is answered according to the setting
-**Acknowledge exam definitions without storing them** (`resultsackdefinitions`, off by default):
+| `kind`, `schema` | Handler | What happens |
+| --- | --- | --- |
+| none | `result_receiver::process()` | A result (schema 1) is applied. |
+| `attempt`, `2` | `result_receiver::process()`, then `mirror_intake::attempt()` | The result is applied, then the record goes to the mirror. |
+| `definition`, `1` | `mirror_intake::definition()` | The exam is stored by the mirror. It names no course and applies no result. |
+| anything else | | `422 unknown_kind` |
 
-- **Off:** `503 definition_not_supported`. The service retries it forever and holds that exam's results. Nothing is
-  lost, and nothing arrives.
-- **On:** `200 { "applied": false, "reason": "definition_not_stored" }`. The service marks it delivered and sends the
-  results. **The definition is not kept**, nor the answers inside the attempt records, and the service will not send
-  them again by itself. An exam mirror added later has to be filled again (the service's `mirror sync` queues
-  definitions again, not attempts it already delivered).
+The service sends the result of a published exam only **after its definition was accepted**, and only to a tenant with a
+mirror endpoint, so for a published exam this is the normal case: **keep the mirror on** when the tenant has that
+endpoint. With it off, definitions and attempt records are answered `503`, the result inside an attempt record is still
+applied, and nothing is lost. The mirror's answers, `unknown_definition` among them, are in
+[NATIVE-QUIZ-MIRROR.md](NATIVE-QUIZ-MIRROR.md#what-the-mirror-answers).
 
 ### The development signer's form (RS256)
 
@@ -155,17 +159,16 @@ the old JWK. The service signs when it sends, so waiting statements go out with 
 | `200` | `{ "applied": true, "reason": "completed" }` | The result is recorded and **this statement** completed the course. |
 | `200` | `{ "applied": true, "reason": "recorded" }` | The result is recorded; the course completion did not change (a fail, or a pass after the course was already complete). |
 | `200` | `{ "applied": false, "reason": "already_applied" }` | The attempt (the service's `jti`; the development form's `attempt_id`) was applied before. Nothing changed. |
-| `200` | `{ "applied": false, "reason": "definition_not_stored" }` | An exam definition, acknowledged and not stored (the setting is on). |
 | `400` | `{ "applied": false, "reason": ... }` | Neither a compact JWS nor the JSON form, too long, or a claim missing or of the wrong type. `malformed`. |
 | `401` | | Bad signature, unknown `kid`, wrong issuer, audience or tenant, expired. `bad_signature`, `unknown_key`, `expired`, `not_yet_valid`, `bad_issuer`, `bad_audience`, `bad_tenant`. |
 | `405` | | Not a `POST`. |
 | `409` | | The `jti` was used before with a **different** payload. `jti_conflict`. |
 | `422` | | `unknown_kind` (an ES256 statement that is not a result, an attempt or a definition of a known schema); `unknown_course` (no such course, or not Rumbos); `unknown_user` (no user of that course has this `sub`); `not_enrolled` (enrolment inactive, suspended or ended); `role_not_allowed` (not a student: a teacher, manager, administrator, or anybody who may edit the map). |
 | `429` | | Too many requests. **Treat like a `5xx`**: retry later, with `Retry-After`. |
-| `503` | | `definition_not_supported`: see [Exam definitions](#exam-definitions). `not_configured`: the receiver is off, or the course is not set up (`course_not_configured`: no result grade item, no completion criterion, or completion switched off). **Transient**: the result is not lost, the sender keeps it and retries. |
+| `503` | | `not_configured`: the receiver is off, or the course is not set up (`course_not_configured`: no result grade item, no completion criterion, or completion switched off). **Transient**: the result is not lost, the sender keeps it and retries. |
 | `500` | | Anything unexpected. Nothing was applied (the change is one database transaction). **Transient.** |
 
-The body is always `{ "applied": bool, "reason": string }`. A sender must treat `422`, `401`, `400`, `409`
+A definition and a mirrored attempt record have [answers of their own](NATIVE-QUIZ-MIRROR.md#what-the-mirror-answers). The body is `{ "applied": bool, "reason": string }`, with `mirror` or `error` added by the mirror. A sender must treat `422`, `401`, `400`, `409`
 as permanent for that statement (and alert: they mean misconfiguration or a bug) and `429`, `5xx` as
 transient. The service does so, and parks a permanent one for an operator. A **resend** carries the same claims with a
 new signature (ECDSA signatures differ every time) and is answered `already_applied` if the first one got through. (In
@@ -243,24 +246,25 @@ sender is turned on**, results of old pilots included; a permanent refusal parks
    any development key; keep none in production); "Result issuer" = the service's `PASSBACK_ISSUER` (default
    `rumbos-backend`; the setting's own default is `rumbos`, so it must be changed); "Result tenant" = the service's
    tenant UUID, the `tenant` claim; "Accept results" on.
-3. **Definitions.** Decide [what happens to exam definitions](#exam-definitions). For results of published exams to
-   arrive, turn on "Acknowledge exam definitions without storing them", knowing they are then not kept.
+3. **The mirror.** For results of published exams to arrive through a mirror endpoint, turn on "Mirror exams in
+   native quizzes" ([enabling it](NATIVE-QUIZ-MIRROR.md#enabling), legal review first).
 4. **Auto-complete** is separate and off by default (needs legal review).
 5. **Service:** set `PASSBACK_SENDER=http`, then give the tenant its address:
    `python -m app.scripts.mirror configure --tenant <id|issuer> --endpoint https://<moodle>/course/format/rumbos/passback.php`
-   Leave `--written-text` off. Run `python -m app.scripts.passback sync-run` (or let cron).
+   Leave `--written-text` off. Queue the exams already published with
+   `python -m app.scripts.mirror sync --tenant <id|issuer>` (dry run), then `--apply`. Run `python -m app.scripts.passback sync-run` (or let cron).
 6. **Verify.** Have one real test **student** (not a teacher, not a preview) finish a check-in. Then check:
    - the service: `python -m app.scripts.passback status` shows it sent, nothing failed;
    - Moodle: `select timecreated, status, reason, kid, jti, courseid, userid, passed, policy from mdl_format_rumbos_audit
      order by id desc limit 10;` (your table prefix) shows `200` with `completed` or `recorded`, your `kid`, and the
-     attempt's id as `jti`; a definition shows `definition_not_stored`;
+     attempt's id as `jti`; a definition shows `definition_stored`;
    - the gradebook item "Rumbos result" holds the percent, and after a pass the course completion report shows the
      student complete;
    - then a failing attempt of another test student: `recorded`, not complete.
 7. **When it is refused**, the audit's `reason` says why: `unknown_key` (kid), `bad_signature` (another key pair),
    `bad_issuer`, `bad_audience`, `bad_tenant`, `not_yet_valid` (clocks), `unknown_user` (the user is not enrolled, or
    the site's pseudonym secret differs from the one that made the launch), `course_not_configured`,
-   `definition_not_supported` (step 3). A `401`, `422` or `400` is parked by the service as `failed_permanent`: it is
+   `mirror_not_enabled` (step 3). A `401`, `422` or `400` is parked by the service as `failed_permanent`: it is
    not sent again by itself.
 
 **To turn it off:** set `PASSBACK_SENDER=none` on the service, or untick "Accept results" (then `503`, and the service

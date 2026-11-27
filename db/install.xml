@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="course/format/rumbos/db" VERSION="20261117" COMMENT="XMLDB file for the Rumbos course format"
+<XMLDB PATH="course/format/rumbos/db" VERSION="20261127" COMMENT="XMLDB file for the Rumbos course format"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd"
 >
@@ -70,6 +70,97 @@
         <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
         <INDEX NAME="courseuser" UNIQUE="false" FIELDS="courseid, userid"/>
         <INDEX NAME="jti" UNIQUE="false" FIELDS="jti"/>
+        <INDEX NAME="attemptid" UNIQUE="false" FIELDS="attemptid"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="format_rumbos_mirror_def" COMMENT="The exam definitions the Rumbos service sent for the native quiz mirror, one per form and definition hash; they hold the answer key and no user data">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="formid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The exam form of the Rumbos service"/>
+        <FIELD NAME="hash" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The definition hash, which attempts name"/>
+        <FIELD NAME="contentversion" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The version of the content pack it came from"/>
+        <FIELD NAME="definition" TYPE="text" NOTNULL="true" SEQUENCE="false" COMMENT="The definition object as JSON"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When it arrived"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="formhash" TYPE="unique" FIELDS="formid, hash"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="format_rumbos_mirror_quiz" COMMENT="The native Moodle quiz that mirrors one version of a Rumbos exam in a course: one row per course, form and content version">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The course the quiz is in"/>
+        <FIELD NAME="formid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The exam form of the Rumbos service"/>
+        <FIELD NAME="version" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The content version of the form that the quiz was made from"/>
+        <FIELD NAME="purpose" TYPE="char" LENGTH="12" NOTNULL="true" SEQUENCE="false" COMMENT="check_in or final"/>
+        <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The course module of the quiz"/>
+        <FIELD NAME="quizid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The quiz"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the quiz was made"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="courseformversion" TYPE="unique" FIELDS="courseid, formid, version"/>
+        <KEY NAME="cm" TYPE="unique" FIELDS="cmid"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="format_rumbos_mirror_item" COMMENT="Which question and slot of a mirror quiz holds each item of the exam">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="mirrorid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The mirror quiz"/>
+        <FIELD NAME="itemid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The item of the Rumbos exam"/>
+        <FIELD NAME="slot" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The slot of the quiz"/>
+        <FIELD NAME="questionid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The question, at the version the quiz is pinned to"/>
+        <FIELD NAME="maxmark" TYPE="number" LENGTH="12" DECIMALS="7" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="What the item is worth in the quiz"/>
+        <FIELD NAME="units" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="The points the service gives for a full score"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="mirroritem" TYPE="unique" FIELDS="mirrorid, itemid"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="format_rumbos_mirror_attempt" COMMENT="The native quiz attempt written for an attempt of the Rumbos service: one row per service attempt">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="mirrorid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The mirror quiz"/>
+        <FIELD NAME="attemptid" TYPE="char" LENGTH="64" NOTNULL="true" SEQUENCE="false" COMMENT="The attempt of the Rumbos service: the idempotency key"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The course"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The student"/>
+        <FIELD NAME="quizattemptid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false" COMMENT="The quiz attempt that was written"/>
+        <FIELD NAME="percent" TYPE="char" LENGTH="6" NOTNULL="true" SEQUENCE="false" COMMENT="The percent the service decided"/>
+        <FIELD NAME="passed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="What the service decided"/>
+        <FIELD NAME="diverged" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="1 when the quiz total, rounded, did not equal the percent"/>
+        <FIELD NAME="timefinished" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the student finished"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When the quiz attempt was written"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="attempt" TYPE="unique" FIELDS="attemptid"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="courseuser" UNIQUE="false" FIELDS="courseid, userid"/>
+        <INDEX NAME="mirror" UNIQUE="false" FIELDS="mirrorid"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="format_rumbos_mirror_log" COMMENT="What the mirror refused or could not do, and the quizzes it made, for administrators; no user is recorded">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="When"/>
+        <FIELD NAME="kind" TYPE="char" LENGTH="12" NOTNULL="true" SEQUENCE="false" COMMENT="definition or attempt"/>
+        <FIELD NAME="outcome" TYPE="char" LENGTH="12" NOTNULL="true" SEQUENCE="false" COMMENT="applied, rejected, failed or divergent"/>
+        <FIELD NAME="status" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The HTTP status answered"/>
+        <FIELD NAME="reason" TYPE="char" LENGTH="48" NOTNULL="true" SEQUENCE="false" COMMENT="The reason answered"/>
+        <FIELD NAME="detail" TYPE="char" LENGTH="255" NOTNULL="false" SEQUENCE="false" COMMENT="Which part was wrong, or the error"/>
+        <FIELD NAME="formid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="The exam form, once the signature was verified"/>
+        <FIELD NAME="version" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="The content version"/>
+        <FIELD NAME="attemptid" TYPE="char" LENGTH="64" NOTNULL="false" SEQUENCE="false" COMMENT="The attempt of the service"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The course, 0 when unknown"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="timecreated" UNIQUE="false" FIELDS="timecreated"/>
         <INDEX NAME="attemptid" UNIQUE="false" FIELDS="attemptid"/>
       </INDEXES>
     </TABLE>

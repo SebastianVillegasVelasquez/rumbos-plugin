@@ -25,17 +25,20 @@ use core_privacy\local\request\transform;
 use core_privacy\local\request\userlist;
 use core_privacy\local\request\writer;
 use format_rumbos\local\flow_progress;
+use format_rumbos\local\mirror\mirror_store;
 use format_rumbos\local\result_store;
 
 /**
  * Privacy provider for the Rumbos course format.
  *
- * Moodle stores three kinds of personal data for the plugin, all of them in the course context: which step of a
+ * Moodle stores four kinds of personal data for the plugin, all of them in the course context: which step of a
  * welcome flow a user completed (table format_rumbos_flow); the results of check-in and final exams that the Rumbos
  * service reported (table format_rumbos_result, with the grade and the course completion those cause, which Moodle's
  * own privacy providers cover); and the audit of every result statement received (table format_rumbos_audit, which
  * holds the pseudonymous reference and the score, never a name, an email or a network address). None of this is sent
- * to the Rumbos service, which only receives what the launch assertion carries.
+ * to the Rumbos service, which only receives what the launch assertion carries. The fourth is the native quiz mirror's
+ * record of which native quiz attempt belongs to which Rumbos attempt (table format_rumbos_mirror_attempt); the quiz
+ * attempt itself, with the answers and marks, is Moodle's own data and is exported and erased by mod_quiz's provider.
  *
  * This declaration is a DRAFT that NEEDS LEGAL REVIEW: the retention of the results and of the audit is not decided,
  * and no channel exists to forward an erasure request to the Rumbos service.
@@ -101,6 +104,15 @@ class provider implements
             'policy' => 'privacy:metadata:format_rumbos_audit:policy',
         ], 'privacy:metadata:format_rumbos_audit');
 
+        $collection->add_database_table(mirror_store::ATTEMPTS, [
+            'courseid' => 'privacy:metadata:format_rumbos_mirror_attempt:courseid',
+            'userid' => 'privacy:metadata:format_rumbos_mirror_attempt:userid',
+            'attemptid' => 'privacy:metadata:format_rumbos_mirror_attempt:attemptid',
+            'quizattemptid' => 'privacy:metadata:format_rumbos_mirror_attempt:quizattemptid',
+            'percent' => 'privacy:metadata:format_rumbos_mirror_attempt:percent',
+            'passed' => 'privacy:metadata:format_rumbos_mirror_attempt:passed',
+            'timefinished' => 'privacy:metadata:format_rumbos_mirror_attempt:timefinished',
+        ], 'privacy:metadata:format_rumbos_mirror_attempt');
         $collection->add_subsystem_link('core_completion', [], 'privacy:metadata:autocomplete');
 
         $collection->add_external_location_link('rumbos', [
@@ -135,8 +147,16 @@ class provider implements
                     SELECT courseid FROM {' . result_store::RESULTS . '} WHERE userid = :resultuser
                      UNION
                     SELECT courseid FROM {' . result_store::AUDIT . '} WHERE userid = :audituser
+                     UNION
+                    SELECT courseid FROM {' . mirror_store::ATTEMPTS . '} WHERE userid = :mirroruser
                 )',
-            ['contextlevel' => CONTEXT_COURSE, 'flowuser' => $userid, 'resultuser' => $userid, 'audituser' => $userid]
+            [
+                'contextlevel' => CONTEXT_COURSE,
+                'flowuser' => $userid,
+                'resultuser' => $userid,
+                'audituser' => $userid,
+                'mirroruser' => $userid,
+            ]
         );
         return $contextlist;
     }
@@ -165,6 +185,11 @@ class provider implements
         $userlist->add_from_sql(
             'userid',
             'SELECT userid FROM {' . result_store::AUDIT . '} WHERE courseid = :courseid AND userid > 0',
+            $params
+        );
+        $userlist->add_from_sql(
+            'userid',
+            'SELECT userid FROM {' . mirror_store::ATTEMPTS . '} WHERE courseid = :courseid',
             $params
         );
     }
@@ -241,6 +266,24 @@ class provider implements
                     (object) ['statements' => $statements]
                 );
             }
+
+            $rows = $DB->get_records(mirror_store::ATTEMPTS, $where, 'timefinished ASC, id ASC');
+            if ($rows) {
+                $mirrored = [];
+                foreach ($rows as $row) {
+                    $mirrored[] = (object) [
+                        'attempt' => $row->attemptid,
+                        'quizattempt' => (int) $row->quizattemptid,
+                        'percent' => $row->percent,
+                        'passed' => transform::yesno((bool) $row->passed),
+                        'timefinished' => transform::datetime((int) $row->timefinished),
+                    ];
+                }
+                writer::with_context($context)->export_data(
+                    [get_string('privacy:path:mirror', 'format_rumbos')],
+                    (object) ['attempts' => $mirrored]
+                );
+            }
         }
     }
 
@@ -253,6 +296,7 @@ class provider implements
         if ($context instanceof context_course) {
             flow_progress::delete_for_course($context->instanceid);
             result_store::erase_course($context->instanceid);
+            mirror_store::erase_course($context->instanceid);
         }
     }
 
@@ -275,6 +319,7 @@ class provider implements
             ['courseid' => $context->instanceid] + $inparams
         );
         foreach ($userlist->get_userids() as $userid) {
+            mirror_store::erase_user((int) $userid, $context->instanceid);
             result_store::erase_user((int) $userid, $context->instanceid);
         }
     }
@@ -290,6 +335,7 @@ class provider implements
         foreach ($contextlist->get_contexts() as $context) {
             if ($context instanceof context_course) {
                 flow_progress::delete_for_user($userid, $context->instanceid);
+                mirror_store::erase_user($userid, $context->instanceid);
                 result_store::erase_user($userid, $context->instanceid);
             }
         }

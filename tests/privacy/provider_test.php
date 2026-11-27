@@ -23,7 +23,14 @@ use core_privacy\local\request\approved_userlist;
 use core_privacy\local\request\userlist;
 use core_privacy\local\request\writer;
 use format_rumbos\local\flow_progress;
+use format_rumbos\local\mirror\attempt_data;
+use format_rumbos\local\mirror\exam;
+use format_rumbos\local\mirror\mirror_store;
 use format_rumbos\local\result_store;
+
+defined('MOODLE_INTERNAL') || die();
+
+require_once(__DIR__ . '/../fixtures/mirror_fixture.php');
 
 /**
  * Tests for the privacy provider.
@@ -63,7 +70,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
     public function test_metadata_declares_the_table_and_the_external_location(): void {
         $items = provider::get_metadata(new collection('format_rumbos'))->get_collection();
 
-        $this->assertCount(5, $items);
+        $this->assertCount(6, $items);
         $strings = get_string_manager();
 
         $table = $items[0];
@@ -94,13 +101,20 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
             $this->assertArrayNotHasKey($field, $audit->get_privacy_fields());
         }
 
+        $mirror = $items[3];
+        $this->assertSame('format_rumbos_mirror_attempt', $mirror->get_name());
+        $this->assertEqualsCanonicalizing(
+            ['courseid', 'userid', 'attemptid', 'quizattemptid', 'percent', 'passed', 'timefinished'],
+            array_keys($mirror->get_privacy_fields())
+        );
+
         // Auto-completion writes Moodle's own completion data: declared, and marked for legal review.
-        $completion = $items[3];
+        $completion = $items[4];
         $this->assertInstanceOf(\core_privacy\local\metadata\types\subsystem_link::class, $completion);
         $this->assertSame('core_completion', $completion->get_name());
         $this->assertStringContainsString('NEEDS LEGAL REVIEW', get_string('privacy:metadata:autocomplete', 'format_rumbos'));
 
-        $location = $items[4];
+        $location = $items[5];
         $this->assertInstanceOf(\core_privacy\local\metadata\types\external_location::class, $location);
         $this->assertSame('rumbos', $location->get_name());
         $this->assertEqualsCanonicalizing(
@@ -112,11 +126,11 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $this->assertStringContainsString('NEEDS LEGAL REVIEW', get_string('privacy:metadata:rumbos:uid', 'format_rumbos'));
         // Retention is not decided: the text says so until legal review replaces it.
         $this->assertStringContainsString('NEEDS LEGAL REVIEW', get_string('privacy:metadata:rumbos', 'format_rumbos'));
-        foreach (['format_rumbos_result', 'format_rumbos_audit'] as $name) {
+        foreach (['format_rumbos_result', 'format_rumbos_audit', 'format_rumbos_mirror_attempt'] as $name) {
             $this->assertStringContainsString('NEEDS LEGAL REVIEW', get_string('privacy:metadata:' . $name, 'format_rumbos'));
         }
 
-        foreach ([$table, $results, $audit, $location] as $item) {
+        foreach ([$table, $results, $audit, $mirror, $location] as $item) {
             foreach ($item->get_privacy_fields() as $identifier) {
                 $this->assertTrue($strings->string_exists($identifier, 'format_rumbos'), $identifier);
             }
@@ -127,7 +141,7 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
      * The declaration does not claim that the plugin sends anything it does not.
      */
     public function test_metadata_does_not_declare_direct_identifiers(): void {
-        $location = provider::get_metadata(new collection('format_rumbos'))->get_collection()[3];
+        $location = provider::get_metadata(new collection('format_rumbos'))->get_collection()[4];
 
         foreach (['name', 'email', 'username', 'fullname'] as $field) {
             $this->assertArrayNotHasKey($field, $location->get_privacy_fields());
@@ -425,5 +439,88 @@ final class provider_test extends \core_privacy\tests\provider_testcase {
         $this->assertSame(0, $DB->count_records('format_rumbos_result', ['userid' => $user1->id]));
         $this->assertSame(0, $DB->count_records('format_rumbos_audit', ['userid' => $user1->id]));
         $this->assertSame(2, $DB->count_records('format_rumbos_result', ['courseid' => $course2->id]));
+    }
+
+    /**
+     * Two users in two courses, each with a mirrored attempt in both.
+     *
+     * @return array [user1, user2, course1, course2]
+     */
+    private function build_with_mirror(): array {
+        $this->resetAfterTest();
+        $generator = $this->getDataGenerator();
+        $users = [$generator->create_user(), $generator->create_user()];
+        $courses = [$generator->create_course(['format' => 'rumbos']), $generator->create_course(['format' => 'rumbos'])];
+        $definition = \format_rumbos\mirror_fixture::definition();
+        $record = (object) json_decode(json_encode(\format_rumbos\mirror_fixture::record([])));
+        foreach ($courses as $course) {
+            $exam = exam::from_definition($definition, \format_rumbos\mirror_fixture::hash($definition));
+            $mirrorid = mirror_store::insert_quiz((int) $course->id, $exam, 100 + $course->id, 200 + $course->id, 1000);
+            foreach ($users as $user) {
+                $id = 'att-' . $course->id . '-' . $user->id;
+                $attempt = attempt_data::from_claims($record, [
+                    'attempt_id' => $id, 'purpose' => 'check_in', 'finished_at' => 1790000000, 'passed' => false,
+                    'percent' => '0.00',
+                ]);
+                mirror_store::insert_attempt($mirrorid, $attempt, (int) $course->id, (int) $user->id, 900, false, 2000);
+            }
+        }
+        return [...$users, ...$courses];
+    }
+
+    /**
+     * Mirrored attempts put the user in the course context and are exported, and only the user's own.
+     */
+    public function test_the_mirror_is_found_and_exported(): void {
+        [$user1, $user2, $course1] = $this->build_with_mirror();
+        $context = context_course::instance($course1->id);
+
+        $this->assertCount(2, provider::get_contexts_for_userid($user1->id)->get_contextids());
+        $userlist = new userlist($context, 'format_rumbos');
+        provider::get_users_in_context($userlist);
+        $this->assertEqualsCanonicalizing([(int) $user1->id, (int) $user2->id], array_map('intval', $userlist->get_userids()));
+
+        provider::export_user_data(new approved_contextlist($user1, 'format_rumbos', [$context->id]));
+        $data = writer::with_context($context)->get_data([get_string('privacy:path:mirror', 'format_rumbos')]);
+        $this->assertCount(1, $data->attempts);
+        $this->assertSame('att-' . $course1->id . '-' . $user1->id, $data->attempts[0]->attempt);
+    }
+
+    /**
+     * Erasing a user, some users or a context removes the mapping rows, and only those.
+     */
+    public function test_the_mirror_is_erased(): void {
+        global $DB;
+        [$user1, $user2, $course1, $course2] = $this->build_with_mirror();
+        $context1 = context_course::instance($course1->id);
+
+        provider::delete_data_for_user(new approved_contextlist($user1, 'format_rumbos', [$context1->id]));
+        $this->assertSame(0, $DB->count_records(mirror_store::ATTEMPTS, ['userid' => $user1->id, 'courseid' => $course1->id]));
+        $this->assertSame(3, $DB->count_records(mirror_store::ATTEMPTS));
+
+        provider::delete_data_for_users(new approved_userlist($context1, 'format_rumbos', [$user2->id]));
+        $this->assertSame(0, $DB->count_records(mirror_store::ATTEMPTS, ['courseid' => $course1->id]));
+        $this->assertSame(2, $DB->count_records(mirror_store::ATTEMPTS));
+
+        provider::delete_data_for_all_users_in_context(context_course::instance($course2->id));
+        $this->assertSame(0, $DB->count_records(mirror_store::ATTEMPTS));
+        $this->assertSame(0, $DB->count_records(mirror_store::QUIZZES, ['courseid' => $course2->id]));
+        $this->assertSame(1, $DB->count_records(mirror_store::QUIZZES));
+    }
+
+    /**
+     * Deleting a course or a user removes what the mirror recorded for it.
+     */
+    public function test_the_observers_remove_the_mirror(): void {
+        global $DB;
+        [$user1, , $course1] = $this->build_with_mirror();
+
+        delete_user($user1);
+        $this->assertSame(0, $DB->count_records(mirror_store::ATTEMPTS, ['userid' => $user1->id]));
+
+        delete_course($course1, false);
+        $this->assertSame(0, $DB->count_records(mirror_store::ATTEMPTS, ['courseid' => $course1->id]));
+        $this->assertSame(0, $DB->count_records(mirror_store::QUIZZES, ['courseid' => $course1->id]));
+        $this->assertSame(0, $DB->count_records(mirror_store::ITEMS));
     }
 }

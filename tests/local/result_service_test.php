@@ -59,6 +59,15 @@ final class result_service_test extends \format_rumbos\result_testcase {
         set_config('resultissuer', 'rumbos-backend', 'format_rumbos');
         set_config('resulttenant', $this->vector('result')->claims->tenant, 'format_rumbos');
         $this->now = max($this->now, self::IAT + 60);
+        set_config('mirrorenabled', 1, 'format_rumbos');
+        $definition = $this->vector('definition')->claims;
+        \format_rumbos\local\mirror\mirror_store::insert_definition(
+            $definition->form_id,
+            $definition->definition_hash,
+            $definition->content_version,
+            json_encode($definition->definition),
+            $this->now
+        );
     }
 
     /**
@@ -231,12 +240,12 @@ final class result_service_test extends \format_rumbos\result_testcase {
     }
 
     /**
-     * An attempt record is far longer than a result (here with 60 KB of written text) and is read; a body over the
-     * limit is not.
+     * An attempt record is far longer than a result (here with 60 KB more in a claim nothing reads) and is read; a body
+     * over the limit is not.
      */
     public function test_a_long_attempt_record_is_accepted(): void {
         [$course, $student] = $this->course_and_student();
-        $claims = $this->service_claims($course, $student, ['written' => [['text' => str_repeat('ñ', 30000)]]], 'attempt');
+        $claims = $this->service_claims($course, $student, ['note' => str_repeat('ñ', 30000)], 'attempt');
         $this->assertGreaterThan(80000, strlen($this->service_sign($claims)));
 
         $this->assert_reply($this->deliver($claims), 200, 'completed');
@@ -263,7 +272,7 @@ final class result_service_test extends \format_rumbos\result_testcase {
         $this->assert_reply(result_receiver::handle('POST', $again, $this->now), 200, 'already_applied');
         $this->assert_reply($this->deliver($claims, $this->now + 30 * DAYSECS), 200, 'already_applied');
         // The same attempt, now as the schema 2 record of the same claims.
-        $record = $claims + ['schema' => 2, 'kind' => 'attempt', 'status' => 'submitted'];
+        $record = $claims + array_diff_key((array) $this->vector('attempt')->claims, $claims);
         $this->assert_reply($this->deliver($record), 200, 'already_applied');
 
         $this->assertSame(1, $DB->count_records('format_rumbos_result'));
@@ -505,37 +514,36 @@ final class result_service_test extends \format_rumbos\result_testcase {
     }
 
     /**
-     * An exam definition is answered with a retry while the plugin cannot store it: nothing is lost on either side.
+     * A refused definition is audited with its id, like every statement that is authentic.
      */
-    public function test_a_definition_is_asked_for_again_by_default(): void {
+    public function test_a_refused_definition_is_audited_with_its_id(): void {
         set_config('resultkeys', $this->vector_file('jwks.json'), 'format_rumbos');
+        unset_config('mirrorenabled', 'format_rumbos');
         $vector = $this->vector('definition');
 
         $reply = result_receiver::handle('POST', $vector->jws, self::IAT + 60);
 
-        $this->assert_reply($reply, 503, 'definition_not_supported');
-        $this->assertSame($vector->claims->jti, $this->assert_audited(503, 'definition_not_supported')->jti);
+        $this->assert_reply($reply, 503, 'mirror_not_enabled', false);
+        $this->assertSame($vector->claims->jti, $this->assert_audited(503, 'mirror_not_enabled')->jti);
     }
 
     /**
-     * With the setting on, the golden definition is acknowledged and nothing of it is stored; one for another tenant, or
-     * tampered with, is still refused.
+     * The service's failed vector, exactly 80 under "greater than", is a fail with a shown percent of 80.00.
      */
-    public function test_a_definition_can_be_acknowledged(): void {
-        global $DB;
+    public function test_the_failed_vector(): void {
         set_config('resultkeys', $this->vector_file('jwks.json'), 'format_rumbos');
-        set_config(result_receiver::ACK_DEFINITIONS, 1, 'format_rumbos');
-        $vector = $this->vector('definition');
+        $vector = $this->vector('result-failed');
+        $claims = result_statement::decode($vector->jws, self::IAT + 1);
+        $claims->sub = str_repeat('a', 32);
 
-        $reply = result_receiver::handle('POST', $vector->jws, self::IAT + 60);
+        $result = result_statement::result_claims($claims, 'ES256', self::IAT + 1);
 
-        $this->assert_reply($reply, 200, 'definition_not_stored', false);
-        $this->assertSame(0, $DB->count_records('format_rumbos_result'));
-
-        $tampered = result_receiver::handle('POST', $this->tamper($vector->jws), self::IAT + 60);
-        $this->assert_reply($tampered, 401, 'bad_signature');
-        set_config('resulttenant', 'another-tenant', 'format_rumbos');
-        $this->assert_reply(result_receiver::handle('POST', $vector->jws, self::IAT + 60), 401, 'bad_tenant');
+        $this->assertSame(
+            ['80.00', false, false, '80', 'gt'],
+            [$result['percent'], $result['passed'], $result['completes_course'], $result['pass_percent'],
+                $result['pass_operator']]
+        );
+        $this->assertFalse(result_statement::completes($result));
     }
 
     /**
@@ -543,7 +551,7 @@ final class result_service_test extends \format_rumbos\result_testcase {
      */
     public function test_the_shared_envelope_check(): void {
         set_config('resultkeys', $this->vector_file('jwks.json'), 'format_rumbos');
-        foreach (['result', 'attempt', 'definition'] as $name) {
+        foreach (['result', 'result-failed', 'attempt', 'definition'] as $name) {
             $vector = $this->vector($name);
             $this->assertEquals($vector->claims, result_statement::verify_envelope($vector->jws, self::IAT + 1));
         }

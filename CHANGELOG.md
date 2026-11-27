@@ -3,7 +3,7 @@
 ## Unreleased
 
 Not released: there is no tag after `v0.2.0`, and everything under this heading, host contract v5.11 included, is only in
-the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it needs is in
+the source. `version.php` already says `0.9.0` (`2026112701`). What releasing it needs is in
 [docs/RELEASE.md](docs/RELEASE.md#releasing-what-is-unreleased-now).
 
 ### Changed
@@ -29,8 +29,6 @@ the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it
   2) records up to 512 KB. The course and the content are completed only when `passed` **and** `completes_course` are
   true. Before this, no real result could be applied. The development (RS256) form is unchanged. See
   `docs/RESULT-PASSBACK.md`.
-- Setting `resultsackdefinitions` (off by default): answer success to the service's exam definitions without storing
-  them. While it is off they are answered 503, and the service holds the results of those exams.
 - **Staging only:** `cli/reset_test_student.php` resets a test student without deleting evidence (dry run by default). It
   deletes the student's flow progress rows in the course and sets back to incomplete only the completion overrides the
   plugin recorded. It refuses unless config.php sets `$CFG->format_rumbos_staging_tools = true;`. The staging completion
@@ -51,6 +49,12 @@ the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it
   `docs/LEVEL-PREREQUISITES.md`.
 - `docs/DESIGN-diagnostic-only-level.md`: an audit, with cost estimates, of a mode that would let a locked student open
   the welcome flow and its check-in. Not implemented.
+- Native quiz mirror (off by default; setting "Mirror exams in native quizzes"): in each course, a hidden native quiz
+  per published exam and a finished native attempt with the real answers and the service's marks per Rumbos attempt, so
+  Moodle's statistics and responses report work. It adds no grade and no completion. It takes the service's exam
+  definitions and attempt records at `passback.php`, and answers `unknown_definition` for an attempt whose exam it does
+  not have. An admin status page, five tables (run the upgrade), privacy export and erase. See
+  `docs/NATIVE-QUIZ-MIRROR.md`.
 - Launch assertion: the optional signed claim `uid` (the Moodle user id, an integer), behind the admin setting "Send the
   Moodle user id in launch assertions", **off by default**. Turn it on only after the Rumbos service accepts it. The
   privacy declaration lists it and is marked for legal review. See `docs/FINAL-EXAM-GATE.md`.
@@ -58,6 +62,11 @@ the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it
   refuses unless config.php of the site sets `$CFG->format_rumbos_staging_tools = true`.
 - `docs/FINAL-EXAM-GATE.md`: the capabilities the service account needs to read completion, the verification, the override
   path and the deploy order. No schema change, no new capability.
+
+### Fixed
+
+- A result statement whose payload is not JSON now gets `401 bad_signature` instead of a retryable `500`.
+- A flaky test of the signature check (it changed a base64 character that can carry no information).
 
 ## 0.8.0
 

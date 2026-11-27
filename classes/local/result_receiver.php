@@ -16,8 +16,14 @@
 
 namespace format_rumbos\local;
 
+use format_rumbos\local\mirror\mirror_intake;
+
 /**
- * The result receiver: one request in, one answer out, and an audit row for every statement.
+ * The receiver of the service's statements: one request in, one answer out, and an audit row for every statement.
+ *
+ * The service posts everything to one address, and the kind of a statement decides what happens to it: a **result** is
+ * applied; an **exam definition** goes to the native quiz mirror ({@see mirror_intake}); an **attempt record** is both,
+ * because for a published exam it is the only statement that carries the pass.
  *
  * It knows nothing about HTTP beyond status codes, so it is tested without a web server; passback.php only reads the
  * request and sends the answer. The contract is in docs/RESULT-PASSBACK.md.
@@ -28,17 +34,11 @@ namespace format_rumbos\local;
  */
 class result_receiver {
     /**
-     * @var int Largest request body read, in bytes. A result is about a kilobyte, but with its exam mirror on the
-     * service sends the same pass as an attempt record of up to 64 KB of JSON, and its signing library writes every
-     * non-ASCII character as escapes of six or twelve bytes before base64.
+     * @var int Largest request body read, in bytes. A result is about a kilobyte, but an attempt record is up to 64 KB of
+     * JSON, and the service's signing library writes every non-ASCII character as escapes of six or twelve bytes before
+     * base64.
      */
     public const MAX_BODY = 524288;
-
-    /** @var string Setting: answer success to an exam definition, which this plugin does not store. */
-    public const ACK_DEFINITIONS = 'resultsackdefinitions';
-
-    /** @var string Reason when a definition was acknowledged and not stored. */
-    public const DEFINITION_NOT_STORED = 'definition_not_stored';
 
     /**
      * Handles one request.
@@ -46,7 +46,8 @@ class result_receiver {
      * @param string $method The HTTP method.
      * @param string $body The raw request body.
      * @param int|null $now The current time; tests pass their own.
-     * @return array{status: int, body: array{applied: bool, reason: string}, headers: array<string, string>}
+     * @return array{status: int, body: array, headers: array<string, string>} The body has `applied` and `reason`; an
+     *     attempt record that was mirrored also `mirror`, and the answer that asks for a definition also `error`.
      */
     public static function handle(string $method, string $body, ?int $now = null): array {
         $now = $now ?? time();
@@ -73,13 +74,23 @@ class result_receiver {
                 $authentic = true;
                 // Into the outer list: a refused definition is audited with its id too.
                 $known['jti'] = $verified->jti;
-                return self::definition($known, $now);
+                return self::definition($verified, $known, $now);
             }
             $claims = result_statement::result_claims($verified, $algorithm, $now);
             $authentic = true;
             $known = result_store::audit_fields($claims) + $known;
 
-            return self::process($claims, $known, $now);
+            $service = $algorithm === result_statement::SERVICE_ALGORITHM;
+            // The service never sends a preview. A statement that says it is one must grant nothing.
+            if ($service && property_exists($verified, 'preview') && $verified->preview !== false) {
+                throw new result_rejection(422, 'preview_not_accepted');
+            }
+
+            $reply = self::process($claims, $known, $now);
+            if ($service && ($verified->kind ?? null) === 'attempt') {
+                return self::mirror_attempt($verified, $claims, $reply, $known, $now);
+            }
+            return $reply;
         } catch (result_rejection $rejection) {
             self::write_audit($now, $rejection->status, $rejection->reason, $known, $authentic);
             return self::reply($rejection->status, false, $rejection->reason);
@@ -92,23 +103,49 @@ class result_receiver {
     }
 
     /**
-     * Answers an exam definition of the service. Only an exam mirror would store one, and this plugin has none.
+     * Gives an exam definition to the mirror.
      *
-     * The service sends the result of a published exam only after its definition was accepted. By default the answer
-     * is one the service retries, so nothing is lost and nothing arrives. An administrator can have it acknowledged
-     * instead: results then arrive, and the definition is not kept.
-     *
-     * @param array $known The audit fields of the verified definition.
+     * @param \stdClass $verified The claims, whose signature and parties are verified.
+     * @param array $known The audit fields.
      * @param int $now
      * @return array The reply.
-     * @throws result_rejection 503 definition_not_supported unless the setting is on.
+     * @throws result_rejection When the mirror refuses it.
      */
-    private static function definition(array $known, int $now): array {
-        if (!get_config('format_rumbos', self::ACK_DEFINITIONS)) {
-            throw new result_rejection(503, 'definition_not_supported');
+    private static function definition(\stdClass $verified, array $known, int $now): array {
+        $outcome = mirror_intake::definition($verified, $now);
+        self::write_audit($now, 200, $outcome['reason'], $known, true);
+        return self::reply(200, $outcome['applied'], $outcome['reason']);
+    }
+
+    /**
+     * Mirrors an attempt record whose result has just been applied, or had been.
+     *
+     * The result comes first and does not depend on the mirror. When the mirror cannot take the record, the answer says
+     * so with a status the service retries, so that the record is never dropped: the retry finds the result applied
+     * and goes on to the mirror.
+     *
+     * @param \stdClass $verified The verified claims.
+     * @param array $claims The normalised result claims.
+     * @param array $reply The reply of the result.
+     * @param array $known The audit fields.
+     * @param int $now
+     * @return array The reply.
+     */
+    private static function mirror_attempt(\stdClass $verified, array $claims, array $reply, array $known, int $now): array {
+        try {
+            $row = result_store::find_by_jti($claims['jti']) ?? result_store::find_by_attempt($claims['attempt_id']);
+            $known = ['courseid' => (int) $row->courseid, 'userid' => (int) $row->userid] + $known;
+            $reply['body']['mirror'] = mirror_intake::attempt($verified, $claims, (int) $row->courseid, (int) $row->userid, $now);
+            return $reply;
+        } catch (result_rejection $rejection) {
+            self::write_audit($now, $rejection->status, $rejection->reason, $known, true);
+            $refused = self::reply($rejection->status, $reply['body']['applied'], $rejection->reason);
+            if ($rejection->reason === mirror_intake::UNKNOWN_DEFINITION) {
+                // The service looks for this member, and sends the definition again before it retries the attempt.
+                $refused['body']['error'] = mirror_intake::UNKNOWN_DEFINITION;
+            }
+            return $refused;
         }
-        self::write_audit($now, 200, self::DEFINITION_NOT_STORED, $known, true);
-        return self::reply(200, false, self::DEFINITION_NOT_STORED);
     }
 
     /**

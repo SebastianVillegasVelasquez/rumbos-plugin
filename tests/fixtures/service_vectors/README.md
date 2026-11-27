@@ -1,7 +1,8 @@
 # The Rumbos service's golden signing vectors
 
-Byte-for-byte copies of `contracts/signing-vectors/{jwks,result,attempt,definition}.json` of the `rumbos-backend`
-repository (added there by commit `0f04398`; the same files are on its `main`). The service makes them with its
+Byte-for-byte copies of `contracts/signing-vectors/{jwks,result,result-failed,attempt,definition}.json` of the `rumbos-backend`
+repository (added there by commit `0f04398`, the same on its `main`; `result-failed.json` by `02e1e35`, on its branch
+`fix/journey-testability`). The service makes them with its
 production signing code (`tests/signing_vectors.py` calls `app.passback.statement.claims_for` and `sign`), and its
 own tests check them with `cryptography` alone. **Nothing here was made or changed by this plugin.** Do not edit
 them: copy them again when the service changes them.
