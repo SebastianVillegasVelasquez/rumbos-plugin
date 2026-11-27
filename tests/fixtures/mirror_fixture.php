@@ -146,7 +146,7 @@ final class mirror_fixture {
     /**
      * The claims an attempt statement has beyond the result claims, for an attempt that earned the points given.
      *
-     * @param array<string, int> $points Question id => points earned; a question left out earned nothing.
+     * @param int[] $points Question id => points earned; a question left out earned nothing.
      * @param array|null $definition The exam; the fixture's by default.
      * @param bool $text Whether the written answers' text travels.
      * @return array
