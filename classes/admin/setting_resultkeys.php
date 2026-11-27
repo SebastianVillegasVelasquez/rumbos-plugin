@@ -23,10 +23,10 @@ defined('MOODLE_INTERNAL') || die();
 require_once($GLOBALS['CFG']->libdir . '/adminlib.php');
 
 /**
- * The public keys the result receiver trusts: one or more PEM blocks.
+ * The public keys the result receiver trusts: EC P-256 keys as a JWK or JWKS, and RSA keys as PEM blocks.
  *
- * It refuses to save text that has a block which is not an RSA public key of at least 2048 bits, or text outside
- * the blocks, so that a typo cannot leave the receiver silently trusting nothing.
+ * It refuses to save text that holds anything else, a private key included, so that a typo cannot leave the receiver
+ * silently trusting nothing (see {@see result_config::parse_keys()}).
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital

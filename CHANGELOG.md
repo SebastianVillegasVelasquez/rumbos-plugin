@@ -21,6 +21,9 @@ the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it
 
 ### Added
 
+- The result receiver verifies **ES256**, the algorithm the Rumbos service signs with. The "Result keys" setting takes
+  the service's public key as a JWK or a JWKS, several at once for a rotation; `cli/ec_public_jwk.php` makes the JWK
+  from a public PEM. The configured key decides the only algorithm accepted. RSA keys in PEM keep working with RS256.
 - **Staging only:** `cli/reset_test_student.php` resets a test student without deleting evidence (dry run by default). It
   deletes the student's flow progress rows in the course and sets back to incomplete only the completion overrides the
   plugin recorded. It refuses unless config.php sets `$CFG->format_rumbos_staging_tools = true;`. The staging completion

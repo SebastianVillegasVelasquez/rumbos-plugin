@@ -24,16 +24,22 @@ use Firebase\JWT\Key;
 /**
  * Verifies a signed result statement and turns it into a plain, validated claim set.
  *
- * Nothing is trusted before the signature is checked, and the algorithm is pinned: it is never read from the token.
- * The claims are specified in docs/RESULT-PASSBACK.md.
+ * Nothing is trusted before the signature is checked, and the algorithm is pinned by the configured key: the header of
+ * a token has to name that algorithm and never chooses it. The claims are specified in docs/RESULT-PASSBACK.md.
  *
  * @package    format_rumbos
  * @copyright  2026 OBJ Digital
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class result_statement {
-    /** @var string The only algorithm accepted. */
+    /** @var string The algorithm of an RSA key: the development signer's. */
     public const ALGORITHM = 'RS256';
+
+    /** @var string The algorithm of an elliptic curve key: the Rumbos service's. */
+    public const SERVICE_ALGORITHM = 'ES256';
+
+    /** @var int Seconds an ES256 time may be in the future. The service assumes the clocks differ by less. */
+    public const FUTURE_SKEW = 300;
 
     /** @var int Seconds of clock difference tolerated, for iat and exp. */
     public const LEEWAY = 60;
@@ -55,6 +61,45 @@ class result_statement {
      * @throws result_rejection 400 when it is not three non empty segments of a JWS.
      */
     public static function key_id(string $jws): string {
+        $header = self::header($jws);
+        return isset($header->kid) && is_string($header->kid) ? $header->kid : '';
+    }
+
+    /**
+     * Verifies the signature and the times of a signed message and returns its claims as they are.
+     *
+     * This is the one place a signature of the service is checked. Nothing else about the claims is checked here: who
+     * sent the message, to whom, and what it says are for the caller.
+     *
+     * @param string $jws The compact serialization.
+     * @param int $now The current time.
+     * @return \stdClass The decoded claims.
+     * @throws result_rejection 400 when malformed, 401 when not authentic, expired or from the future.
+     */
+    public static function decode(string $jws, int $now): \stdClass {
+        $kid = self::key_id($jws);
+        $keys = result_config::keys();
+        if ($kid === '' || !isset($keys[$kid])) {
+            throw new result_rejection(401, 'unknown_key');
+        }
+        $algorithm = result_config::algorithm($keys[$kid]);
+        // This is what stops "none", an HMAC with the public key as its secret, and any other swap.
+        if ((self::header($jws)->alg ?? null) !== $algorithm) {
+            throw new result_rejection(401, 'bad_signature');
+        }
+        return $algorithm === self::SERVICE_ALGORITHM
+            ? self::decode_es256($jws, $keys[$kid], $now)
+            : self::decode_rs256($jws, $kid, $keys[$kid], $now);
+    }
+
+    /**
+     * The header of a statement, unverified.
+     *
+     * @param string $jws The compact serialization.
+     * @return \stdClass Empty when the header is JSON but not an object.
+     * @throws result_rejection 400 when it is not three non empty segments of a JWS.
+     */
+    private static function header(string $jws): \stdClass {
         $parts = explode('.', $jws);
         if (count($parts) !== 3 || in_array('', $parts, true)) {
             throw new result_rejection(400, 'malformed');
@@ -64,11 +109,87 @@ class result_statement {
         } catch (\Throwable $e) {
             throw new result_rejection(400, 'malformed');
         }
-        return is_object($header) && isset($header->kid) && is_string($header->kid) ? $header->kid : '';
+        return $header instanceof \stdClass ? $header : new \stdClass();
     }
 
     /**
-     * Verifies the signature, the expiry, the issuer, the audience and the tenant, and validates the claims.
+     * An RS256 statement, verified by the JWT library Moodle ships.
+     *
+     * @param string $jws
+     * @param string $kid
+     * @param string $pem
+     * @param int $now
+     * @return \stdClass The claims.
+     * @throws result_rejection 401.
+     */
+    private static function decode_rs256(string $jws, string $kid, string $pem, int $now): \stdClass {
+        $leeway = JWT::$leeway;
+        $timestamp = JWT::$timestamp;
+        JWT::$leeway = self::LEEWAY;
+        JWT::$timestamp = $now;
+        try {
+            return JWT::decode($jws, [$kid => new Key($pem, self::ALGORITHM)]);
+        } catch (ExpiredException $e) {
+            throw new result_rejection(401, 'expired');
+        } catch (BeforeValidException $e) {
+            throw new result_rejection(401, 'not_yet_valid');
+        } catch (\UnexpectedValueException | \DomainException $e) {
+            // Includes SignatureInvalidException, a key that does not fit the algorithm and an unreadable payload (the
+            // library throws DomainException for bytes that are not JSON).
+            throw new result_rejection(401, 'bad_signature');
+        } finally {
+            JWT::$leeway = $leeway;
+            JWT::$timestamp = $timestamp;
+        }
+    }
+
+    /**
+     * An ES256 statement of the service (see {@see es256} for the signature).
+     *
+     * The service sends no `exp`: its outbox retries for days, and a statement that arrives twice changes nothing. One
+     * that carries `exp` or `nbf` is held to it. An old statement is accepted; one issued further in the future than
+     * {@see self::FUTURE_SKEW} is not.
+     *
+     * @param string $jws
+     * @param string $pem
+     * @param int $now
+     * @return \stdClass The claims.
+     * @throws result_rejection 400 or 401.
+     */
+    private static function decode_es256(string $jws, string $pem, int $now): \stdClass {
+        [$header, $payload, $signature] = explode('.', $jws);
+        foreach ([$header, $payload, $signature] as $segment) {
+            // Strict, because the decoder below skips characters that are not base64url.
+            if (preg_match('/^[A-Za-z0-9_-]+$/D', $segment) !== 1) {
+                throw new result_rejection(401, 'bad_signature');
+            }
+        }
+        if (!es256::verify($header . '.' . $payload, JWT::urlsafeB64Decode($signature), $pem)) {
+            throw new result_rejection(401, 'bad_signature');
+        }
+        $claims = json_decode(JWT::urlsafeB64Decode($payload), false, 64, JSON_BIGINT_AS_STRING);
+        if (!$claims instanceof \stdClass) {
+            throw new result_rejection(401, 'bad_signature');
+        }
+
+        foreach (['iat', 'nbf', 'exp'] as $name) {
+            if (property_exists($claims, $name) && !is_int($claims->{$name}) && !is_float($claims->{$name})) {
+                throw new result_rejection(400, 'malformed');
+            }
+        }
+        if (isset($claims->exp) && $now - self::LEEWAY >= $claims->exp) {
+            throw new result_rejection(401, 'expired');
+        }
+        foreach (['iat', 'nbf'] as $name) {
+            if (isset($claims->{$name}) && $claims->{$name} > $now + self::FUTURE_SKEW) {
+                throw new result_rejection(401, 'not_yet_valid');
+            }
+        }
+        return $claims;
+    }
+
+    /**
+     * Verifies the signature, the times, the issuer, the audience and the tenant, and validates the claims.
      *
      * @param string $jws The compact serialization.
      * @param int $now The current time.
@@ -76,31 +197,7 @@ class result_statement {
      * @throws result_rejection 400 when malformed, 401 when not authentic, expired or not for this site.
      */
     public static function verify(string $jws, int $now): array {
-        $kid = self::key_id($jws);
-        $keys = result_config::keys();
-        if ($kid === '' || !isset($keys[$kid])) {
-            throw new result_rejection(401, 'unknown_key');
-        }
-
-        $leeway = JWT::$leeway;
-        $timestamp = JWT::$timestamp;
-        JWT::$leeway = self::LEEWAY;
-        JWT::$timestamp = $now;
-        try {
-            $claims = JWT::decode($jws, [$kid => new Key($keys[$kid], self::ALGORITHM)]);
-        } catch (ExpiredException $e) {
-            throw new result_rejection(401, 'expired');
-        } catch (BeforeValidException $e) {
-            throw new result_rejection(401, 'not_yet_valid');
-        } catch (\UnexpectedValueException $e) {
-            // Includes SignatureInvalidException, a key that does not fit the algorithm and an unreadable payload.
-            throw new result_rejection(401, 'bad_signature');
-        } finally {
-            JWT::$leeway = $leeway;
-            JWT::$timestamp = $timestamp;
-        }
-
-        $claims = self::normalise($claims, $now);
+        $claims = self::normalise(self::decode($jws, $now), $now);
 
         if (!hash_equals(result_config::issuer(), $claims['iss'])) {
             throw new result_rejection(401, 'bad_issuer');

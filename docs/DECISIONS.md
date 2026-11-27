@@ -245,3 +245,18 @@ Found by running the tools on a real site: they refused although config.php set 
 strict check failed on every site; the tests set `$CFG` while running, where it stays a boolean. The check now reads
 `$CFG->config_php_settings`, which keeps what config.php held. Accepting `"1"` was rejected: it would let a database
 setting enable the tools. Read this way the rule is as strict as intended, and stricter: only config.php counts.
+
+## The service's signed statements (2026-11-27)
+
+### D38. The configured key decides the algorithm, and ES256 is verified here
+
+The service signs with ES256 and keeps doing so. A key verifies one algorithm, taken from its type: an RSA key RS256 (the
+development signer, unchanged), an EC P-256 key ES256. The header's `alg` has to name it and never selects it.
+`result_statement::decode()` is the one place where a signature is checked, so that another receiver (the exam mirror)
+can use it. For ES256 the plugin does not use the library's verification: `JWT::signatureToDER()` of the bundled
+`firebase/php-jwt` cuts any signature in two halves whatever its length, so a signature that is not the 64 octets of
+RFC 7518 section 3.4 would not be refused for it. `es256` converts to DER itself and calls `openssl_verify()`.
+
+An EC key is configured as a JWK (or a JWKS), not as PEM: the id the service puts in `kid` is the operator's own choice
+(`passback-1` by default) and cannot be derived from the key, and a JWK carries both. `cli/ec_public_jwk.php` makes it
+from the public PEM, because the service has no command that prints it. Several keys by `kid` are what rotation needs.

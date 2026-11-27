@@ -88,6 +88,124 @@ final class result_config_test extends \advanced_testcase {
     }
 
     /**
+     * The service's JWKS.
+     *
+     * @return string
+     */
+    private function vector_jwks(): string {
+        return file_get_contents(__DIR__ . '/../fixtures/service_vectors/jwks.json');
+    }
+
+    /**
+     * An EC key is read from a JWKS or a single JWK, under its own kid, and verifies ES256; an RSA key beside it
+     * keeps verifying RS256.
+     */
+    public function test_jwk_keys_are_read(): void {
+        $jwks = $this->vector_jwks();
+        $one = json_encode(json_decode($jwks)->keys[0]);
+        $rsa = $this->public_key();
+
+        $parsed = result_config::parse_keys($jwks);
+        $this->assertSame([], $parsed['errors']);
+        $this->assertSame(['vectors-1'], array_keys($parsed['keys']));
+        $this->assertSame($parsed, result_config::parse_keys($one));
+        $this->assertSame('ES256', result_config::algorithm($parsed['keys']['vectors-1']));
+
+        $both = result_config::parse_keys($rsa . "\n" . $jwks);
+        $this->assertSame([], $both['errors']);
+        $this->assertSame([result_config::key_id($rsa), 'vectors-1'], array_keys($both['keys']));
+        $this->assertSame('RS256', result_config::algorithm($both['keys'][result_config::key_id($rsa)]));
+    }
+
+    /**
+     * Anything that is not a public P-256 signing key with a usable kid is reported and left out.
+     *
+     * @param array $change Members to change in the service's JWK; null removes one.
+     * @param string $error
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('bad_jwk_provider')]
+    public function test_bad_jwks_are_reported(array $change, string $error): void {
+        $jwk = json_decode($this->vector_jwks(), true)['keys'][0];
+        foreach ($change as $name => $value) {
+            if ($value === null) {
+                unset($jwk[$name]);
+            } else {
+                $jwk[$name] = $value;
+            }
+        }
+
+        $this->assertSame(['keys' => [], 'errors' => [$error]], result_config::parse_keys(json_encode($jwk)));
+    }
+
+    /**
+     * The bad keys to try.
+     *
+     * @return array
+     */
+    public static function bad_jwk_provider(): array {
+        return [
+            'a private key' => [['d' => 'AAAA'], 'privatejwk'],
+            'another type' => [['kty' => 'RSA'], 'badjwk'],
+            'an HMAC secret' => [['kty' => 'oct', 'k' => 'AAAA'], 'badjwk'],
+            'another curve' => [['crv' => 'P-384'], 'badjwk'],
+            'another algorithm' => [['alg' => 'HS256'], 'badjwk'],
+            'for encryption' => [['use' => 'enc'], 'badjwk'],
+            'no kid' => [['kid' => null], 'badjwk'],
+            'a kid too long' => [['kid' => str_repeat('k', 33)], 'badjwk'],
+            'a kid with a space' => [['kid' => 'pass back'], 'badjwk'],
+            'no x' => [['x' => null], 'badjwk'],
+            'x too short' => [['x' => str_repeat('A', 42)], 'badjwk'],
+            'x in standard base64' => [['x' => str_repeat('+', 43)], 'badjwk'],
+            'a point that is not on the curve' => [['y' => str_repeat('A', 43)], 'badjwk'],
+        ];
+    }
+
+    /**
+     * A second key under a kid already taken does not replace the first; broken JSON and an empty list give no key.
+     */
+    public function test_duplicate_kids_and_broken_json(): void {
+        $jwk = json_decode($this->vector_jwks(), true)['keys'][0];
+        $first = result_config::parse_keys(json_encode($jwk))['keys'];
+        $other = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $impostor = result_config::jwk_from_pem(openssl_pkey_get_details($other)['key'], 'vectors-1');
+
+        $parsed = result_config::parse_keys(json_encode(['keys' => [$jwk, $impostor]]));
+        $this->assertSame(['keys' => $first, 'errors' => ['duplicatekid']], $parsed);
+
+        // Two JWKs one after the other are not JSON.
+        $two = json_encode($jwk) . json_encode($jwk);
+        $this->assertSame(['keys' => [], 'errors' => ['stray']], result_config::parse_keys($two));
+        $this->assertSame(['keys' => [], 'errors' => ['badjwk']], result_config::parse_keys('{"keys": "none"}'));
+        $this->assertSame(['keys' => [], 'errors' => []], result_config::parse_keys('{"keys": []}'));
+    }
+
+    /**
+     * The JWK made from a PEM reads back as the same key, also when a coordinate starts with zero octets, which
+     * OpenSSL leaves out. A private key, another type of key or a bad kid gives nothing.
+     */
+    public function test_a_jwk_is_made_from_a_public_pem(): void {
+        $padded = false;
+        // One key in 128 has a coordinate shorter than 32 octets.
+        for ($i = 0; $i < 3000 && !$padded; $i++) {
+            $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+            $details = openssl_pkey_get_details($key);
+            $padded = strlen($details['ec']['x']) < 32 || strlen($details['ec']['y']) < 32;
+        }
+        $this->assertTrue($padded, 'no key with a short coordinate came up');
+
+        $jwk = result_config::jwk_from_pem($details['key'], 'passback-1');
+
+        $this->assertSame([43, 43], [strlen($jwk['x']), strlen($jwk['y'])]);
+        $this->assertSame($details['key'], result_config::parse_keys(json_encode($jwk))['keys']['passback-1']);
+
+        openssl_pkey_export($key, $private);
+        $this->assertNull(result_config::jwk_from_pem($private, 'passback-1'));
+        $this->assertNull(result_config::jwk_from_pem($this->public_key(), 'passback-1'));
+        $this->assertNull(result_config::jwk_from_pem($details['key'], 'not a kid'));
+        $this->assertNull(result_config::jwk_from_pem('nonsense', 'passback-1'));
+    }
+
+    /**
      * The settings page refuses text it would have to ignore, and accepts an empty value.
      */
     public function test_the_setting_validates(): void {
@@ -99,6 +217,9 @@ final class result_config_test extends \advanced_testcase {
         $notrsa = get_string('resultkeys_error_notrsa', 'format_rumbos');
         $this->assertSame($notrsa, $setting->validate($this->public_key(0, OPENSSL_KEYTYPE_EC)));
         $this->assertSame(get_string('resultkeys_error_stray', 'format_rumbos'), $setting->validate('oops'));
+        $this->assertTrue($setting->validate($this->vector_jwks()));
+        $private = json_encode(['d' => 'AAAA'] + json_decode($this->vector_jwks(), true)['keys'][0]);
+        $this->assertSame(get_string('resultkeys_error_privatejwk', 'format_rumbos'), $setting->validate($private));
     }
 
     /**
