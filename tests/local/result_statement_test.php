@@ -145,9 +145,8 @@ final class result_statement_test extends \format_rumbos\result_testcase {
         $user = $this->getDataGenerator()->create_user();
         $jws = $this->sign($this->claims($course, $user));
 
-        $tampered = substr($jws, 0, -1) . (substr($jws, -1) === 'A' ? 'B' : 'A');
         try {
-            result_statement::verify($tampered, $this->now);
+            result_statement::verify($this->tamper($jws), $this->now);
             $this->fail('a tampered statement was accepted');
         } catch (result_rejection $rejection) {
             $this->assertSame([401, 'bad_signature'], [$rejection->status, $rejection->reason]);

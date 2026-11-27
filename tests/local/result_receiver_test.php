@@ -256,7 +256,7 @@ final class result_receiver_test extends \format_rumbos\result_testcase {
         $this->assert_audited(401, 'expired');
 
         $jws = $this->sign($this->claims($course, $student));
-        $tampered = $this->post(substr($jws, 0, -1) . (substr($jws, -1) === 'A' ? 'B' : 'A'));
+        $tampered = $this->post($this->tamper($jws));
         $this->assert_reply($tampered, 401, 'bad_signature', false);
         $this->assert_audited(401, 'bad_signature');
 

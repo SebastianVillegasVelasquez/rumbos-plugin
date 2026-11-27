@@ -135,6 +135,28 @@ abstract class result_testcase extends \advanced_testcase {
     }
 
     /**
+     * Changes one character in the middle of a statement's signature.
+     *
+     * Not the last one: the signature of a 2048-bit key is 342 base64url characters for 256 bytes, so the last character
+     * carries four padding bits that a decoder ignores. Changing it left the bytes as they were about one time in four,
+     * and the "tampered" statement was then rightly accepted.
+     *
+     * @param string $jws
+     * @return string
+     */
+    protected function tamper(string $jws): string {
+        $start = strrpos($jws, '.') + 1;
+        $middle = $start + intdiv(strlen($jws) - $start, 2);
+        $tampered = substr_replace($jws, $jws[$middle] === 'A' ? 'B' : 'A', $middle, 1);
+        $this->assertNotSame(
+            JWT::urlsafeB64Decode(substr($jws, $start)),
+            JWT::urlsafeB64Decode(substr($tampered, $start)),
+            'the tampering must change the bytes of the signature'
+        );
+        return $tampered;
+    }
+
+    /**
      * Posts a statement to the receiver.
      *
      * @param string $statement The JWS.
