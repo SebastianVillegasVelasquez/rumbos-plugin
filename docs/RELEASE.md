@@ -33,6 +33,40 @@ nobody has to build it by hand.
 5. Install it from **Site administration > Plugins > Install plugins**, or download it
    from the release page.
 
+## Releasing what is unreleased now
+
+State on 2026-11-27. "Unreleased" in the changelog includes host contract v5.11, which is the version of the messages
+between the page and the app, not a release number of the plugin.
+
+To decide or fix first:
+
+1. **CI is red on `main`** and was for at least the last four merges. Its PHPUnit failures were two tests that tampered
+   with a signature in a way that sometimes changed nothing; that is fixed. The other failing steps are not:
+   - Moodle Code Checker (run with `--max-warnings 0`): `COMPLETION_CRITERIA_TYPES` in `classes/local/result_course.php`;
+     the `MOODLE_INTERNAL` check in `result_course_test.php`, `result_receiver_test.php` and
+     `result_statement_test.php`; a long line in `tests/behat/behat_format_rumbos.php`; and warnings about the order of
+     language strings.
+   - Grunt: stylelint refuses an `!important` in `styles.css`.
+
+   The steps after a failed one run too, so read the whole run, not only these.
+2. **Result passback with the real service does not work**: the signing algorithm and claims differ (see
+   [DESIGN-restart-from-zero.md](DESIGN-restart-from-zero.md#together-with-the-services-restart-document)). Decide whether
+   to release without it.
+3. **Run the manual tests** of v5.11 in [MANUAL-TESTS.md](MANUAL-TESTS.md) on staging, with the app. What was not run is
+   marked there.
+4. **Legal review** of auto-completion and of the `uid` claim. Both settings are off by default.
+5. **The native quiz mirror branch is not merged.** Its version (`2026112300`, `0.8.0`) is lower than this one, so its
+   upgrade steps need new numbers if it is merged after this release.
+
+Then:
+
+1. Rename the changelog's `## Unreleased` to the release, `0.9.0` unless another number is chosen, and set
+   `$plugin->release` to match.
+2. Raise `$plugin->version` above `2026112401`. This change adds no database step, but it adds language strings and an
+   event, and a site already on `2026112401` runs the upgrade, which refreshes them, only if the number goes up.
+3. Decide `$plugin->maturity` (now `MATURITY_ALPHA`; the workflow publishes a pre-release).
+4. Follow [Steps](#steps).
+
 ## Building the ZIP by hand
 
 For a local check, from a clean working tree:

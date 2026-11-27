@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Not released: there is no tag after `v0.2.0`, and everything under this heading, host contract v5.11 included, is only in
+the source. `version.php` already says `0.9.0` (`2026112401`). What releasing it needs is in
+[docs/RELEASE.md](docs/RELEASE.md#releasing-what-is-unreleased-now).
+
 ### Changed
 
 - **Behaviour change:** the welcome flow's entry quiz now passes only **strictly above** the course's threshold
@@ -17,9 +21,9 @@
   helper now records each override it makes with the event `staging_completion_overridden`; overrides it made before this
   version have no record, so the reset leaves them alone. See `docs/FINAL-EXAM-GATE.md`.
 - Auto-complete (off by default, setting `autocompletecontent`): a verified passing result (check-in or final) marks the
-  SCORM packages, files, URLs and pages the student can see as complete, through Moodle's override, with an event per activity and an ad-hoc retry task.
-  Only the result receiver can trigger it. The privacy declaration is updated and marked for legal review. See
-  `docs/CONTENT-AUTOCOMPLETE.md`.
+  SCORM packages, files, URLs and pages the student can see as complete, through Moodle's override, with an event per
+  activity and an ad-hoc retry task. Only the result receiver can trigger it. The privacy declaration is updated and marked
+  for legal review. See `docs/CONTENT-AUTOCOMPLETE.md`.
 - `docs/DESIGN-restart-from-zero.md`: an audit of restarting a student after three failed finals. Not implemented.
 - Host contract v5.11: a flow step can show a Moodle activity (`resource`, `url`, `page`) in the overlay. Capabilities `activities`
   (editors) and `activity`; messages `request-activities`, `activity-open` and their replies. No address travels in any message.
